@@ -329,7 +329,8 @@ logs\monitor.log    滚动日志（默认 10MB x 5；记录启动/关闭/状态�
 升级/替换 `dist\LlamaMonitor` 目录不会删除或覆盖上述任何文件。
 
 **数据库 schema 迁移**：monitor.db 用 `PRAGMA user_version` 标记版本
-（当前 **v3**：Phase 11 增加 `monitor_events`（counter_reset / sleep_gap /
+（当前 **v4**：Phase 13 增加 `app_state`（更新状态 / ETag 等运行时元数据）；
+v3 = Phase 11 的 `monitor_events`（counter_reset / sleep_gap /
 database_* / backup_* 等事件审计）/ `data_gaps`（已知监控缺口，永久保留）/
 `backup_history`（备份元数据与验证状态）；v2 = Phase 9 GPU 表）。
 启动时自动检测并逐版本迁移：旧版本（含早期无版本号的库）数据无损升级，
@@ -404,7 +405,11 @@ busy/locked 重试 + busy_timeout），任何一步失败整体回滚，不存�
 - `PUT /api/config`、`POST /api/config/test-connection`
 - `POST /api/data/backup` / `clear-live` / `reset-statistics`
 - `PUT /api/app/autostart`、`POST /api/app/open-folder`、`POST /api/app/exit`
-- 只读 API（/api/status、/api/summary、/api/daily、/api/live、GPU 等）远程可读。
+- 全部 5 个 `/api/update/*` 端点
+- **敏感只读** API 也回环保护（Phase 14 AUDIT-SEC-001/002）：
+  `GET /api/config`、`GET /api/app/integration`（其余只读 API
+  /api/status、/api/summary、/api/daily、/api/live、GPU 等远程可读）。
+  完整端点清单见 [`docs/API.md`](docs/API.md)。
 
 相关端点：`GET /api/app/integration`（托盘/单实例/自启/路径/uptime 集成状态）、
 `PUT /api/app/autostart`（{enabled}）、`POST /api/app/open-folder`（data|logs|backups）、

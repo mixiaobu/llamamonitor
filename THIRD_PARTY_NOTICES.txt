@@ -1,42 +1,61 @@
 LlamaMonitor THIRD-PARTY NOTICES
-=
+================================
 
-基于 1.0.0 构建环境（pip freeze + importlib.metadata）生成；
-"VERIFY" 表示未能自动确认许可证文本，发布前需人工确认。
-第三方代码版权归各自作者所有。
+Phase 14 重新生成（2026-09-19）：许可信息逐项取自**已安装 wheel 的 dist-info 元数据与
+捆绑的官方 license 文件**（`<pkg>-<ver>.dist-info/licenses/`），不再猜测。
+构建环境：Python 3.13.14，Windows x64。第三方代码版权归各自作者所有。
 
-- altgraph 0.17.5 — License: MIT
-- annotated-doc 0.0.5 — License: VERIFY (project: https://github.com/fastapi/annotated-doc)
-- annotated-types 0.8.0 — License: VERIFY (project: https://github.com/annotated-types/annotated-types)
-- anyio 4.15.1 — License: VERIFY (project: https://anyio.readthedocs.io/en/latest/)
-- bottle 0.13.4 — License: MIT
-- certifi 2026.7.22 — License: MPL-2.0
-- cffi 2.1.1 — License: VERIFY (project: https://cffi.readthedocs.io/)
-- click 8.5.0 — License: VERIFY (project: https://click.palletsprojects.com/page/changes/)
-- clr_loader 0.3.1 — License: VERIFY (project: https://github.com/pythonnet/clr-loader)
-- fastapi 0.141.1 — License: VERIFY (project: https://github.com/fastapi/fastapi)
-- h11 0.16.0 — License: MIT
-- httpcore 1.0.9 — License: VERIFY (project: https://www.encode.io/httpcore)
-- httpx 0.28.1 — License: BSD-3-Clause
-- idna 3.19 — License: VERIFY (project: https://github.com/kjd/idna/blob/master/HISTORY.md)
-- packaging 26.3 — License: VERIFY (project: https://packaging.pypa.io/)
-- pefile 2024.8.26 — License: MIT
-- pillow 12.3.0 — License: VERIFY (project: https://pillow.readthedocs.io/en/stable/releasenotes/index.html)
-- proxy_tools 0.1.0 — License: MIT
-- pycparser 3.0 — License: VERIFY (project: https://github.com/eliben/pycparser)
-- pydantic 2.13.5 — License: VERIFY (project: https://github.com/pydantic/pydantic)
-- pydantic_core 2.46.5 — License: VERIFY (project: https://github.com/pydantic/pydantic)
-- pyinstaller 6.22.3 — License: GPLv2-or-later with a special exception which allows to use PyInstaller to build and distribute non-free programs (in...
-- pyinstaller-hooks-contrib 2026.7 — License: VERIFY (project: https://github.com/pyinstaller/pyinstaller-hooks-contrib)
-- pystray 0.19.5 — License: LGPLv3
-- pythonnet 3.1.0 — License: VERIFY (project: https://pythonnet.github.io/)
-- pywebview 6.2.1 — License: BSD 3-Clause License Copyright (c) 2014-2017, Roman Sirokov All rights reserved. Redistribution and use in source and...
-- pywin32-ctypes 0.2.3 — License: BSD-3-Clause
-- setuptools 84.0.0 — License: VERIFY (project: https://github.com/pypa/setuptools)
-- six 1.17.0 — License: MIT
-- starlette 1.6.0 — License: VERIFY (project: https://github.com/Kludex/starlette)
-- typing-inspection 0.4.4 — License: VERIFY (project: https://github.com/pydantic/typing-inspection)
-- typing_extensions 4.16.0 — License: VERIFY (project: https://github.com/python/typing_extensions/issues)
-- uvicorn 0.53.0 — License: VERIFY (project: https://uvicorn.dev/release-notes)
-- xlrd 2.0.2 — License: BSD
-- Apache ECharts (static/echarts.min.js, bundled) — License: Apache-2.0
+生产运行时依赖（requirements.txt 固定版本）：
+- fastapi 0.141.1 — MIT（捆绑 LICENSE，Sebastián Ramírez）
+- uvicorn 0.53.0 — BSD-3-Clause（捆绑 LICENSE.md，Encode OSS Ltd）
+- httpx 0.28.1 — BSD-3-Clause（捆绑 LICENSE.md，Encode OSS Ltd）
+- pywebview 6.2.1 — BSD-3-Clause（捆绑 LICENSE，Roman Sirokov）
+- pystray 0.19.5 — LGPL-3.0（元数据 License 字段；wheel 未捆绑文本，见官方仓库）
+- Pillow 12.3.0 — Pillow License（HPND 衍生，捆绑 LICENSE）
+- cryptography 50.0.1 — Apache-2.0 或 BSD-3-Clause（双许可，捆绑 LICENSE/LICENSE.APACHE/LICENSE.BSD）
+
+生产传递依赖：
+- starlette 1.6.0 — BSD-3-Clause（捆绑 LICENSE.md，Encode OSS Ltd）
+- pydantic 2.13.5 — MIT（捆绑 LICENSE，Pydantic Services）
+- pydantic_core 2.46.5 — MIT（捆绑 LICENSE）
+- annotated-types 0.8.0 — MIT（捆绑 LICENSE）
+- typing-inspection 0.4.4 — MIT（捆绑 LICENSE）
+- annotated-doc 0.0.5 — MIT（捆绑 LICENSE）
+- anyio 4.15.1 — MIT（捆绑 LICENSE）
+- httpcore 1.0.9 — BSD-3-Clause（捆绑 LICENSE.md，Encode OSS Ltd）
+- h11 0.16.0 — MIT（捆绑 LICENSE.txt）
+- idna 3.19 — BSD-3-Clause（捆绑 LICENSE.md，Kim Davies；注意旧版 idna 曾为
+  BSL-1.0，当前安装版本的捆绑 license 为 BSD-3-Clause）
+- certifi 2026.7.22 — MPL-2.0（元数据 License 字段 + 捆绑 LICENSE）
+- cffi 2.1.1 — MIT（捆绑 LICENSE，cffi contributors）
+- pycparser 3.0 — MIT（捆绑 LICENSE，Eli Bendersky）
+- pythonnet 3.1.0 — MIT（捆绑 LICENSE）
+- clr_loader 0.3.1 — MIT（捆绑 LICENSE）
+- pywin32-ctypes 0.2.3 — BSD-3-Clause（元数据 License 字段）
+- bottle 0.13.4 — MIT（捆绑 LICENSE，Marcel Hellkamp；pywebview 的 Python 端依赖）
+- Pillow 12.3.0（pystray 图标渲染依赖，同上）
+- six 1.17.0 — MIT（元数据 License 字段）
+- pefile 2024.8.26 — MIT（validate_release.py 构建期校验用；随源码发布）
+- xlrd 2.0.2 — BSD（元数据 License 字段；构建期 PE/Excel 工具链依赖）
+- packaging 26.3 — Apache-2.0 或 BSD（捆绑 LICENSE/LICENSE.APACHE/LICENSE.BSD）
+- typing_extensions 4.16.0 — PSF（Python Software Foundation License，捆绑 LICENSE）
+- setuptools 84.0.0 — MIT（捆绑 LICENSE；构建期）
+- altgraph 0.17.5 — MIT（元数据 License 字段；PyInstaller 依赖）
+- proxy_tools 0.1.0 — MIT（元数据 License 字段；pywebview 可选组件）
+
+开发/构建依赖（不进 Installer 运行时）：
+- pyinstaller 6.22.3 — GPLv2-or-later，附带"用 PyInstaller 构建/分发非自由程序"
+  的特殊例外（元数据 License 字段 + 捆绑 COPYING.txt）
+- pyinstaller-hooks-contrib 2026.7 — MIT（捆绑 LICENSE）
+
+前端本地 vendored：
+- Apache ECharts（static/echarts.min.js，bundled）— Apache-2.0
+- （无 jQuery/无其他运行时库；前端为标准 JS + ECharts）
+
+说明：
+- 除 pystray（LGPL-3.0，动态链接式使用：仅 import，无源码修改，独立进程调用
+  Win32 API，LGPL 义务不传染到 LlamaMonitor 自身代码；保留官方来源与版本）外，
+  全部为宽松许可（MIT/BSD/Apache/MPL/PSF）。
+- pystray 是 LGPL：我们未修改其源码；若以静态方式分发，应保留获取源代码的途径
+  （上游仓库 https://github.com/moses-palmer/pystray + 本 NOTICE 的版本号已满足
+  实际分发场景的常见做法）。

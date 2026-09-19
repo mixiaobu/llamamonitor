@@ -238,8 +238,11 @@ class PreMigrationRotationTests(unittest.TestCase):
         pre = backup_dir / "pre_migration_v2_to_v3_20260918_120000.db"
         pre.write_bytes(b"pre")
         mgr = BackupManager(self.tmp / "fake.db", backup_dir, keep_count=14)
-        # pre_migration 前缀不在备份列表内（源头隔离）
-        self.assertEqual([b["name"] for b in mgr.list_backups() if b["name"].startswith("pre_migration")], [])
+        # AUDIT-DB-005：pre_migration 现在**出现**在备份列表里（kind=pre_migration），
+        # 但轮转仍只删 auto_*（下面的断言保持原有意图：不参与轮转）
+        pre_in_list = [b for b in mgr.list_backups() if b["name"].startswith("pre_migration")]
+        self.assertEqual(len(pre_in_list), 1)
+        self.assertEqual(pre_in_list[0]["kind"], "pre_migration")
         removed = mgr._rotate_auto()
         self.assertEqual(len(removed), 6)
         self.assertTrue(pre.exists(), "pre-migration backup 被轮转删除了（不允许）")

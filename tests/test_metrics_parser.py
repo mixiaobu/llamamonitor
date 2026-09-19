@@ -120,5 +120,33 @@ class InlineFormatTests(unittest.TestCase):
         self.assertEqual(get_metric_value(parsed, "llamacpp:n_busy_slots_per_decode"), 3.0)
 
 
+class AuditParserRegressionTests(unittest.TestCase):
+    """Phase 14 审计回归（DATA：文档行为与实现对齐 + 科学计数法 / 标签引号）。"""
+
+    def test_scientific_notation_values(self):
+        """Prometheus 值允许科学计数法（float(token) 原生支持；此前无回归测试保护）。"""
+        parsed = parse_metrics(
+            "llamacpp:prompt_tokens_total 1.68507e5\n"
+            "llamacpp:kv_cache_usage_ratio 1.25E-1\n"
+            "llamacpp:n_decode_total 3.0e0\n"
+        )
+        self.assertEqual(get_metric_value(parsed, "llamacpp:prompt_tokens_total"), 168507.0)
+        self.assertAlmostEqual(get_metric_value(parsed, "llamacpp:kv_cache_usage_ratio"), 0.125)
+        self.assertEqual(get_metric_value(parsed, "llamacpp:n_decode_total"), 3.0)
+
+    def test_escaped_quote_in_label_value(self):
+        """标签值内 \\" 转义防止值提前终止；**反斜杠按字面保留在解析值里**
+        （AUDIT-DATA：docstring 与实现对齐后的实际行为回归）。"""
+        parsed = parse_metrics('metric{a="he said \\"hi\\""} 7\n')
+        self.assertEqual(get_metric_value(parsed, "metric", {"a": 'he said \\"hi\\"'}), 7.0)
+        # 未反转义的值不是 key（明确文档化当前行为）
+        self.assertIsNone(get_metric_value(parsed, "metric", {"a": 'he said "hi"'}))
+
+    def test_multi_label_with_escaped_quotes(self):
+        parsed = parse_metrics('metric{a="x\\"y", b="z"} 9\n')
+        self.assertEqual(
+            get_metric_value(parsed, "metric", {"a": 'x\\"y', "b": "z"}), 9.0)
+
+
 if __name__ == "__main__":
     unittest.main()

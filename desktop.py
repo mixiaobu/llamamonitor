@@ -104,8 +104,10 @@ def wait_for_ready(
     poll: float = READY_POLL_SECONDS,
 ) -> bool:
     """轮询 /api/status 直到 200（lifespan 首次采集完成即代表数据已可用）。"""
-    deadline = time.time() + timeout
-    while time.time() < deadline:
+    # AUDIT-ASYNC-005：截止时间用 monotonic——wall clock 在等待期间被系统调整
+    # （NTP 校时 / DST）会让超时判断失真
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
         try:
             if httpx.get(base_url + "/api/status", timeout=1.0).status_code == 200:
                 return True
@@ -128,6 +130,13 @@ def stop_uvicorn(server: uvicorn.Server, thread: threading.Thread, timeout: floa
     """优雅停止：should_exit 触发 lifespan 关闭（取消 Collector/GPU、关 SQLite），再等线程结束。"""
     server.should_exit = True
     thread.join(timeout=timeout)
+    if thread.is_alive():
+        # AUDIT-ASYNC-003：join 超时不能静默——uvicorn 线程还活着意味着 lifespan
+        # 关闭（取消采集任务/关 DB）可能未完成，用户/测试需要知道
+        logger.warning(
+            "uvicorn 线程未在 %.0fs 内结束（lifespan 关闭可能未完成；daemon 线程随进程退出）",
+            timeout,
+        )
 
 
 def _tray_icon_path() -> Path:
@@ -304,6 +313,11 @@ def main(argv: list[str] | None = None, loaded: LoadedConfig | None = None) -> i
         except Exception:
             log.warning("切换 autostart 失败", exc_info=True)
 
+    # AUDIT-ASYNC-006：托盘状态用**持久** httpx.Client（keep-alive）——原实现每 30s
+    # httpx.get 新建 TCP 连接（TIME_WAIT 累积 + 每轮握手开销）。httpx.Client 线程安全，
+    # 托盘刷新线程复用同一个 client；shutdown 时关闭。
+    tray_http = httpx.Client(timeout=2.0)
+
     def _tray_status() -> dict:
         # 复用 server 每轮采集刷新的 app_state.runtime（托盘不额外高频查库）
         rt = app_state.runtime
@@ -322,7 +336,7 @@ def main(argv: list[str] | None = None, loaded: LoadedConfig | None = None) -> i
         # Phase 13：有可用更新时托盘显示 "Update Available: X"（本地 loopback API，开销可忽略）
         update_version = None
         try:
-            upd = httpx.get(base_url + "/api/update/status", timeout=2.0).json()
+            upd = tray_http.get(base_url + "/api/update/status").json()
             if upd.get("state") == "UPDATE_AVAILABLE":
                 update_version = upd.get("available_version")
         except Exception:
@@ -369,6 +383,7 @@ def main(argv: list[str] | None = None, loaded: LoadedConfig | None = None) -> i
             dispatcher.stop()
             listener.stop()
             shutdown_listener.stop()
+            tray_http.close()
             single.release()
             lifecycle.mark_stopped()
             return 0
@@ -378,6 +393,7 @@ def main(argv: list[str] | None = None, loaded: LoadedConfig | None = None) -> i
         dispatcher.stop()
         listener.stop()
         shutdown_listener.stop()
+        tray_http.close()
         single.release()
         lifecycle.mark_stopped()
         return 1
@@ -440,6 +456,7 @@ def main(argv: list[str] | None = None, loaded: LoadedConfig | None = None) -> i
                 log.warning("关闭阶段失败（继续后续清理）: %s", name, exc_info=True)
 
         _step("停止托盘", lambda: tray_ref["tray"].stop() if tray_ref["tray"] else None)
+        _step("关闭托盘 HTTP client", lambda: tray_http.close())
         # lifespan 关闭：取消 Collector/GPU 任务并等待在途采样结束，最后关 SQLite
         _step("停止 FastAPI/Collector/GPU/SQLite", lambda: stop_uvicorn(server, uv_thread))
         _step("关闭窗口", lambda: ui["window"].destroy() if ui["window"] else None)

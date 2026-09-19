@@ -146,10 +146,25 @@ def _with_derived(row: dict) -> dict:
     return out
 
 
-def _recent_dates(days: int) -> list[str]:
-    """最近 days 个自然日（含今天）的 'YYYY-MM-DD' 列表，升序。"""
-    now = time.time()
+def _recent_dates(days: int, now: float | None = None) -> list[str]:
+    """最近 days 个自然日（含今天）的 'YYYY-MM-DD' 列表，升序。
+
+    AUDIT-ASYNC-005：now 可注入（与 /api/daily 的 cutoff 用同一个
+    collector.clock.now()，FakeClock 测试下两条路径日期窗口不再错位）。
+    """
+    if now is None:
+        now = time.time()
     return [local_date(now - i * 86400) for i in range(days - 1, -1, -1)]
+
+
+def _csv_safe_text(value) -> str:
+    """AUDIT-SEC-003：CSV 公式注入缓解——外部文本（GPU 名称/UUID 来自 nvidia-smi）
+    以 = + - @ 开头时前置单引号（Excel/LibreOffice 按文本处理，不解析公式）。
+    纯数字/日期字段不需要（csv.QUOTE_MINIMAL 已处理 , " 换行）。"""
+    s = "" if value is None else str(value)
+    if s[:1] in ("=", "+", "-", "@"):
+        return "'" + s
+    return s
 
 
 def _summary_shape(prompt: int, cached: int, output: int) -> dict:
@@ -287,7 +302,10 @@ def build_app(
                 try:
                     await collector.collect_once()
                 except Exception:
-                    pass
+                    # AUDIT-ASYNC-002：不再静默 pass——collect_once 内部若漏捕
+                    # （如 DB 层非 sqlite3 异常），每轮至少留一条 debug 日志，
+                    # 避免"数据悄悄不更新"却零日志
+                    logger.debug("周期采集异常（内部应已处理，双保险）", exc_info=True)
                 _refresh_app_state()
 
         app.state.collector_task = asyncio.create_task(_periodic())
@@ -301,7 +319,8 @@ def build_app(
                     try:
                         await gpu.poll_once()
                     except Exception:
-                        pass
+                        # AUDIT-ASYNC-002：同 _periodic，双保险留日志不静默
+                        logger.debug("GPU 周期轮询异常（内部应已处理，双保险）", exc_info=True)
 
             gpu_task = asyncio.create_task(_gpu_periodic())
 
@@ -310,12 +329,19 @@ def build_app(
         backup_task = None
         if auto_backup_enabled:
             async def _backup_periodic() -> None:
+                # AUDIT-DB-002：连续失败后退避到 1h（原实现每 60s 重试，备份盘长期
+                # 不可写时 backup_history 每天 1440 行 + 1440 条 error 事件无界累积）
+                consecutive_failures = 0
                 while True:
-                    await asyncio.sleep(CHECK_INTERVAL_SECONDS)
+                    sleep_s = CHECK_INTERVAL_SECONDS if consecutive_failures == 0 else 3600
+                    await asyncio.sleep(sleep_s)
                     try:
                         if await asyncio.to_thread(backup_mgr.is_due, auto_backup_interval_h):
                             result = await asyncio.to_thread(backup_mgr.create_backup, "automatic")
                             if result.success:
+                                if consecutive_failures > 0:
+                                    logger.info("自动备份恢复（此前连续失败 %d 次）", consecutive_failures)
+                                consecutive_failures = 0
                                 db.record_backup("automatic", result.path, result.size,
                                                  result.verified, success=True,
                                                  now=default_clock.now())
@@ -324,6 +350,7 @@ def build_app(
                                                  "rotated": result.rotated},
                                                 now=default_clock.now())
                             else:
+                                consecutive_failures += 1
                                 db.record_backup("automatic", result.path, None, False,
                                                  success=False, now=default_clock.now())
                                 db.record_event("backup_created", "error", "backup",
@@ -331,6 +358,7 @@ def build_app(
                                                  "error": result.error},
                                                 now=default_clock.now())
                     except Exception:
+                        consecutive_failures += 1
                         logger.warning("自动备份任务异常（不影响采集）", exc_info=True)
 
             backup_task = asyncio.create_task(_backup_periodic())
@@ -379,7 +407,10 @@ def build_app(
         db.checkpoint("PASSIVE")  # Phase 11：graceful shutdown 前 WAL 落盘（不用 TRUNCATE 高频）
         db.close()
 
-    app = FastAPI(title="LlamaMonitor", lifespan=lifespan)
+    # AUDIT-SEC-005：production 关闭 /docs、/openapi.json、/redoc（完整 API 清单
+    # 公开只是信息面暴露；写操作本就 loopback-only，无权限升级，但没必要留着）
+    app = FastAPI(title="LlamaMonitor", lifespan=lifespan,
+                  docs_url=None, redoc_url=None, openapi_url=None)
 
     # 前端静态文件（/static/echarts.min.js、/static/index.html 等）
     if _STATIC_DIR.is_dir():
@@ -480,7 +511,7 @@ def build_app(
             "schema_version": schema_version,
         }
 
-    @app.get("/api/config")
+    @app.get("/api/config", dependencies=[Depends(_require_loopback)])
     async def api_config() -> dict:
         """
         当前生效配置（Settings 页面初始化用）。
@@ -488,6 +519,10 @@ def build_app(
         显式选择已知字段（经 config.py 校验后的有效值），不直接返回原始文件
         （未知字段不暴露）；paths 为后端确定的实际路径。
         前端不得硬编码默认值——默认值只由 config.py 定义。
+
+        AUDIT-SEC-001：loopback-only——响应含 4 个完整本地路径（C:\\Users\\<用户>...）
+        与 llama_server.url；远程只读客户端只需要 status/summary/metrics 视图，
+        不该拿到本地路径信息（web.host 改 0.0.0.0 时的暴露面）。
         """
         if loaded is None:
             raise HTTPException(status_code=404, detail="config not loaded")
@@ -837,6 +872,14 @@ def build_app(
         数字为原始整数（不做 1.2M 缩写），日期 YYYY-MM-DD。
         """
         rows = db.get_daily_usage() if Path(db.path).is_file() else []
+        # AUDIT-DB-003：同 /api/daily——live 样本一次取全按日分组（避免逐日全量扫）
+        try:
+            all_live = db.get_live_samples(hours=None)
+        except Exception:
+            all_live = []
+        live_by_date: dict[str, list] = {}
+        for s in all_live:
+            live_by_date.setdefault(local_date(s["timestamp"]), []).append(s)
         buf = io.StringIO()
         writer = csv.writer(buf)
         writer.writerow([
@@ -853,7 +896,7 @@ def build_app(
             draft = r.get("draft_tokens") or 0
             accepted = r.get("accepted_tokens") or 0
             rate = round(accepted / draft * 100.0, 2) if draft > 0 else ""
-            q = _day_quality(r.get("date")) if r.get("date") else {
+            q = _day_quality(r.get("date"), live_by_date.get(r.get("date"), [])) if r.get("date") else {
                 "monitoring_coverage_percent": None, "gap_count": 0,
                 "possible_token_loss": False,
             }
@@ -896,7 +939,9 @@ def build_app(
         ])
         for r in rows:
             writer.writerow([
-                r["date"], r["gpu_uuid"], r["gpu_name"],
+                r["date"],
+                _csv_safe_text(r["gpu_uuid"]),   # AUDIT-SEC-003：外部文本（nvidia-smi）
+                _csv_safe_text(r["gpu_name"]),
                 round(r["utilization_sum"] / r["utilization_count"], 2) if r["utilization_count"] else "",
                 r["utilization_max"] if r["utilization_max"] is not None else "",
                 round(r["memory_used_sum_mb"] / r["memory_used_count"], 1) if r["memory_used_count"] else "",
@@ -1034,12 +1079,10 @@ def build_app(
         """
         now = collector.clock.now()
         today = local_date(now)
-        first_ts, last_ts = db.get_first_and_last_sample()
-        # 当天首/末有效样本
-        samples = db.get_live_samples(hours=None)
-        today_samples = [s for s in samples if local_date(s["timestamp"]) == today]
-        today_first = today_samples[0]["timestamp"] if today_samples else None
-        today_last = today_samples[-1]["timestamp"] if today_samples else None
+        # 当天首/末有效样本（AUDIT-DB-003 同类扩展：按日范围索引查询；
+        # 原实现每次轮询取全部 live_samples 再 Python 过滤——~3.4万行/轮，
+        # 且顺带删掉了未使用的 get_first_and_last_sample() 调用）
+        today_first, today_last = db.get_day_sample_bounds(today)
         # 覆盖率：窗口 = 当天首样本 -> 当天末样本（或现在，若当天仍在监控）
         coverage = None
         if today_first is not None:
@@ -1189,7 +1232,7 @@ def build_app(
     # Phase 10：应用集成（托盘 / 单实例 / 开机自启 / 打开文件夹 / 退出）
     # ------------------------------------------------------------------
 
-    @app.get("/api/app/integration")
+    @app.get("/api/app/integration", dependencies=[Depends(_require_loopback)])
     async def api_app_integration() -> dict:
         """
         Windows 集成状态（Settings -> Application）：platform / frozen /
@@ -1197,6 +1240,10 @@ def build_app(
         来自**真实注册表**，不是 config.json 的假设值）。
 
         桌面模式由 desktop.py 注入 provider；浏览器模式 / 测试返回降级值。
+
+        AUDIT-SEC-002：loopback-only——暴露 executable 路径、app_data 路径、
+        autostart.command（注册表完整命令行，含 EXE 路径）与 Python 版本；
+        这些是本地实现细节，不属于"远程只读视图"。
         """
         if app_state is not None and app_state.integration_provider is not None:
             return app_state.integration_provider()
@@ -1375,7 +1422,7 @@ def build_app(
         )
         return {"today": today_sum, "total": total_sum}
 
-    def _day_quality(date: str) -> dict:
+    def _day_quality(date: str, day_samples: list | None = None) -> dict:
         """
         某自然日的 Monitoring Coverage / 缺口统计（Phase 11）。
 
@@ -1388,14 +1435,19 @@ def build_app(
           运行过监控——daily 行就是证据；已知缺口按实际时长扣减）；
         - 无任何数据：coverage = null。
         now 取自 collector.clock（与数据时间戳同源）。
+
+        AUDIT-DB-003：day_samples 可预传（按日分组好的样本）——原实现在**每次调用**
+        都全量加载 live_samples 再过滤，/api/daily 对 30 天循环 => 30 次全量扫描
+        （48h 保留下每次 ~1.7 万行）。调用方在循环外取一次并分组后传入。
         """
         now = collector.clock.now()
         today = local_date(now)
-        try:
-            samples = db.get_live_samples(hours=None)
-        except Exception:
-            samples = []
-        day_samples = [s for s in samples if local_date(s["timestamp"]) == date]
+        if day_samples is None:
+            try:
+                all_samples = db.get_live_samples(hours=None)
+            except Exception:
+                all_samples = []
+            day_samples = [s for s in all_samples if local_date(s["timestamp"]) == date]
         gap_stats = db.get_gap_stats(date)
         coverage = None
         if day_samples:
@@ -1430,10 +1482,18 @@ def build_app(
         """
         cutoff = local_date(collector.clock.now() - (days - 1) * 86400)
         rows = [r for r in db.get_daily_usage() if r["date"] >= cutoff]
+        # AUDIT-DB-003：live 样本一次取全、按日分组（原实现在循环内每天全量扫一次）
+        try:
+            all_live = db.get_live_samples(hours=None)
+        except Exception:
+            all_live = []
+        live_by_date: dict[str, list] = {}
+        for s in all_live:
+            live_by_date.setdefault(local_date(s["timestamp"]), []).append(s)
         out = []
         for r in rows:
             row = _with_derived(r)
-            row.update(_day_quality(r["date"]))
+            row.update(_day_quality(r["date"], live_by_date.get(r["date"], [])))
             out.append(row)
         return {"days": out}
 
@@ -1493,7 +1553,7 @@ def build_app(
         """
         rows = {r["date"]: r for r in db.get_daily_usage()}
         days_out = []
-        for date in _recent_dates(days):
+        for date in _recent_dates(days, now=collector.clock.now()):  # AUDIT-ASYNC-005
             row = rows.get(date) or {}
             draft = row.get("draft_tokens", 0) or 0
             accepted = row.get("accepted_tokens", 0) or 0

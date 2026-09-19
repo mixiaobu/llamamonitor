@@ -954,11 +954,8 @@ function applySummary(data) {
   $("totalCached").textContent = fmtCompact(s.cached_tokens);
   const denom = (s.prompt_tokens || 0) + (s.cached_tokens || 0);
   $("cacheRatio").textContent = denom > 0 ? fmtRate((s.cached_tokens || 0) / denom * 100) : "--";
-  // MTP 卡：今日（来自 summary 的 draft/accepted 不在其中，改用今日 daily 行的接受率）
-  if (state.dailyData.length) {
-    const todayRow = state.dailyData[state.dailyData.length - 1];
-    setStat("statMtp", fmtRate(todayRow && todayRow.mtp_accept_rate));
-  }
+  /* AUDIT-DATA-002：statMtp 统一由 /api/mtp（今日口径）驱动——
+     原来这里取 /api/daily 最后一行，今日无数据时会把"昨天"的接受率当"今日"显示 */
 }
 
 /* ================= 图表 ================= */
@@ -1126,7 +1123,7 @@ function renderTable() {
   const rows = state.dailyData.slice().reverse(); // 最新在上
   tbody.innerHTML = rows.map((r) =>
     "<tr>" +
-    "<td>" + r.date + "</td>" +
+    "<td>" + escapeHtml(r.date) + "</td>" +  // AUDIT-WEB-005
     "<td>" + fmtCompact(r.prompt_tokens) + "</td>" +
     "<td>" + fmtCompact(r.cached_tokens) + "</td>" +
     "<td>" + fmtCompact(r.output_tokens) + "</td>" +
@@ -1142,10 +1139,27 @@ function renderTable() {
    中（30s）：/api/summary、/api/live（60 分钟）
    慢（120s）：/api/daily（每日历史 + MTP 趋势 + 表格）
    OFFLINE 时历史数据保留原样，不清空图表。 */
-async function fetchJson(url) {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(url + " -> " + res.status);
-  return res.json();
+/* AUDIT-WEB-003：统一 30s 超时（AbortController）——后端 hang 时本轮按失败结束，
+   轮询循环不会停摆、顶栏数据不会静默过期到永远。 */
+async function fetchJson(url, timeoutMs = 30000) {
+  const ctrl = new AbortController();
+  const to = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { signal: ctrl.signal });
+    if (!res.ok) throw new Error(url + " -> " + res.status);
+    return await res.json();
+  } finally {
+    clearTimeout(to);
+  }
+}
+
+/* AUDIT-WEB-002：in-flight 互斥——同一 key 的上一次请求未返回时跳过本轮，
+   避免"手动点击（慢请求）+ 周期轮询"重叠导致旧结果覆盖新选择。 */
+const _inflight = new Set();
+async function onceInFlight(key, fn) {
+  if (_inflight.has(key)) return null;
+  _inflight.add(key);
+  try { return await fn(); } finally { _inflight.delete(key); }
 }
 
 async function refreshStatus() {
@@ -1177,6 +1191,9 @@ async function refreshLive() {
 }
 
 async function refreshDaily() {
+  await onceInFlight("daily", _refreshDaily);  // AUDIT-WEB-002
+}
+async function _refreshDaily() {
   try {
     const data = await fetchJson("/api/daily?days=" + state.lastDays);
     state.dailyData = data.days || [];
@@ -1298,6 +1315,9 @@ function renderGpuPick(detected) {
 }
 
 async function refreshGpuLive() {
+  await onceInFlight("gpuLive", _refreshGpuLive);  // AUDIT-WEB-002
+}
+async function _refreshGpuLive() {
   try {
     const d = await fetchJson("/api/gpu/live?minutes=" + gpuRangeMinutes);
     gpuLiveData = d;
@@ -1496,6 +1516,7 @@ async function refreshMtpDetail() {
     setStat("mtpDraft", d.draft_tokens);
     setStat("mtpAccepted", d.accepted_tokens);
     setStat("mtpSeqs", d.num_drafts);
+    setStat("statMtp", fmtRate(d.accept_rate));  // AUDIT-DATA-002：今日 MTP 接受率唯一来源
     lastMtpPositions = d.positions || [];
     drawMtpPosChart(lastMtpPositions);
   } catch (e) { /* 保留上次数据 */ }
@@ -1513,13 +1534,14 @@ function initRangeButtons() {
   });
 }
 
-/* 周期任务：固定间隔自调度，某次失败不影响后续轮次 */
+/* 周期任务：固定间隔自调度，某次失败不影响后续轮次。
+   AUDIT-WEB-007：ms 下限 1000ms（config 被写成 0 时不会变忙循环） */
 function every(ms, fn) {
   const loop = async () => {
     try { await fn(); } catch (e) { /* fn 内部已处理 */ }
-    setTimeout(loop, ms);
+    setTimeout(loop, Math.max(1000, ms));
   };
-  setTimeout(loop, ms);
+  setTimeout(loop, Math.max(1000, ms));
 }
 
 /* ================= 配置驱动 ================= */
@@ -1765,7 +1787,9 @@ async function loadGpuDetected() {
     cfgGpuDetected = { available: false, detected: [] };
   }
   // 进入 Settings 后按当前表单值重渲染勾选框
-  if ($("settingsView").hidden === false) {
+  // AUDIT-WEB-001：元素 id 是 settings-view（连字符）——原 $("settingsView") 返回 null，
+  // 首次进入 Settings 时 null.hidden 抛 TypeError，表单永不填充且每次进页重复报错
+  if ($("settings-view").hidden === false) {
     renderGpuDetected(cfgGpuDetected.detected, readGpuUuids(), cfgGpuDetected.available);
   }
 }
@@ -1880,14 +1904,9 @@ async function testConnection() {
   btn.textContent = "Test Connection";
 }
 
-/* ================= Data Management ================= */
-function fmtBytes(n) {
-  if (!n) return "0 B";
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  let i = 0, v = Number(n);
-  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
-  return v.toFixed(i ? 1 : 0) + " " + units[i];
-}
+/* ================= Data Management =================
+   AUDIT-WEB-004：原处重复定义的 fmtBytes 已删除（后定义会整体遮蔽先定义，
+   保留 Updates 区那个 null 安全版本，全文唯一）。 */
 
 async function refreshDataInfo() {
   const box = $("dataInfo");
@@ -1996,16 +2015,17 @@ async function refreshDataQuality() {
   }
   if (q) {
     const t = q.today;
+    // AUDIT-WEB-004：字段缺失时显示 -- / 0，不再出现 "undefined"（== 同时覆盖 null/undefined）
     const cov = t.monitoring_coverage_percent;
-    setDqValue("dqCoverage", cov === null ? "--" : cov.toFixed(1) + "%",
-      cov === null ? null : cov >= 99.9 ? "ok" : cov >= 95 ? "warn" : "bad");
-    setDqValue("dqGapsToday", String(t.gap_count),
-      t.gap_count === 0 ? "ok" : t.possible_token_loss ? "bad" : "warn");
+    setDqValue("dqCoverage", cov == null ? "--" : cov.toFixed(1) + "%",
+      cov == null ? null : cov >= 99.9 ? "ok" : cov >= 95 ? "warn" : "bad");
+    setDqValue("dqGapsToday", String(t.gap_count || 0),
+      (t.gap_count || 0) === 0 ? "ok" : t.possible_token_loss ? "bad" : "warn");
     $("dqLossToday").textContent = t.possible_token_loss
       ? "⚠ 存在可能 token 丢失的缺口" : "无 token 丢失缺口";
     $("dqLossToday").style.color = t.possible_token_loss ? "var(--offline)" : "";
-    setDqValue("dqGapsTotal", String(q.total.gap_count),
-      q.total.gap_count === 0 ? "ok" : q.total.possible_token_loss ? "bad" : "warn");
+    setDqValue("dqGapsTotal", String(q.total.gap_count || 0),
+      (q.total.gap_count || 0) === 0 ? "ok" : q.total.possible_token_loss ? "bad" : "warn");
     $("dqLastSample").textContent = fmtAgo(t.last_valid_sample_seconds_ago);
 
     const openEl = $("dqOpen");
@@ -2041,12 +2061,14 @@ function renderDqGapTable(gaps) {
     const loss = g.possible_token_loss
       ? '<span style="color:var(--offline);font-weight:600">Possible</span>'
       : '<span class="na">No</span>';
+    // AUDIT-WEB-004/005：start null 守卫（不再 Invalid Date）；
+    // source/reason 枚举回退值套 escapeHtml（后端自产值，防御性）
     return "<tr>" +
-      "<td>" + fmtTs(g.start) + "</td>" +
+      "<td>" + (g.start ? fmtTs(g.start) : "--") + "</td>" +
       "<td>" + (g.end ? fmtTs(g.end) : '<span class="na">…</span>') + "</td>" +
       "<td>" + fmtDur(g.duration_seconds) + "</td>" +
-      "<td>" + (GAP_SOURCE_LABELS[g.source] || g.source) + "</td>" +
-      "<td>" + (GAP_REASON_LABELS[g.reason] || g.reason) + "</td>" +
+      "<td>" + escapeHtml(GAP_SOURCE_LABELS[g.source] || g.source || "--") + "</td>" +
+      "<td>" + escapeHtml(GAP_REASON_LABELS[g.reason] || g.reason || "--") + "</td>" +
       "<td>" + loss + "</td>" +
       "</tr>";
   }).join("");
@@ -2469,20 +2491,23 @@ function renderUpdateStatus(st) {
 }
 
 async function loadUpdateStatus() {
-  try {
-    const st = await fetchJson("/api/update/status");
-    renderUpdateStatus(st);
-    return st;
-  } catch (e) {
-    return null;
-  }
+  return onceInFlight("updateStatus", async () => {  // AUDIT-WEB-002：上一轮未返回则跳过本轮，不叠加
+    try {
+      const st = await fetchJson("/api/update/status");
+      renderUpdateStatus(st);
+      return st;
+    } catch (e) {
+      return null;
+    }
+  });
 }
 
 function startUpdatePolling() {
   if (updatePollTimer) return;
   // §79：每 1s GET /api/update/status（loopback，开销极小；无 WebSocket）
+  // AUDIT-WEB-007：页面隐藏时暂停 1s 轮询（loopback 开销虽小，也不该白白跑）
   updatePollTimer = setInterval(() => {
-    if (currentView === "settings" && currentSection === "updates") loadUpdateStatus();
+    if (isVisible() && currentView === "settings" && currentSection === "updates") loadUpdateStatus();
   }, 1000);
 }
 
@@ -2546,7 +2571,10 @@ $("btnUpdateCancel").addEventListener("click", () => updateAction("cancel"));
 $("btnUpdateOpenFolder").addEventListener("click", () => openFolderTarget("updates"));
 $("btnUpdateOpenRelease").addEventListener("click", () => {
   const rel = lastUpdateStatus && lastUpdateStatus.release;
-  if (rel && rel.release_url) window.open(rel.release_url, "_blank");
+  // AUDIT-WEB-006：只放行 http(s) URL（release_url 来自 GitHub API，防御 javascript: 协议）
+  if (rel && rel.release_url && /^https?:\/\//i.test(rel.release_url)) {
+    window.open(rel.release_url, "_blank", "noopener");
+  }
 });
 $("btnBannerViewUpdate").addEventListener("click", () => {
   updateBannerDismissed = true;

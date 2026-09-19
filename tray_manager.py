@@ -200,6 +200,9 @@ class TrayManager:
             self._thread = None
         if self._updater is not None:
             self._updater.join(timeout=1.0)
+            if self._updater.is_alive():
+                # AUDIT-ASYNC-003：join 超时不能静默（刷新线程卡住 = 托盘状态停更）
+                logger.warning("托盘状态刷新线程未能在 1.0s 内退出")
             self._updater = None
         self._available = False
 

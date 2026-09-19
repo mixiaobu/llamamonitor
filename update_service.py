@@ -71,6 +71,11 @@ PENDING_MARKER_NAME = "pending_update.json"
 MAX_UPDATE_SIZE = 2 * 1024 * 1024 * 1024          # 2 GiB（§33：Installer 不可能需要这么大）
 DISK_SAFETY_MARGIN_BYTES = 500 * 1024 * 1024      # §34：额外 500 MB 余量
 RELEASE_NOTES_MAX_BYTES = 100 * 1024              # §46：release body 上限
+# AUDIT-SEC-003：update 检查链路上其余响应的字节上限（原实现除 installer 外全部无限制，
+# 恶意/损坏的 GitHub 资产可无限吃内存）：
+MAX_RELEASE_JSON_BYTES = 5 * 1024 * 1024          # /releases/latest（真实响应 ~10 KB）
+MAX_MANIFEST_BYTES = 1024 * 1024                  # release-manifest.json（真实 ~0.5 KB）
+MAX_SIGNATURE_BYTES = 64 * 1024                   # release-manifest.sig（Ed25519 签名 163 B）
 GITHUB_TIMEOUT_SECONDS = 10.0                     # §13
 USER_AGENT = f"{APP_NAME}/{__version__}"
 DOWNLOAD_CHUNK_SIZE = 1024 * 1024                 # §35：1 MB / chunk
@@ -117,6 +122,15 @@ def _is_rate_limited(resp: httpx.Response) -> bool:
         if remaining is not None and remaining.strip() == "0":
             return True
     return resp.status_code == 429
+
+
+def _file_sha256(path: Path) -> str:
+    """AUDIT-DATA-001：整文件 SHA-256（分块读）。Popen 前对已验证 installer 复验用。"""
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(DOWNLOAD_CHUNK_SIZE), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
 
 def get_installation_mode() -> str:
@@ -208,6 +222,10 @@ class UpdateService:
         self._total_bytes: int = 0
         self._verified_path: Path | None = None  # 已验证转正的 installer/zip
         self._last_check: float | None = None
+        # AUDIT-ASYNC-001：auto-download 任务的强引用。event loop 只持有 create_task
+        # 返回的 Task 的弱引用——不保存的话，下载中 GC 可能回收任务，状态卡在
+        # DOWNLOADING（409 UPDATE_BUSY），直到重启。
+        self._auto_download_task: asyncio.Task | None = None
 
     # ------------------------------------------------------------- 属性 / 状态
 
@@ -355,35 +373,47 @@ class UpdateService:
 
         async with self._client() as client:
             try:
-                resp = await client.get(url, headers=headers, timeout=GITHUB_TIMEOUT_SECONDS)
+                # AUDIT-SEC-003：流式读取 + MAX_RELEASE_JSON_BYTES 上限
+                # （原 `resp.json()` 无大小限制，恶意响应可无限吃内存）
+                async with client.stream("GET", url, headers=headers,
+                                         timeout=GITHUB_TIMEOUT_SECONDS) as resp:
+                    if resp.status_code == 304:
+                        # 无变化（§71 ETag）：Release 没变 -> 上次的验证结果依然有效，
+                        # 保留 UPDATE_AVAILABLE / READY_TO_INSTALL（已验证状态不因复查丢失）
+                        self._record_event("update_check", "info",
+                                           {"manual": manual, "result": "not_modified"})
+                        if prior_state in (UPDATE_AVAILABLE, READY_TO_INSTALL) and self._available is not None:
+                            self._set_state(prior_state, None)
+                        else:
+                            self._set_state(UP_TO_DATE, None)
+                        return
+
+                    if _is_rate_limited(resp):
+                        raise UpdateError("GitHub API rate limit reached. Try again later.",
+                                          code="RATE_LIMITED", transient=True)
+                    if resp.status_code == 404:
+                        raise UpdateError("No release found (repository or release does not exist).",
+                                          code="NOT_FOUND")
+                    if resp.status_code != 200:
+                        raise UpdateError(f"Unable to check for updates (GitHub API HTTP {resp.status_code}).",
+                                          code="NETWORK_ERROR", transient=True)
+
+                    body_chunks: list[bytes] = []
+                    total = 0
+                    async for chunk in resp.aiter_bytes():
+                        total += len(chunk)
+                        if total > MAX_RELEASE_JSON_BYTES:
+                            raise UpdateError("Update invalid: release response too large.",
+                                              code="BAD_RELEASE")
+                        body_chunks.append(chunk)
+                    release_body = b"".join(body_chunks)
             except httpx.HTTPError as exc:
                 raise UpdateError(f"Unable to check for updates ({type(exc).__name__}).",
                                   code="NETWORK_ERROR", transient=True) from exc
 
-            if resp.status_code == 304:
-                # 无变化（§71 ETag）：Release 没变 -> 上次的验证结果依然有效，
-                # 保留 UPDATE_AVAILABLE / READY_TO_INSTALL（已验证状态不因复查丢失）
-                self._record_event("update_check", "info",
-                                   {"manual": manual, "result": "not_modified"})
-                if prior_state in (UPDATE_AVAILABLE, READY_TO_INSTALL) and self._available is not None:
-                    self._set_state(prior_state, None)
-                else:
-                    self._set_state(UP_TO_DATE, None)
-                return
-
-            if _is_rate_limited(resp):
-                raise UpdateError("GitHub API rate limit reached. Try again later.",
-                                  code="RATE_LIMITED", transient=True)
-            if resp.status_code == 404:
-                raise UpdateError("No release found (repository or release does not exist).",
-                                  code="NOT_FOUND")
-            if resp.status_code != 200:
-                raise UpdateError(f"Unable to check for updates (GitHub API HTTP {resp.status_code}).",
-                                  code="NETWORK_ERROR", transient=True)
-
             try:
-                release = resp.json()
-            except ValueError as exc:
+                release = json.loads(release_body.decode("utf-8"))
+            except (ValueError, UnicodeDecodeError) as exc:
                 raise UpdateError("Update invalid: release response is not JSON.",
                                   code="BAD_RELEASE") from exc
 
@@ -407,9 +437,11 @@ class UpdateService:
                     code="MISSING_ASSETS",
                 )
 
-            # §21：下载 manifest + 签名（小文件，直接 GET）
-            manifest_bytes = await self._download_bytes(client, manifest_asset["browser_download_url"])
-            sig_bytes = await self._download_bytes(client, sig_asset["browser_download_url"])
+            # §21：下载 manifest + 签名（小文件，直接 GET；AUDIT-SEC-003：字节上限）
+            manifest_bytes = await self._download_bytes(
+                client, manifest_asset["browser_download_url"], MAX_MANIFEST_BYTES)
+            sig_bytes = await self._download_bytes(
+                client, sig_asset["browser_download_url"], MAX_SIGNATURE_BYTES)
 
             # §22 步骤 3：先用内置公钥验签，**成功后才解析 JSON**
             ok, key_id, err = verify_manifest_signature(manifest_bytes, sig_bytes)
@@ -506,9 +538,21 @@ class UpdateService:
             ):
                 try:
                     loop = asyncio.get_running_loop()
-                    loop.create_task(self._auto_download_guarded())
+                    task = loop.create_task(self._auto_download_guarded())
+                    # AUDIT-ASYNC-001：保存强引用（弱引用任务可能被 GC 中途回收）
+                    self._auto_download_task = task
+                    task.add_done_callback(self._on_auto_download_done)
                 except RuntimeError:
                     pass
+
+    def _on_auto_download_done(self, task: asyncio.Task) -> None:
+        """auto-download 结束：释放引用；异常已被 _auto_download_guarded 捕获，这里兜底。"""
+        self._auto_download_task = None
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc is not None:
+            logger.warning("auto-download task ended with %r", exc)
 
     async def _auto_download_guarded(self) -> None:
         try:
@@ -529,16 +573,27 @@ class UpdateService:
         # 国内网络常见需要代理访问 GitHub；无代理时行为不变）。
         return httpx.AsyncClient(follow_redirects=True, trust_env=True)
 
-    async def _download_bytes(self, client, url: str) -> bytes:
+    async def _download_bytes(self, client, url: str, max_bytes: int) -> bytes:
+        """下载小文件（manifest / .sig）。AUDIT-SEC-003：流式读取 + max_bytes 上限
+        （原 `resp.content` 无大小限制）。"""
         try:
-            resp = await client.get(url, timeout=60.0, follow_redirects=True)
+            async with client.stream("GET", url, timeout=60.0, follow_redirects=True) as resp:
+                if resp.status_code != 200:
+                    raise UpdateError(f"Unable to check for updates (HTTP {resp.status_code}).",
+                                      code="NETWORK_ERROR", transient=True)
+                chunks: list[bytes] = []
+                total = 0
+                async for chunk in resp.aiter_bytes():
+                    total += len(chunk)
+                    if total > max_bytes:
+                        raise UpdateError(
+                            f"Update invalid: asset too large (>{max_bytes // 1024} KB).",
+                            code="BAD_RELEASE")
+                    chunks.append(chunk)
         except httpx.HTTPError as exc:
             raise UpdateError(f"Unable to check for updates ({type(exc).__name__}).",
                               code="NETWORK_ERROR", transient=True) from exc
-        if resp.status_code != 200:
-            raise UpdateError(f"Unable to check for updates (HTTP {resp.status_code}).",
-                              code="NETWORK_ERROR", transient=True)
-        return resp.content
+        return b"".join(chunks)
 
     # ------------------------------------------------------------- 下载
 
@@ -665,6 +720,14 @@ class UpdateService:
                                        {"filename": filename, "code": exc.code,
                                         "message": exc.message})
                 return self.status()
+            except asyncio.CancelledError:
+                # AUDIT-WIN-003：应用 shutdown 取消下载任务时（CancelledError 是
+                # BaseException，不进下面两个 except 分支）——清理 .part、状态回到
+                # 非 busy（原来 .part 要等 24h startup 清理、状态卡在 DOWNLOADING）。
+                self._cleanup_part(part)
+                if self._state == DOWNLOADING:
+                    self._set_state(UPDATE_AVAILABLE, "Download interrupted.")
+                raise
             except (httpx.HTTPError, OSError) as exc:
                 self._cleanup_part(part)
                 self._set_state(ERROR, f"Download failed ({type(exc).__name__}).")
@@ -745,6 +808,27 @@ class UpdateService:
                     code="DB_UNHEALTHY",
                 )
 
+            # AUDIT-DATA-001（TOCTOU）：Popen 前对已验证 installer 重算 SHA-256 并比对
+            # manifest 值——原实现只有 is_file() 检查，READY_TO_INSTALL -> Popen 窗口内
+            # 本地进程可替换 updates\{version}\*.exe。不匹配 = 不启动（fail-closed）。
+            # 放在 backup/marker 之前：复验失败不做无用的备份与标记。
+            expected_sha = (self._available or {}).get("installer", {}).get("sha256", "")
+            if expected_sha:
+                try:
+                    actual_sha = await asyncio.to_thread(_file_sha256, self._verified_path)
+                except OSError as exc:
+                    raise UpdateError(f"Verified installer unreadable before launch: {exc}",
+                                      code="NOT_READY") from exc
+                if actual_sha.lower() != expected_sha.lower():
+                    self._record_event("update_install_aborted", "warning",
+                                       {"stage": "toctou_rehash",
+                                        "expected": expected_sha, "actual": actual_sha})
+                    raise UpdateError(
+                        "Update verification failed: installer changed after download "
+                        "(SHA-256 mismatch before launch).",
+                        code="HASH_MISMATCH",
+                    )
+
             # §47/§48：Pre-Update Backup（独立连接 / 安全复制；失败不启动 Installer）
             backups_dir = self._backups_dir()
             stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -772,7 +856,8 @@ class UpdateService:
                                   code="BACKUP_FAILED") from exc
 
             # §55/§56：启动已验证 Installer（列表参数、无 shell；/SILENT 有安装反馈、
-            # 不用 /VERYSILENT；/NORESTART 不允许自动重启）
+            # 不用 /VERYSILENT；/NORESTART 不允许自动重启）。
+            # 注意：installer 的 SHA-256 复验已在 backup/marker 之前完成（AUDIT-DATA-001）。
             args = [str(self._verified_path), "/SILENT", "/NORESTART"]
             args.append("/APPUPDATE_BG" if self._is_background() else "/APPUPDATE")
             try:

@@ -7,6 +7,46 @@
 > 互相视为"不同系列"：安装器降级保护按数值比较（1.0.0 > 0.13.x），从 1.0.0 安装
 > 0.13.x 会被识别为降级并拒绝（实测行为，非缺陷）。
 
+## [0.14.0] - 2026-09-19
+
+Pre-1.0 全项目审计修复版（Phase 14，Release Candidate——非 1.0.0）。
+全部修复带 Finding ID（`AUDIT-*`）与回归测试，详见
+[`docs/AUDIT_REPORT.md`](docs/AUDIT_REPORT.md)（1 HIGH + 13 MEDIUM +
+16 LOW 修复；测试 370 → 396+ 例）。
+
+### 修复（节选，完整版见 AUDIT_REPORT.md）
+- **HIGH**：Settings 视图选择器笔误（`settingsView` → `settings-view`，
+  设置页此前从未显示）。
+- **更新安全**：GitHub 响应大小上限（release JSON 5MB / manifest 1MB /
+  sig 64KB，流式读取）；安装器 Popen 前 SHA-256 复验（TOCTOU 窗口内被替换
+  的文件绝不启动）；下载任务 cancel 时清理 `.part` 并恢复状态；
+  自动下载任务强引用（防 GC 中途回收）。
+- **API 安全**：`GET /api/config`、`GET /api/app/integration` 改回环-only
+  （非回环 403）；关闭 `/docs`/`/redoc`/`/openapi.json` 暴露面；
+  CSV 导出公式注入缓解；只读 file URI 对空格/中文 percent-encode。
+- **数据库**：只读写失败时 health 置 unavailable（/api/health 如实反映）
+  且恢复后自动回 healthy；`/api/daily`、`/api/data/quality`、CSV 导出改
+  单次取数 + 按日分组（原 O(天×行) 全表扫）；monitor_events 行数硬上限
+  100,000（单条范围 DELETE）；backup_history 行数上限 1,000；
+  备份失败退避 3600s（原 60s 刷屏）；迁移矩阵补 v2/v3 带数据 fixture；
+  pre_migration/pre_update 备份出现在备份列表（独立 kind，不参与轮转）。
+- **GPU**：nvidia-smi 子进程 cancel 时 kill+wait（不再孤儿）；
+  能耗积分要求两侧功率都非 None（不再把缺失当 0W）；
+  写失败回滚能耗 baseline（不再双计/漏计）。
+- **前端**：fetch 30s 超时（AbortController）；轮询 in-flight 去重；
+  MTP 卡片单一数据源；轮询间隔下限 1s + 窗口隐藏降频；
+  表格渲染 escapeHtml + 外链 `noopener` 防护。
+- **生命周期**：线程 join 超时 WARNING；周期任务异常 debug 日志；
+  httpx keepalive 与轮询间隔联动；托盘轮询单 client 复用；
+  按日缺口窗口 DST 安全（timedelta 而非 +86400）。
+
+### 文档
+- 新增 `docs/AUDIT_REPORT.md`（审计发现/修复/接受风险/发布门）、
+  `docs/API.md`（端点全清单 + 访问控制）、
+  `docs/METRICS_DEFINITIONS.md`（指标精确定义）、
+  `docs/STORAGE_ESTIMATE.md`（存储占用实测与增长模型）；
+  README 同步（schema v4、回环-only 端点清单、文档索引）。
+
 ## [0.13.1] - 2026-09-19
 
 安全更新（Phase 13）部署修复版：

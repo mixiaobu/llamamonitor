@@ -38,6 +38,9 @@ logger = logging.getLogger("llamamonitor.backup")
 AUTO_PREFIX = "auto_monitor_"
 MANUAL_PREFIX = "manual_monitor_"
 LEGACY_PREFIX = "monitor_"   # Phase 8 旧格式（保留展示，不参与轮转）
+# 特殊恢复点（不参与轮转；AUDIT-DB-005 起也出现在备份列表里，独立 kind）
+PRE_MIGRATION_PREFIX = "pre_migration_"
+PRE_UPDATE_PREFIX = "pre_update_"
 
 CHECK_INTERVAL_SECONDS = 60.0  # 后台检查周期（秒）：只 stat 文件，开销可忽略
 
@@ -96,6 +99,10 @@ class BackupManager:
             if f.is_file() and f.suffix == ".db" and (
                 f.name.startswith(AUTO_PREFIX) or f.name.startswith(MANUAL_PREFIX)
                 or f.name.startswith(LEGACY_PREFIX)
+                # AUDIT-DB-005：pre-migration / pre-update 特殊恢复点也出现在备份列表
+                # （独立 kind）——它们之前对用户完全不可见；轮转仍只看 auto_*（不变）。
+                or f.name.startswith(PRE_MIGRATION_PREFIX)
+                or f.name.startswith(PRE_UPDATE_PREFIX)
             )
         ]
 
@@ -216,7 +223,8 @@ class BackupManager:
     # ---------- 列表 ----------
 
     def list_backups(self) -> list[dict]:
-        """备份列表（新 -> 旧）：name / size / mtime / kind（automatic/manual/legacy）。"""
+        """备份列表（新 -> 旧）：name / size / mtime / kind
+        （automatic/manual/pre_migration/pre_update/legacy）。"""
         out = []
         for f in self._all_backups():
             try:
@@ -227,6 +235,10 @@ class BackupManager:
                 kind = "automatic"
             elif f.name.startswith(MANUAL_PREFIX):
                 kind = "manual"
+            elif f.name.startswith(PRE_MIGRATION_PREFIX):
+                kind = "pre_migration"   # AUDIT-DB-005
+            elif f.name.startswith(PRE_UPDATE_PREFIX):
+                kind = "pre_update"      # AUDIT-DB-005
             else:
                 kind = "legacy"
             out.append({"name": f.name, "size": st.st_size, "mtime": int(st.st_mtime), "kind": kind})

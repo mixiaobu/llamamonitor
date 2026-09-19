@@ -202,6 +202,30 @@ class InstallFlowTests(_Base):
                          "备份失败时不写 pending marker")
 
 
+class ToctouRegressionTests(_Base):
+    """Phase 14 审计回归（AUDIT-DATA-001）。"""
+
+    def test_install_rehash_rejects_tampered_installer(self):
+        """Popen 前重算 SHA-256：READY_TO_INSTALL -> Popen 窗口内 installer 被替换
+        -> 不匹配绝不启动（fail-closed）。"""
+        _seed_history(self.db)
+        svc = self._svc(mode="installed", request_exit=lambda: True)
+        self._check_and_download(svc)
+        verified = svc.verified_path
+        self.assertIsNotNone(verified)
+        verified.write_bytes(verified.read_bytes() + b"TAMPERED")
+        with mock.patch("update_service.subprocess.Popen") as popen:
+            try:
+                run(svc.install())
+                self.fail("应抛出 HASH_MISMATCH")
+            except Exception as exc:
+                self.assertIn("HASH_MISMATCH", getattr(exc, "code", "") or str(exc))
+                self.assertIn("changed after download", str(exc))
+            self.assertEqual(popen.call_count, 0, "复验失败绝不能启动 Installer")
+        self.assertFalse((self.updates / PENDING_MARKER_NAME).exists(),
+                         "复验失败时不写 pending marker（在 Popen 前拦截）")
+
+
 class PreUpdateBackupTests(_Base):
     def test_backup_creates_verified_db_and_config(self):
         _seed_history(self.db)

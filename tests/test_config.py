@@ -318,6 +318,7 @@ class ApiConfigTests(unittest.TestCase):
         from fastapi.testclient import TestClient
 
         from collector import MetricsCollector
+        from configutil import loopback_app
         from server import build_app
 
         cfg = make_config()
@@ -325,9 +326,31 @@ class ApiConfigTests(unittest.TestCase):
         self._dbs.append(db)
         collector = MetricsCollector(cfg, db)
         app = build_app(db, collector, loaded)
-        client = TestClient(app)
+        # AUDIT-SEC-001：GET /api/config 现在 loopback-only，模拟本机请求
+        client = TestClient(loopback_app(app))
         client.__enter__()
         return client
+
+    def test_api_config_requires_loopback(self):
+        """AUDIT-SEC-001：非 loopback 客户端 GET /api/config -> 403
+        （响应含本地路径/llama 地址，web.host=0.0.0.0 时不该暴露给局域网）。"""
+        from fastapi.testclient import TestClient
+
+        from collector import MetricsCollector
+        from server import build_app
+
+        cfg = make_config()
+        loaded = make_loaded(cfg, self.tmp)
+        db = Database(self.tmp / "api_cfg_noloopback.db")
+        self._dbs.append(db)
+        collector = MetricsCollector(cfg, db)
+        app = build_app(db, collector, loaded)
+        client = TestClient(app)  # 裸 testclient = 非 loopback 地址
+        client.__enter__()
+        try:
+            self.assertEqual(client.get("/api/config").status_code, 403)
+        finally:
+            client.__exit__(None, None, None)
 
     def test_api_config_shape_and_status_config_block(self):
         cfg = make_config()

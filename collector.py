@@ -77,6 +77,10 @@ CORE_COUNTERS = (
 # 缺口判定阈值倍数：相邻有效样本（monotonic）间隔 > poll_interval * 该值 -> 已知缺口
 GAP_THRESHOLD_FACTOR = 3.0
 
+# AUDIT-DATA-003：/metrics 响应大小上限（16 MB）。正常 llama-server 的 /metrics
+# 只有几 KB；超过即视为异常响应（防御性上限），按离线处理，保护 LlamaMonitor 内存。
+MAX_METRICS_BYTES = 16 * 1024 * 1024
+
 # llama.cpp 指标全名 -> 快照键名
 # 键名与后续阶段 UI / 数据库使用的字段保持一致；缺失的指标一律为 None。
 _METRIC_KEYS: dict[str, str] = {
@@ -328,7 +332,14 @@ class MetricsCollector:
         except RuntimeError:
             loop = None
         if self._http is None or self._http_loop is not loop:
-            self._http = httpx.AsyncClient(timeout=self.timeout)
+            # AUDIT-ASYNC-004：keepalive 过期时间必须显著大于采集间隔——默认 5s 与
+            # 常见 5s 间隔相等，导致每轮 TCP 全重连（稳态 ~48 个 TIME_WAIT/小时）。
+            # 下限 30s，并覆盖 interval 的 4 倍（interval 大时 keep-alive 仍然有效）。
+            keepalive = max(30.0, self.interval * 4)
+            self._http = httpx.AsyncClient(
+                timeout=self.timeout,
+                limits=httpx.Limits(keepalive_expiry=keepalive),
+            )
             self._http_loop = loop
         return self._http
 
@@ -393,11 +404,27 @@ class MetricsCollector:
 
         成功返回 parse_metrics 结果；任何失败（网络错误/超时/非 200）返回 None（按离线处理）。
         测试中可用同名属性覆盖此方法来注入固定文本。
+
+        AUDIT-DATA-003：流式读取 + MAX_METRICS_BYTES 上限——原 `response.text` 无大小
+        限制，异常 metrics server 一次返回数 GB 会把 LlamaMonitor 内存打爆。
         """
         try:
-            response = await self._get_client().get(self.metrics_url)
-            response.raise_for_status()
-            return parse_metrics(response.text)
+            client = self._get_client()
+            async with client.stream("GET", self.metrics_url) as response:
+                response.raise_for_status()
+                chunks: list[bytes] = []
+                total = 0
+                async for chunk in response.aiter_bytes():
+                    total += len(chunk)
+                    if total > MAX_METRICS_BYTES:
+                        logger.warning(
+                            "/metrics 响应超过 %.0f MB 上限，按离线处理: %s",
+                            MAX_METRICS_BYTES / 1048576, self.metrics_url,
+                        )
+                        return None
+                    chunks.append(chunk)
+            text = b"".join(chunks).decode("utf-8", "replace")
+            return parse_metrics(text)
         except Exception:
             return None
 
@@ -539,7 +566,16 @@ class MetricsCollector:
                 )
 
         # 4) 持久化（单事务；失败 -> 保持旧 baseline，下轮重算完整 delta）
-        if self.db is not None and self.db.health in ("corrupt", "unavailable", "incompatible"):
+        # AUDIT-SEC-004：unavailable 若由**本进程写失败**触发（last_db_error 非空），
+        # 必须继续尝试写——否则 protective mode 会跳过 persist，恢复分支永远执行不到，
+        # 状态永久卡死。unavailable 来自启动 quick_check（last_db_error 为空）时保持
+        # 原来的只读保护。
+        write_blocked = (
+            self.db is not None
+            and self.db.health in ("corrupt", "unavailable", "incompatible")
+            and self.last_db_error is None
+        )
+        if write_blocked:
             # protective mode：数据库不健康 -> 只读展示，停止修改类写（状态转换才记日志）
             if not getattr(self, "_protective_logged", False):
                 logger.error("数据库处于 %s 状态（protective mode）：暂停写入，只读继续",
@@ -556,12 +592,28 @@ class MetricsCollector:
                 # 数据库从错误中恢复：上一轮写失败、本轮成功
                 if self.last_db_error is not None:
                     logger.info("数据库写入恢复（上轮失败: %r）", self.last_db_error)
+                    # AUDIT-SEC-004：配对恢复——上轮因只读置为 unavailable 的 health
+                    # 在本轮写成功后回到 healthy（protective mode 自动解除）
+                    if self.db.health == "unavailable":
+                        self.db.set_health("healthy", None)
                     self.db.record_event("database_recovery", "info", "collector",
                                          {"previous_error": repr(self.last_db_error)}, now=now_wall)
                     self.last_db_error = None
             except Exception as exc:
                 self.last_db_error = exc
                 logger.warning("数据库写入失败（重试后仍失败），本轮跳过落盘、保持旧 baseline: %r", exc)
+                # AUDIT-SEC-004："read-only database" 是持续状态（如整个数据目录被
+                # 设为只读 / 磁盘满），原实现 health 永远保持 "healthy"，/api/health
+                # 一直报 healthy 而数据实际全部丢失——现在更新健康状态。
+                # （事件写入在只读库上也会失败，静默忽略：health 状态本身就是信号）
+                if "readonly" in str(exc).lower() and self.db is not None and self.db.health == "healthy":
+                    self.db.set_health("unavailable", f"database write failed: {exc!r}")
+                    logger.error("数据库进入持续只读状态：health 更新为 unavailable（/api/health 同步反映）")
+                    try:
+                        self.db.record_event("database_write_failure", "error", "collector",
+                                             {"error": repr(exc)}, now=now_wall)
+                    except Exception:
+                        pass
 
         # 5) monitor_restart 缺口：启动时置位 -> 首个有效样本时补记（上一进程断档）
         if self._restart_pending_since is not None:

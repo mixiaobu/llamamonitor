@@ -32,8 +32,9 @@ import os
 import sqlite3
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
+from urllib.parse import quote
 
 __all__ = [
     "Database",
@@ -52,11 +53,27 @@ __all__ = [
 
 logger = logging.getLogger("llamamonitor.db")
 
+
+def _readonly_file_uri(path: str) -> str:
+    """AUDIT-SEC-016：构建只读 file: URI（percent-encoded，Windows 安全）。
+
+    标准 Windows 形式 file:///C:/... （三斜杠 + 盘符 + 正斜杠路径），
+    路径部分 percent-encode（保留 / 分隔符），空格/中文/特殊字符不再破坏解析。
+    """
+    p = Path(path).as_posix()
+    if len(p) >= 2 and p[1] == ":":
+        uri = "file:///" + p[0] + ":" + quote(p[2:], safe="/")
+    else:
+        uri = "file:" + quote(p, safe="/")
+    return uri + "?mode=ro"
+
 # Phase 11：写锁 / 健康 / 事件保留
 BUSY_TIMEOUT_MS = 5000          # PRAGMA busy_timeout（短暂锁等待上限；不做无限 retry）
 TX_RETRY_DELAYS = (0.05, 0.10, 0.20)   # SQLITE_BUSY / "database is locked" 有限重试
 EVENT_RETENTION_DAYS = 365      # monitor_events 保留天数（data_gaps 永久保留）
 EVENT_RETENTION_MAX_ROWS = 100000  # 事件表行数硬上限（双保险，优先按天数）
+# AUDIT-DB-002：backup_history 行数上限（元数据表，文件系统才是备份本体）
+BACKUP_HISTORY_MAX_ROWS = 1000
 
 # 数据库健康状态
 DB_HEALTH_HEALTHY = "healthy"
@@ -426,9 +443,11 @@ class Database:
                     db_version, CURRENT_SCHEMA_VERSION,
                 )
                 conn.close()
-                # 只读连接：file URI（Windows 路径转正斜杠）；读取 WAL 库时
-                # SQLite 会自动包含已存在的 -wal/-shm 内容
-                uri = "file:" + self.path.replace("\\", "/") + "?mode=ro"
+                # 只读连接：file URI；读取 WAL 库时 SQLite 会自动包含已存在的
+                # -wal/-shm 内容。AUDIT-SEC-016：路径 percent-encode（用户数据库路径
+                # 可含空格/中文/特殊字符，裸 file:C:/... 遇到空格/引号等会解析失败
+                # 或被误解，导致降级保护路径本身打不开库）。
+                uri = _readonly_file_uri(self.path)
                 conn = sqlite3.connect(uri, uri=True, timeout=BUSY_TIMEOUT_MS / 1000.0)
                 conn.row_factory = sqlite3.Row
                 conn.execute(f"PRAGMA busy_timeout = {BUSY_TIMEOUT_MS};")
@@ -682,6 +701,33 @@ class Database:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def get_day_sample_bounds(self, date: str) -> tuple[float | None, float | None]:
+        """
+        AUDIT-DB-003（同类扩展）：指定自然日的**首个/末个** live_sample 时间戳。
+
+        走 idx_live_samples_timestamp 范围扫描（当天行数 = 采样数，~1.7万行/天上限），
+        供 /api/data/quality 每次轮询使用——原实现每次轮询都取**全部** live_samples
+        （48h 保留 = ~3.4万行）再在 Python 里按 local_date 过滤。
+        边界用本地日期（与 daily_usage 归集完全同规则）；次日边界用
+        timedelta(days=1)（DST 回拨日 25h 不漏，同 AUDIT-ASYNC-006）。
+        当天无样本时返回 (None, None)。
+        """
+        start_dt = datetime.strptime(date, "%Y-%m-%d")
+        start_ts = start_dt.timestamp()
+        end_ts = (start_dt + timedelta(days=1)).timestamp()
+        conn = self._connect()
+        first = conn.execute(
+            "SELECT timestamp FROM live_samples WHERE timestamp >= ? AND timestamp < ? "
+            "ORDER BY timestamp ASC LIMIT 1",
+            (start_ts, end_ts),
+        ).fetchone()
+        last = conn.execute(
+            "SELECT timestamp FROM live_samples WHERE timestamp >= ? AND timestamp < ? "
+            "ORDER BY timestamp DESC LIMIT 1",
+            (start_ts, end_ts),
+        ).fetchone()
+        return (first[0] if first else None, last[0] if last else None)
+
     def get_mtp_position_daily(self, date: str) -> dict[str, int]:
         """
         指定日期的 per-position 接受数：{position: accepted_tokens}。
@@ -853,14 +899,20 @@ class Database:
 
     @staticmethod
     def _enforce_event_retention(conn: sqlite3.Connection, now_ts: int) -> None:
-        """monitor_events 保留 EVENT_RETENTION_DAYS 天 + 行数硬上限（data_gaps 不清理）。"""
+        """monitor_events 保留 EVENT_RETENTION_DAYS 天 + 行数硬上限（data_gaps 不清理）。
+
+        AUDIT-DB-003：行数上限的 DELETE 原来用 `id NOT IN (SELECT id ... ORDER BY id DESC
+        LIMIT N)`——子查询全表扫描 + NOT IN 匹配，事件表 10 万行时每次 record_event
+        都是 O(N)。现改为 `id < (SELECT MIN(id) FROM (最近 N 行))`：内层只走 PK 索引
+        取最近 N 行（O(N) 且 N 固定 10 万），外层是单条范围 DELETE。
+        """
         conn.execute(
             "DELETE FROM monitor_events WHERE timestamp < ?",
             (now_ts - EVENT_RETENTION_DAYS * 86400,),
         )
         conn.execute(
-            "DELETE FROM monitor_events WHERE id NOT IN "
-            "(SELECT id FROM monitor_events ORDER BY id DESC LIMIT ?)",
+            "DELETE FROM monitor_events WHERE id < "
+            "(SELECT MIN(id) FROM (SELECT id FROM monitor_events ORDER BY id DESC LIMIT ?))",
             (EVENT_RETENTION_MAX_ROWS,),
         )
 
@@ -933,9 +985,12 @@ class Database:
         """
         conn = self._connect()
         if date is not None:
-            from datetime import datetime as _dt
-            start_day = _dt.strptime(date, "%Y-%m-%d").timestamp()
-            end_day = start_day + 86400
+            start_dt = datetime.strptime(date, "%Y-%m-%d")
+            start_day = start_dt.timestamp()
+            # AUDIT-ASYNC-006：end_day = 次日本地 00:00（不是 start_day+86400）——
+            # DST 回拨日（如美东 11 月）当天有 25 小时，+86400 会漏掉落在
+            # 重复小时里的缺口。datetime + timedelta 按本地时区正确跨 DST。
+            end_day = (start_dt + timedelta(days=1)).timestamp()
             rows = conn.execute(
                 "SELECT * FROM data_gaps WHERE start_timestamp < ? AND end_timestamp >= ? "
                 "ORDER BY id DESC LIMIT ?",
@@ -983,7 +1038,11 @@ class Database:
         success: bool = True,
         now: float | None = None,
     ) -> None:
-        """写一条 backup_history（文件系统仍是最终备份来源，此表只是元数据）。"""
+        """写一条 backup_history（文件系统仍是最终备份来源，此表只是元数据）。
+
+        AUDIT-DB-002：同事务内做行数保留（最近 BACKUP_HISTORY_MAX_ROWS 条）——
+        原表无保留策略，备份盘持续不可写时每 60s 一次失败记录，1440 行/天无界增长。
+        """
         conn = self._connect()
         ts = int(now) if now is not None else int(time.time())
         try:
@@ -994,6 +1053,11 @@ class Database:
                         "INSERT INTO backup_history(timestamp, type, path, size, verified, success) "
                         "VALUES(?, ?, ?, ?, ?, ?)",
                         (ts, btype, path, size, 1 if verified else 0, 1 if success else 0),
+                    )
+                    conn.execute(
+                        "DELETE FROM backup_history WHERE id < "
+                        "(SELECT MIN(id) FROM (SELECT id FROM backup_history ORDER BY id DESC LIMIT ?))",
+                        (BACKUP_HISTORY_MAX_ROWS,),
                     )
 
             self._tx_with_retry(_do, what="record_backup")

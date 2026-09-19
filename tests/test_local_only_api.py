@@ -121,6 +121,14 @@ class LoopbackEnforcementTests(_Base):
             r = client.request(method, path, json=body) if body is not None else client.request(method, path)
             self.assertEqual(r.status_code, 403, f"{method} {path}")
 
+    def test_remote_local_info_endpoints_403(self):
+        """AUDIT-SEC-001/002：/api/config（本地路径+llama 地址）与
+        /api/app/integration（EXE 路径/autostart 注册表命令）是本地信息，
+        远程客户端 -> 403（web.host=0.0.0.0 时不泄露给局域网）。"""
+        client = self._client(host="192.168.1.50")
+        self.assertEqual(client.get("/api/config").status_code, 403)
+        self.assertEqual(client.get("/api/app/integration").status_code, 403)
+
     def test_loopback_ipv6_ok(self):
         client = self._client(host="::1")
         r = client.put("/api/config", json={"collector": {"poll_interval_seconds": 7}})

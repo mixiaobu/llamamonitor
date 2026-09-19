@@ -251,5 +251,138 @@ def _snapshot(p: Path) -> dict:
         conn.close()
 
 
+def _make_v2_db(path: Path) -> None:
+    """AUDIT-DB-008 fixture：v2 库（v1 + gpu 表 + v2 新列）带真实数据，user_version=2。"""
+    conn = sqlite3.connect(path)
+    conn.executescript(_SCHEMA_V1)
+    conn.execute("ALTER TABLE live_samples ADD COLUMN kv_cache_usage_ratio REAL")
+    conn.execute("ALTER TABLE live_samples ADD COLUMN busy_slots INTEGER")
+    conn.execute("ALTER TABLE daily_usage ADD COLUMN draft_sequences INTEGER NOT NULL DEFAULT 0")
+    conn.executescript(db_module._GPU_TABLES)
+    conn.execute("PRAGMA user_version = 2")
+    conn.execute("INSERT INTO state VALUES('llamacpp:prompt_tokens_total', 99999.0)")
+    conn.execute(
+        "INSERT INTO daily_usage(date, prompt_tokens, cached_tokens, output_tokens, "
+        "draft_tokens, accepted_tokens, prompt_seconds, predicted_seconds, draft_sequences) "
+        "VALUES('2026-08-01', 10, 2, 3, 0, 0, 0.5, 0.2, 0)"
+    )
+    conn.execute(
+        "INSERT INTO gpu_samples(timestamp, gpu_uuid, gpu_index, gpu_name, utilization_percent, "
+        "memory_used_mb, temperature_c, power_draw_w) "
+        "VALUES(1700000100, 'GPU-TEST-UUID', 0, 'Test GPU', 77.0, 1234.0, 61.0, 210.0)"
+    )
+    conn.execute(
+        "INSERT INTO gpu_daily(date, gpu_uuid, gpu_name, sample_count, "
+        "utilization_count, utilization_sum, utilization_max, energy_wh) "
+        "VALUES('2026-08-01', 'GPU-TEST-UUID', 'Test GPU', 5, 5, 385.0, 77.0, 0.5)"
+    )
+    conn.commit()
+    conn.close()
+
+
+def _make_v3_db(path: Path) -> None:
+    """AUDIT-DB-008 fixture：v3 库（v2 + 可靠性表）带真实数据，user_version=3。"""
+    _make_v2_db(path)
+    conn = sqlite3.connect(path)
+    conn.executescript(db_module._SCHEMA_V3)
+    conn.execute("PRAGMA user_version = 3")
+    conn.execute(
+        "INSERT INTO monitor_events(timestamp, event_type, severity, source, details_json) "
+        "VALUES(1700000000, 'counter_reset', 'warning', 'collector', '{}')"
+    )
+    conn.execute(
+        "INSERT INTO data_gaps(start_timestamp, end_timestamp, duration_seconds, "
+        "source, reason, token_recoverable, possible_token_loss, resolved) "
+        "VALUES(1700000000, 1700000060, 60.0, 'llama', 'server_offline', 1, 0, 1)"
+    )
+    conn.execute(
+        "INSERT INTO backup_history(timestamp, type, path, size, verified, success) "
+        "VALUES(1700000000, 'automatic', 'auto_monitor_x.db', 123, 1, 1)"
+    )
+    conn.commit()
+    conn.close()
+
+
+class V2V3MigrationFixtureTests(unittest.TestCase):
+    """AUDIT-DB-008：迁移矩阵原只有 fresh + legacy v0 fixture；
+    v2->v3 / v3->v4 的数据保留之前只由代码审查证明。本测试补上带真实数据的
+    逐级迁移回归网（未来在这两步加数据转换逻辑时立即有测试保护）。"""
+
+    def test_v2_db_with_data_migrates_to_v4_intact(self):
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td) / "v2.db"
+            _make_v2_db(p)
+            d = Database(p, wal=False)
+            try:
+                self.assertEqual(d.get_schema_version(), CURRENT_SCHEMA_VERSION)
+                conn = d._connect()
+                # v1 数据原样保留
+                self.assertEqual(
+                    conn.execute(
+                        "SELECT value FROM state WHERE metric_name='llamacpp:prompt_tokens_total'"
+                    ).fetchone()[0], 99999.0)
+                self.assertEqual(
+                    tuple(conn.execute(
+                        "SELECT prompt_tokens, cached_tokens, draft_sequences "
+                        "FROM daily_usage WHERE date='2026-08-01'").fetchone()),
+                    (10, 2, 0))
+                # v2 数据原样保留
+                self.assertEqual(
+                    tuple(conn.execute(
+                        "SELECT utilization_percent, memory_used_mb, power_draw_w "
+                        "FROM gpu_samples WHERE gpu_uuid='GPU-TEST-UUID'").fetchone()),
+                    (77.0, 1234.0, 210.0))
+                self.assertEqual(
+                    tuple(conn.execute(
+                        "SELECT sample_count, utilization_max, energy_wh "
+                        "FROM gpu_daily WHERE gpu_uuid='GPU-TEST-UUID'").fetchone()),
+                    (5, 77.0, 0.5))
+                # v3/v4 结构就位
+                self.assertIsNotNone(conn.execute(
+                    "SELECT name FROM sqlite_master WHERE name='app_state'").fetchone())
+                self.assertGreaterEqual(
+                    conn.execute(
+                        "SELECT COUNT(*) FROM monitor_events WHERE event_type='migration'"
+                    ).fetchone()[0], 2)
+            finally:
+                d.close()
+            # 重开 = no-op（版本不变、无新 migration 事件）
+            d2 = Database(p, wal=False)
+            try:
+                self.assertEqual(d2.get_schema_version(), CURRENT_SCHEMA_VERSION)
+            finally:
+                d2.close()
+
+    def test_v3_db_with_data_migrates_to_v4_intact(self):
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td) / "v3.db"
+            _make_v3_db(p)
+            d = Database(p, wal=False)
+            try:
+                self.assertEqual(d.get_schema_version(), CURRENT_SCHEMA_VERSION)
+                conn = d._connect()
+                # v3 数据原样保留
+                self.assertEqual(
+                    tuple(conn.execute(
+                        "SELECT timestamp, event_type, severity FROM monitor_events"
+                    ).fetchone()),
+                    (1700000000, "counter_reset", "warning"))
+                self.assertEqual(
+                    tuple(conn.execute(
+                        "SELECT duration_seconds, reason, resolved FROM data_gaps"
+                    ).fetchone()),
+                    (60.0, "server_offline", 1))
+                self.assertEqual(
+                    tuple(conn.execute(
+                        "SELECT type, size, verified FROM backup_history"
+                    ).fetchone()),
+                    ("automatic", 123, 1))
+                # v2 数据也还在（v3 库由 v2 升级而来）
+                self.assertEqual(
+                    conn.execute("SELECT COUNT(*) FROM gpu_samples").fetchone()[0], 1)
+            finally:
+                d.close()
+
+
 if __name__ == "__main__":
     unittest.main()

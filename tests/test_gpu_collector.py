@@ -19,6 +19,7 @@ Phase 9 测试：GpuCollector（能量梯形积分 / 睡眠间隙保护 / 过滤
 
 import asyncio
 import logging
+import sqlite3
 import tempfile
 import unittest
 from datetime import datetime, timedelta
@@ -319,6 +320,112 @@ def _poll_once_sync(self, snaps: list[GpuSnapshot]) -> list[GpuSnapshot]:
 
 
 GpuCollector.poll_once_sync = _poll_once_sync
+
+
+class AuditRegressionTests(unittest.TestCase):
+    """Phase 14 审计回归（AUDIT-WIN-001 / WIN-002 / DB-004）。"""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.cfg = make_config()
+        self.cfg.gpu.poll_interval_seconds = 5.0
+        self.db = Database(Path(self._tmp.name) / "audit.db", wal=False)
+
+    def tearDown(self):
+        self.db.close()
+        self._tmp.cleanup()
+
+    def _run(self, fn):
+        return asyncio.run(fn())
+
+    def test_prev_power_none_skips_segment(self):
+        """AUDIT-WIN-002：上一轮 power 缺失（N/A）时该段不积分（与 docstring 一致；
+        原实现把 None 当 0W 参与梯形积分，系统性低估能耗）。"""
+        row_na = "0, GPU-N1, X, 100, 2048, 50, [N/A], [N/A], 60, 1700, 9501, 3, 16"
+        row = "0, GPU-N1, X, 100, 2048, 50, [N/A], 300.0, 60, 1700, 9501, 3, 16"
+        c = _make_collector(self.cfg, self.db)
+        snaps0 = _snap(row_na, T0)
+        snaps0[0].power_draw_w = None
+        c.energy_deltas(snaps0, mono=T0)
+        snaps1 = _snap(row, T0 + 5)
+        snaps1[0].power_draw_w = 300.0
+        e = c.energy_deltas(snaps1, mono=T0 + 5)
+        total = sum(e.get("GPU-N1", {}).values())
+        self.assertEqual(total, 0.0)  # 原实现会算出 150*5/3600
+
+    def test_default_runner_cancel_kills_child(self):
+        """AUDIT-WIN-001：nvidia-smi 挂死期间任务被 cancel（shutdown）->
+        子进程被 kill、CancelledError 正常传播（不留孤儿进程）。"""
+        from gpu_collector import _default_runner
+
+        calls = {"kill": 0, "waited": False}
+
+        class FakeProc:
+            returncode = None
+
+            async def communicate(self, *a, **k):
+                await asyncio.sleep(30)
+                return b"", b""
+
+            def kill(self):
+                calls["kill"] += 1
+
+            async def wait(self):
+                calls["waited"] = True
+                return 0
+
+        async def scenario():
+            async def fake_exec(*a, **k):
+                return FakeProc()
+
+            with mock.patch("asyncio.create_subprocess_exec", fake_exec):
+                task = asyncio.create_task(_default_runner(["nvidia-smi"], timeout=5.0))
+                await asyncio.sleep(0.05)
+                task.cancel()
+                with self.assertRaises(asyncio.CancelledError):
+                    await task
+
+        self._run(scenario)
+        self.assertEqual(calls["kill"], 1)
+        self.assertTrue(calls["waited"])
+
+    def test_energy_baseline_rollback_on_write_failure(self):
+        """AUDIT-DB-004：GPU 写库失败时能量基线回滚——失败轮次那一段的能量
+        下一轮不丢失（与 token 采集器"写失败保持旧 baseline"语义一致）。"""
+        from clock import FakeClock
+
+        clock = FakeClock(start_wall=T0, start_mono=T0)
+        powers = [280.0, 300.0, 320.0]
+        state = {"fail_next": False}
+
+        async def runner(args, timeout):
+            row = "0, GPU-R1, X, 100, 2048, 50, [N/A], %.1f, 60, 1700, 9501, 3, 16" % powers[0]
+            powers.pop(0)
+            return 0, row
+
+        c = GpuCollector(self.cfg, self.db, runner=runner, clock=clock)
+        smi_patch = mock.patch("gpu_collector.find_nvidia_smi",
+                               return_value=Path("/fake/nvidia-smi"))
+        # 轮 1（280W，T0）：建立基线，写入成功
+        with smi_patch:
+            self._run(c.poll_once)
+        clock.advance(5)
+        # 轮 2（300W，T0+5）：写库失败 -> 基线应回滚到轮 1
+        with smi_patch, mock.patch.object(
+            self.db, "save_gpu_samples", side_effect=sqlite3.OperationalError("boom")
+        ):
+            self._run(c.poll_once)
+        # 基线仍是轮 1 的 (T0, T0, 280.0)
+        self.assertEqual(c._prev["GPU-R1"][1], T0)
+        self.assertAlmostEqual(c._prev["GPU-R1"][2], 280.0)
+        clock.advance(5)
+        # 轮 3（320W，T0+10）：写入成功 —— 能量覆盖完整 10s 区间
+        # （(280+320)/2 * 10 / 3600），而不是从新基线起算的半段
+        with smi_patch:
+            self._run(c.poll_once)
+        # 全链路断言：DB 中的能量 = 完整 10s 区间（失败轮次不丢段）
+        e_db = sum(r["energy_wh"] for r in self.db.get_gpu_daily())
+        self.assertAlmostEqual(e_db, (280.0 + 320.0) / 2.0 * 10.0 / 3600.0, places=6)
 
 
 if __name__ == "__main__":

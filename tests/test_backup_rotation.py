@@ -227,5 +227,41 @@ class ListBackupsTests(TestBase):
             self.assertIn("mtime", i)
 
 
+class PreUpdateListTests(TestBase):
+    """AUDIT-DB-005：pre_migration / pre_update 备份出现在列表里（独立 kind），
+    且不受 keep_count 轮转影响。"""
+
+    def test_pre_update_and_pre_migration_kinds_listed(self):
+        m = self.mgr(keep_count=1)
+        # 先建 3 个自动备份（keep_count=1 -> 会轮转掉 2 个）
+        self._create_n_auto(m, 3)
+        pre_update = self.backups / "pre_update_v0.13.0_to_v0.14.0_20260919_104745.db"
+        pre_update.write_bytes(b"pre-update snapshot")
+        self.set_mtime(pre_update, BASE + 500)
+        pre_mig = self.backups / "pre_migration_v2_to_v4_20260101_000000.db"
+        pre_mig.write_bytes(b"pre-migration snapshot")
+        self.set_mtime(pre_mig, BASE + 600)
+
+        # 再触发一次轮转（第 4 个自动备份）
+        self._create_n_auto(m, 1, base_ts=BASE + 700)
+
+        items = {i["name"]: i["kind"] for i in m.list_backups()}
+        self.assertEqual(items[pre_update.name], "pre_update")
+        self.assertEqual(items[pre_mig.name], "pre_migration")
+        self.assertTrue(pre_update.exists(), "pre_update 不参与 keep_count 轮转")
+        self.assertTrue(pre_mig.exists(), "pre_migration 不参与 keep_count 轮转")
+        self.assertEqual(len(self.autos()), 1)
+
+    def _create_n_auto(self, m, n: int, base_ts: float = BASE) -> list:
+        results = []
+        for i in range(n):
+            ts = base_ts + i * 60
+            r = m.create_backup("automatic", now=ts)
+            self.assertTrue(r.success)
+            self.set_mtime(Path(r.path), ts)
+            results.append(Path(r.path))
+        return results
+
+
 if __name__ == "__main__":
     unittest.main()

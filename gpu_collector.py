@@ -29,6 +29,7 @@ config.json 只保存设置（enabled / 周期 / 保留时长 / 指定 UUID）�
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import csv as _csv
 import io
 import logging
@@ -282,10 +283,13 @@ class GpuCollector:
             prev = self._prev.get(snap.uuid)
             if prev is not None:
                 prev_wall, prev_mono, prev_power = prev
-                if snap.power_draw_w is not None:
+                # AUDIT-WIN-002：docstring 承诺"上一轮或本轮 power 缺失（N/A）：该段不积分"
+                # ——原代码把 prev_power=None 当 0W 参与梯形积分，系统性低估能耗且无测试。
+                # 现在两端 power 都存在才积分（与 token 侧"缺失保持旧 baseline"同语义）。
+                if snap.power_draw_w is not None and prev_power is not None:
                     dt = mono - prev_mono   # monotonic 间隔（不受系统时间调整影响）
                     if 0 < dt <= max_gap:
-                        e = ((prev_power or 0.0) + snap.power_draw_w) / 2.0 * dt / 3600.0
+                        e = (prev_power + snap.power_draw_w) / 2.0 * dt / 3600.0
                         out[snap.uuid].update(
                             self._split_energy_across_midnight(prev_wall, snap.timestamp, e)
                         )
@@ -338,6 +342,11 @@ class GpuCollector:
         ]
         snaps = self._filter(all_snaps)
         if snaps:
+            # AUDIT-DB-004：写入前先快照能量基线——写失败时回滚（见下方 except）。
+            # energy_deltas 会推进 self._prev；若不回滚，失败轮次那一段的能量
+            # 下一轮会从新基线起算而永久丢失（与 token 采集器"写失败保持旧 baseline、
+            # 下轮重算完整 delta"的语义不一致）。
+            prev_energy_state = {s.uuid: self._prev.get(s.uuid) for s in snaps}
             energies = self.energy_deltas(snaps, mono=self.clock.monotonic())
             if self.db is not None:
                 try:
@@ -349,6 +358,12 @@ class GpuCollector:
                     )
                 except Exception as exc:
                     logger.warning("GPU 数据库写入失败，本轮跳过落盘: %r", exc)
+                    for s in snaps:
+                        old = prev_energy_state.get(s.uuid)
+                        if old is None:
+                            self._prev.pop(s.uuid, None)
+                        else:
+                            self._prev[s.uuid] = old
             self.last_update = snaps[0].timestamp
         self._set_available(True, None)
         return snaps
@@ -391,4 +406,15 @@ async def _default_runner(args: list[str], timeout: float) -> tuple[int, str]:
         except ProcessLookupError:
             pass
         return -1, ""
+    except asyncio.CancelledError:
+        # AUDIT-WIN-001：任务被 cancel 时（shutdown 取消 gpu_task、而 nvidia-smi 恰好
+        # 挂死）必须 kill 子进程再传播 cancel——否则留一个孤儿 nvidia-smi 进程，
+        # 它自己 3s 超时已失效（communicate 的 wait_for 随任务一起被取消）。
+        proc.kill()
+        try:
+            # 完成子进程清理；若清理等待本身又被 cancel，吞掉后照样恢复 cancel 语义
+            with contextlib.suppress(asyncio.CancelledError):
+                await proc.wait()
+        finally:
+            raise
     return (proc.returncode if proc.returncode is not None else -1), stdout.decode("utf-8", "replace")

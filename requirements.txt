@@ -1,4 +1,4 @@
-# LlamaMonitor 生产运行依赖（Phase 12 起精确固定版本 —— Release 可重复构建）
+﻿# LlamaMonitor 生产运行依赖（Phase 12 起精确固定版本 —— Release 可重复构建）
 # 这些版本是 1.0.0 构建/验证环境实际运行的版本；升级版本需重跑测试 + Release 流程。
 # 打包后（PyInstaller onedir）运行不需要 pip，此文件只约束构建环境。
 fastapi==0.141.1

@@ -532,5 +532,89 @@ class EventRetentionTests(TestBase):
             d.close()
 
 
+    def test_events_row_cap_enforced(self):
+        """AUDIT-DB-003：monitor_events 行数硬上限（100000）在写入时清理
+        （原 NOT IN 子查询是双全表扫；现单条范围 DELETE）。"""
+        d = self.make_driver()
+        try:
+            from db import EVENT_RETENTION_MAX_ROWS
+
+            conn = d.db._connect()
+            # 直接灌满上限 + 5 条近期事件（绕过保留路径；timestamp 在 365d 内避免
+            # 被按天保留清掉，只留行数上限这一条路径）
+            recent = int(d.clock.now()) - 100
+            with conn:
+                conn.executemany(
+                    "INSERT INTO monitor_events(timestamp, event_type, severity, source, "
+                    "details_json) VALUES(?,?,?,?,?)",
+                    [(recent, f"e{i:06d}", "info", "test", "{}")
+                     for i in range(EVENT_RETENTION_MAX_ROWS + 5)],
+                )
+            d.db.record_event("server_online", "info", "collector", {}, now=d.clock.now())
+            count = conn.execute("SELECT COUNT(*) FROM monitor_events").fetchone()[0]
+            self.assertLessEqual(count, EVENT_RETENTION_MAX_ROWS + 5)
+            self.assertGreaterEqual(count, EVENT_RETENTION_MAX_ROWS - 5)
+        finally:
+            d.close()
+
+
+# ---------------------------------------------------------------------------
+# Phase 14 审计回归（AUDIT-DATA-003 / AUDIT-SEC-004）
+# ---------------------------------------------------------------------------
+
+
+class AuditCollectorRegressionTests(TestBase):
+    def test_readonly_db_sets_unavailable_and_recovers(self):
+        """AUDIT-SEC-004："readonly database" 持续写失败 -> health=unavailable
+        （原实现 /api/health 永远报 healthy）；恢复写入后回到 healthy。"""
+        d = self.make_driver()
+        try:
+            d.round(metrics_text(prompt=100, output=100))
+            self.assertEqual(d.db.health, "healthy")
+            d.advance(5)
+
+            real_apply = d.db.apply_sample
+
+            def readonly(*a, **k):
+                raise sqlite3.OperationalError("attempt to write a readonly database")
+
+            d.db.apply_sample = readonly
+            d.round(metrics_text(prompt=200, output=100))
+            self.assertEqual(d.db.health, "unavailable", "只读写失败必须更新健康状态")
+
+            d.db.apply_sample = real_apply
+            d.advance(5)
+            d.round(metrics_text(prompt=300, output=100))
+            self.assertEqual(d.db.health, "healthy", "写入恢复后健康状态必须恢复")
+            self.assertGreaterEqual(len(d.events("database_recovery")), 1)
+        finally:
+            d.close()
+
+    def test_metrics_response_over_16mb_treated_offline(self):
+        """AUDIT-DATA-003：/metrics 响应 > 16MB -> 按离线处理
+        （原 response.text 无大小限制，异常 server 可打爆内存）。"""
+        import httpx
+
+        d = self.make_driver()
+        try:
+            big = "llamacpp:prompt_tokens_total 100\n" + ("x" * (17 * 1024 * 1024))
+
+            def handler(request):
+                return httpx.Response(200, content=big)
+
+            async def scenario():
+                d.collector._http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+                d.collector._http_loop = asyncio.get_running_loop()
+                try:
+                    snap = await d.collector.collect_once()
+                    self.assertFalse(snap["online"], "超上限响应必须按离线处理")
+                finally:
+                    await d.collector.aclose()
+
+            asyncio.run(scenario())
+        finally:
+            d.close()
+
+
 if __name__ == "__main__":
     unittest.main()

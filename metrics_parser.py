@@ -12,7 +12,9 @@ llama-server 的 /metrics 端点输出 Prometheus 文本暴露格式，例如：
 - 逐行解析、纯字符串处理，不用正则硬写整个 Prometheus 文本格式；
 - 跳过空行与 # HELP / # TYPE 注释行；
 - 支持带冒号的指标名（llama.cpp 的 llamacpp:xxx）；
-- 支持标签序列 {key="value",...}，值内支持 \" 转义；
+- 支持标签序列 {key="value",...}，值内 \" 转义可防止值提前终止
+  （转义反斜杠按字面保留在解析出的值里，见 tests/test_metrics_parser.py
+  AuditParserRegressionTests——AUDIT-DATA：docstring 与实现行为对齐）；
 - 支持行尾可选的 Unix 时间戳（只取名称后的第一个 token 作为数值）；
 - 支持特殊值 +Inf / -Inf / NaN；
 - 畸形行（无数值、花括号未闭合、非法数字）一律静默跳过，绝不抛异常。
@@ -44,7 +46,7 @@ def _parse_labels(text: str) -> dict[str, str] | None:
 
     - 成功 -> dict（空文本返回 {}）
     - 失败 -> None（调用方跳过该行）
-    支持值内的 \\" 转义。
+    支持值内的 \\" 转义（防止值提前终止；反斜杠按字面保留在值里）。
     """
     labels: dict[str, str] = {}
     i, n = 0, len(text)

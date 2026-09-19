@@ -257,6 +257,10 @@ class ShowWindowListener:
         self._stop.set()
         if self._thread is not None:
             self._thread.join(timeout=timeout)
+            if self._thread.is_alive():
+                # AUDIT-ASYNC-003：join 超时不能静默（监听线程卡住 = 后续升级/
+                # 第二实例唤醒请求可能无人处理）
+                logger.warning("事件监听线程未能在 %.1fs 内退出", timeout)
             self._thread = None
         if IS_WINDOWS and self._handle is not None:
             _CloseHandle(self._handle)

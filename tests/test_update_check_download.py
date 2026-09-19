@@ -345,5 +345,121 @@ class DownloadFlowTests(_Base):
             self.assertIn("DEVELOPMENT_MODE", getattr(exc, "code", "") or str(exc))
 
 
+class AuditRegressionTests(_Base):
+    """Phase 14 审计回归（AUDIT-SEC-003 / ASYNC-001 / WIN-003）。"""
+
+    def _fake(self, **kw) -> FakeGithub:
+        return FakeGithub(repo="owner/repo", current_version=__version__, **kw)
+
+    def _svc(self, fake, **kw):
+        return make_service(fake, db=self.db, mode="installed", updates_dir=self.updates, **kw)
+
+    def test_oversized_release_json_rejected(self):
+        """AUDIT-SEC-003：/releases/latest > 5MB -> BAD_RELEASE（原 resp.json() 无限制）。"""
+        from update_service import UpdateService
+
+        big = b"x" * (6 * 1024 * 1024)
+
+        def factory(timeout):
+            def handler(request):
+                return httpx.Response(200, content=big)
+            return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+        svc = UpdateService(db=self.db, updates_dir=self.updates, client_factory=factory,
+                            installation_mode=lambda: "installed", repository="owner/repo",
+                            api_base="https://api.github.com")
+        status = run(svc.check(manual=True))
+        self.assertEqual(status["state"], ERROR)
+        self.assertIn("too large", status["error"])
+
+    def test_oversized_manifest_rejected(self):
+        """AUDIT-SEC-003：manifest > 1MB -> BAD_RELEASE。"""
+        fake = self._fake()
+        big = b"m" * (2 * 1024 * 1024)
+        svc = self._svc(fake)
+
+        def factory(timeout):
+            def handler(request):
+                if request.url.path.endswith("/release-manifest.json"):
+                    return httpx.Response(200, content=big)
+                return fake.handler(request)
+            return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+        svc._client_factory = factory
+        status = run(svc.check(manual=True))
+        self.assertEqual(status["state"], ERROR)
+        self.assertIn("too large", status["error"])
+
+    def test_oversized_sig_rejected(self):
+        """AUDIT-SEC-003：.sig > 64KB -> BAD_RELEASE。"""
+        fake = self._fake()
+        big = b"s" * (65 * 1024)
+        svc = self._svc(fake)
+
+        def factory(timeout):
+            def handler(request):
+                if request.url.path.endswith("/release-manifest.sig"):
+                    return httpx.Response(200, content=big)
+                return fake.handler(request)
+            return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+        svc._client_factory = factory
+        status = run(svc.check(manual=True))
+        self.assertEqual(status["state"], ERROR)
+        self.assertIn("too large", status["error"])
+
+    def test_auto_download_task_reference(self):
+        """AUDIT-ASYNC-001：auto-download 任务有强引用（防 GC 中途回收），完成后释放。"""
+        fake = self._fake()
+        svc = self._svc(fake, check_enabled=True, auto_download=True)
+
+        async def scenario():
+            await svc.check(manual=False)
+            self.assertIsNotNone(svc._auto_download_task, "auto-download 任务引用必须保存")
+            await asyncio.shield(svc._auto_download_task)
+            self.assertIsNone(svc._auto_download_task, "完成后引用必须释放")
+
+        run(scenario())
+        self.assertEqual(svc.state, READY_TO_INSTALL)  # 自动下载完成
+
+    def test_task_cancel_during_download_cleans_part(self):
+        """AUDIT-WIN-003：下载中任务被 cancel（shutdown，非 cancel event）->
+        .part 清理、状态回非 busy（原来 .part 留 24h、状态卡 DOWNLOADING）。"""
+        fake = self._fake(installer_bytes=b"K" * (5 * 1024 * 1024))
+        svc = self._svc(fake)
+        run(svc.check(manual=True))
+
+        started = asyncio.Event()
+        hold = asyncio.Event()
+
+        class _SlowStream(httpx.AsyncByteStream):
+            async def __aiter__(self):
+                started.set()      # .part 已创建（下载已开始）
+                await hold.wait()
+                yield b"K" * (5 * 1024 * 1024)
+
+        def slow_factory(timeout):
+            def handler(request):
+                if request.url.path.endswith("-win-x64.exe"):
+                    return httpx.Response(200, stream=_SlowStream())
+                return fake.handler(request)
+            return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+        svc._client_factory = slow_factory
+
+        async def scenario():
+            task = asyncio.create_task(svc.download())
+            await started.wait()
+            self.assertEqual(svc.state, DOWNLOADING)
+            task.cancel()          # 模拟 shutdown 对任务的 cancel（CancelledError 路径）
+            with self.assertRaises(asyncio.CancelledError):
+                await task
+            hold.set()
+
+        run(scenario())
+        self.assertNotEqual(svc.state, DOWNLOADING, "cancel 后不能卡在 DOWNLOADING")
+        self.assertEqual(list(self.updates.glob("*/*.part")), [], "cancel 后 .part 必须删除")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -235,6 +235,43 @@ class DataQualityApiTests(TestBase):
         finally:
             d.close()
 
+    def test_quality_endpoint_does_not_scan_all_live_samples(self):
+        """AUDIT-DB-003（同类扩展）：/api/data/quality 必须走按日范围查询
+        （get_day_sample_bounds），不允许每次轮询拉全量 live_samples。"""
+        d = self.make_driver()
+        try:
+            with self._start(d) as client:
+                d.round(metrics_text(prompt=100, output=100), portal=client.portal)
+                d.advance(5)
+                d.round(metrics_text(prompt=130, output=100), portal=client.portal)
+
+                calls = {"full": 0, "day_bounds": 0}
+                real_full = d.db.get_live_samples
+                real_bounds = d.db.get_day_sample_bounds
+
+                def counting_full(hours=48.0):
+                    if hours is None:
+                        calls["full"] += 1
+                    return real_full(hours)
+
+                def counting_bounds(date):
+                    calls["day_bounds"] += 1
+                    return real_bounds(date)
+
+                d.db.get_live_samples = counting_full
+                d.db.get_day_sample_bounds = counting_bounds
+                try:
+                    r = client.get("/api/data/quality")
+                    self.assertEqual(r.status_code, 200)
+                    self.assertIsNotNone(r.json()["today"]["monitoring_coverage_percent"])
+                finally:
+                    d.db.get_live_samples = real_full
+                    d.db.get_day_sample_bounds = real_bounds
+                self.assertEqual(calls["full"], 0, "quality 不得拉全量 live_samples")
+                self.assertGreaterEqual(calls["day_bounds"], 1, "必须走按日范围查询")
+        finally:
+            d.close()
+
     def test_daily_api_includes_quality_fields(self):
         d = self.make_driver()
         try:

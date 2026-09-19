@@ -313,5 +313,96 @@ class PersistenceFlowTests(unittest.TestCase):
         self.assertTrue((self.tmp / "nested" / "deep" / "m.db").exists())
 
 
+class AuditDbRegressionTests(unittest.TestCase):
+    """Phase 14 审计回归（AUDIT-DB-002 / AUDIT-SEC-016 / AUDIT-ASYNC-006）。"""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp = Path(self._tmp.name)
+        self._dbs: list[Database] = []
+
+    def tearDown(self):
+        for db in self._dbs:
+            try:
+                db.close()
+            except Exception:
+                pass
+        self._tmp.cleanup()
+
+    def _db(self, name="a.db") -> Database:
+        db = Database(self.tmp / name, wal=False)
+        self._dbs.append(db)
+        return db
+
+    def test_backup_history_row_cap(self):
+        """AUDIT-DB-002：backup_history 行数上限 1000（原无保留，备份盘故障时
+        每 60s 一行无界增长）。"""
+        from db import BACKUP_HISTORY_MAX_ROWS
+
+        db = self._db()
+        for i in range(BACKUP_HISTORY_MAX_ROWS + 50):
+            db.record_backup("automatic", f"auto_{i}.db", 10, True, success=True, now=1700000000 + i)
+        count = db._connect().execute("SELECT COUNT(*) FROM backup_history").fetchone()[0]
+        self.assertLessEqual(count, BACKUP_HISTORY_MAX_ROWS)
+        # 保留的是**最近**的（按 id 降序取上限内的行）
+        newest = db.get_backup_history(limit=1)
+        self.assertEqual(newest[0]["path"], f"auto_{BACKUP_HISTORY_MAX_ROWS + 49}.db")
+
+    def test_readonly_file_uri_encodes_path(self):
+        """AUDIT-SEC-016：只读 file URI 对空格/中文/特殊字符 percent-encode
+        （原裸路径遇空格即解析失败，降级保护路径本身打不开库）。"""
+        from db import _readonly_file_uri
+
+        # 空格
+        uri = _readonly_file_uri("C:/Users/test user/Llama Monitor/m.db")
+        self.assertIn("%20", uri)
+        self.assertNotIn(" ", uri)
+        self.assertTrue(uri.endswith("?mode=ro"))
+        # 中文（非 ASCII 必须编码，sqlite 按 percent-encoding 解析）
+        uri2 = _readonly_file_uri("C:/数据/监控/m.db")
+        self.assertNotIn("数据", uri2)
+        self.assertIn("%E6", uri2)
+        # 普通路径保持不变（盘符 + 正斜杠形式）
+        uri3 = _readonly_file_uri("C:/plain/path/m.db")
+        self.assertEqual(uri3, "file:///C:/plain/path/m.db?mode=ro")
+
+    def test_readonly_uri_opens_real_db(self):
+        """URI 构建端到端：用 _readonly_file_uri 真的打开一个 WAL 库能读到数据。"""
+        from db import _readonly_file_uri
+
+        db = self._db("uri.db")
+        db.record_event("test_event", "info", "test", {"x": 1}, now=1700000000)
+        uri = _readonly_file_uri(str(self.tmp / "uri.db"))
+        conn = sqlite3.connect(uri, uri=True)
+        try:
+            n = conn.execute(
+                "SELECT COUNT(*) FROM monitor_events WHERE event_type='test_event'"
+            ).fetchone()[0]
+            self.assertEqual(n, 1)
+        finally:
+            conn.close()
+
+    def test_get_gaps_date_window_includes_end_of_day(self):
+        """AUDIT-ASYNC-006：按日窗口 end_day = 次日本地 00:00（DST 回拨日 25h 不漏）；
+        无 DST 时区下至少保证"当天最后 1 秒结束的缺口"被包含。"""
+        db = self._db()
+        from db import local_date
+        import time as _time
+
+        # 取一个固定日期（今天），构造"当天 23:59:59 结束"的缺口
+        today = local_date()
+        from datetime import datetime as _dt
+        day_start = _dt.strptime(today, "%Y-%m-%d").timestamp()
+        # 无 DST 时区：end = day_start + 86399（当天内）；两种实现都应包含
+        db.record_gap(day_start + 86000.0, day_start + 86399.0, "llama", "server_offline",
+                      now=day_start + 86399.0)
+        rows = db.get_gaps(date=today)
+        self.assertEqual(len(rows), 1)
+        # 次日的缺口不属于今天
+        db.record_gap(day_start + 86400.0, day_start + 86460.0, "llama", "server_offline",
+                      now=day_start + 86460.0)
+        self.assertEqual(len(db.get_gaps(date=today)), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

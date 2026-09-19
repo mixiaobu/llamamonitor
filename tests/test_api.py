@@ -205,5 +205,34 @@ class ApiTests(unittest.TestCase):
         self.assertIsNone(db._conn)
 
 
+class ServerHelperRegressionTests(unittest.TestCase):
+    """Phase 14 审计回归（AUDIT-ASYNC-005 / AUDIT-SEC-003 CSV 注入）。"""
+
+    def test_recent_dates_uses_injected_now(self):
+        """AUDIT-ASYNC-005：_recent_dates 接受 now 参数，FakeClock 下窗口稳定。"""
+        import time as _time
+        from db import local_date
+        from server import _recent_dates
+
+        now = 1_789_000_000.0
+        dates = _recent_dates(3, now=now)
+        self.assertEqual(len(dates), 3)
+        # 最后一天必须是 now 的本机日期（而不是 time.time() 的日期）
+        self.assertEqual(dates[-1], local_date(now))
+        # 升序且无重复
+        self.assertEqual(dates, sorted(set(dates)))
+
+    def test_csv_safe_text_formula_injection(self):
+        """AUDIT-SEC-003：= + - @ 开头的外部文本前置单引号；其余原样。"""
+        from server import _csv_safe_text
+
+        self.assertEqual(_csv_safe_text("=CMD"), "'=CMD")
+        self.assertEqual(_csv_safe_text("+1+2"), "'+1+2")
+        self.assertEqual(_csv_safe_text("-5"), "'-5")
+        self.assertEqual(_csv_safe_text("@SUM"), "'@SUM")
+        self.assertEqual(_csv_safe_text("normal"), "normal")
+        self.assertEqual(_csv_safe_text(None), "")
+
+
 if __name__ == "__main__":
     unittest.main()
