@@ -258,14 +258,15 @@ RUN 5 : PASS   Ran 397 tests in 332.840s  OK
 | 检查项 | 状态 |
 |---|---|
 | 无 open BLOCKER/HIGH | ✅（1 HIGH + 13 MEDIUM 全部修复带回归） |
-| 全套测试通过 | ✅ 396/396 |
-| 连续 5 次运行 | 见 §6 运行记录 |
-| 7/30/90 天模拟 | ✅ 每次全套运行内执行 |
+| 全套测试通过 | ✅ 397/397 |
+| 连续 5 次运行 | ✅ 5/5 PASS（§6 运行记录） |
+| 7/30/90 天模拟 | ✅ 每次全套运行内执行（6 次全套运行均含） |
 | 迁移矩阵（fresh/legacy/v2/v3） | ✅ |
-| 干净 venv 构建 + 发布校验 | 见 §10（0.14.0 构建记录） |
-| 更新签名验证 + 篡改拒绝 | ✅ Phase 13 篡改 5 场景 |
-| 性能 before/after | PERFORMANCE.md §5（burn-in 期完成） |
-| 48-72h burn-in 每日记录 | 0.14.0 RC 启动后执行（§4 计划） |
+| 干净 venv 构建 + 发布校验 | ✅ 干净 venv（pinned requirements）内 397/397 → `build_release.py --skip-tests` 5 资产 → `validate_release.py` 通过（含签名验证），2026-09-19 |
+| 就地升级 0.13.1 → 0.14.0 | ✅ Inno `/SILENT` 升级 exit 0；注册表/EXE/API 版本一致；4 天 daily 历史完整保留；单实例 ShowWindow 唤醒实测 |
+| 更新签名验证 + 篡改拒绝 | ✅ Phase 13 篡改 5 场景 + 干净 venv 构建的签名验证 |
+| 性能 before/after | ✅ PERFORMANCE.md §5（无回退，窗口/后台两口径均改善） |
+| 48-72h burn-in 每日记录 | 🔄 进行中：2026-09-19 21:31 启动（D0 首测已录，docs/BURNIN_0140.md） |
 
 ## 10. Release Recommendation（技术门）
 

@@ -44,12 +44,27 @@
 WAL size / log size / 覆盖率 / gaps / Today & Total tokens。
 无异常趋势即通过（§91/92/144/145）。
 
-## 5. Before/After 对比（audit 修复后填写）
+## 5. Before/After 对比（0.14.0 RC 实测，2026-09-19 21:34–21:40）
 
-| 指标 | before | after | 结论 |
+测量方法同 before：`scripts/perf_sample.ps1`（Get-Process 4×30s 采样），
+0.14.0 RC 安装版、`--background` 托盘模式、真实 llama-server 流量、5s 轮询。
+
+| 指标 | before（0.13.1） | after（0.14.0） | 结论 |
 |---|---|---|---|
-| idle RSS（tray） | ~196 MB | _待测_ | |
-| idle handles | ~809 | _待测_ | |
-| idle CPU | ~6.9% 单核 | _待测_ | |
-| /metrics 抓取（keep-alive） | ~10 ms | _待测_ | |
-| parse | ~0.3 ms | _待测_ | |
+| RSS（托盘 idle） | ~196 MB | **146.3–147.8 MB**（4 样本极差 1.5 MB，无增长） | 无回退；after 实例全程未开过窗口（无 webview 常驻），属最小占用形态（自启场景） |
+| handles（托盘 idle） | ~809 | **488–491**（稳定） | 无回退（口径同上） |
+| threads（托盘 idle） | 22 | 16 | 无回退 |
+| CPU（托盘 idle） | ~2.05 s/30s ≈ 6.9% 单核 | **0.49–0.53 s/30s ≈ 1.7% 单核** | 无回退；before 窗口曾打开（隐藏后 30s/120s 轮询仍跑，且打的是旧的全表扫 quality/daily 端点），after 纯后台无前端轮询 |
+| RSS（Dashboard 打开） | ~196.5 MB | **150.6→151.7 MB**（唤醒后 ~1min，ECharts 仍在加载，取保守上界） | 无回退 |
+| CPU（Dashboard 打开） | ~2.26 s/30s ≈ 7.5% 单核 | **0.58–0.62 s/30s ≈ 2.0% 单核** | 改善：窗口轮询打的是修复后的端点（quality 按日索引查询、daily 单次取数 + 预分组、in-flight 去重） |
+
+说明：
+- 两组测量的窗口生命周期不同（before 实例运行期间开过窗口后隐藏；
+  after 第一组纯后台、第二组唤醒后 ~1min）。两组都满足"无回退"；
+  after 的改善主要来自 AUDIT-DB-003 端点修复 + AUDIT-WEB-002/003/007
+  前端轮询优化，属预期内收益。
+- /metrics 抓取与 parse 开销：代码路径未变（keep-alive 复用 client +
+  parse_metrics 纯字符串解析），before 的 ~10 ms / ~0.3 ms 继续成立；
+  AUDIT-ASYNC-004（keepalive_expiry 联动）与 AUDIT-DATA-003（16MB 上限）
+  不改变正常路径延迟（上限只在异常响应时生效）。
+- 长期泄漏验证（RSS/handles 单调性）见 §4 burn-in 每日记录。
