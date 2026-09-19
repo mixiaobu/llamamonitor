@@ -1,2650 +1,748 @@
 <!DOCTYPE html>
-<html lang="zh-CN" data-theme="dark">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>LlamaMonitor Dashboard</title>
-<!-- 本地加载 ECharts，无 CDN 依赖（static/echarts.min.js，ECharts 5.5.1） -->
+<title>LlamaMonitor</title>
+<!-- Phase 15：Windows 11 Fluent UI。资源全部本地（spec §123）：
+     CSS 按 tokens/base/layout/components/pages 分层（spec §121）；
+     JS 按职责分模块（spec §122）。无 CDN / 无框架 / 无新依赖。 -->
+<link rel="stylesheet" href="/static/css/tokens.css">
+<link rel="stylesheet" href="/static/css/base.css">
+<link rel="stylesheet" href="/static/css/layout.css">
+<link rel="stylesheet" href="/static/css/components.css">
+<link rel="stylesheet" href="/static/css/pages.css">
 <script src="/static/echarts.min.js"></script>
-<style>
-  :root {
-    --bg: #0f1115;
-    --card: #1a1d24;
-    --border: #2a2f3a;
-    --text: #e8eaed;
-    --muted: #8b93a3;
-    --accent: #4da3ff;
-    --online: #34c368;
-    --offline: #e05252;
-    --warn: #e8a33d;
-  }
-  /* ---------- 顶部导航 ---------- */
-  .nav { display: flex; gap: 4px; }
-  .nav button {
-    background: none; border: 1px solid transparent; color: var(--muted);
-    font-size: 14px; font-weight: 600; padding: 6px 16px; border-radius: 6px; cursor: pointer;
-    font-family: inherit;
-  }
-  .nav button:hover { color: var(--text); }
-  .nav button.active { color: var(--text); border-color: var(--border); background: var(--card); }
-
-  /* ---------- Settings 页面 ---------- */
-  .settings-layout { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 16px; align-items: start; }
-  .settings-nav { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 10px; position: sticky; top: 12px; }
-  .settings-nav h2 { margin: 2px 8px 10px; font-size: 15px; }
-  .settings-nav button {
-    display: block; width: 100%; text-align: left; background: none; border: none;
-    color: var(--muted); font-size: 13px; padding: 8px 10px; border-radius: 6px; cursor: pointer; font-family: inherit;
-  }
-  .settings-nav button:hover { color: var(--text); background: rgba(128,128,128,0.10); }
-  .settings-nav button.active { color: var(--text); background: rgba(77,163,255,0.14); font-weight: 600; }
-  .settings-content { min-width: 0; }
-  .settings-section { display: none; background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 18px 20px; }
-  .settings-section.active { display: block; }
-  .settings-section h2 { margin: 0 0 4px; font-size: 16px; }
-  .settings-section .desc { color: var(--muted); font-size: 12px; margin: 0 0 16px; }
-  .field { margin-bottom: 14px; max-width: 560px; }
-  .field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 5px; }
-  .field input, .field select {
-    width: 100%; box-sizing: border-box; background: var(--bg); color: var(--text);
-    border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; font-size: 13px; font-family: inherit;
-  }
-  .field input:focus, .field select:focus { outline: none; border-color: var(--accent); }
-  .hint { color: var(--muted); font-size: 12px; margin: -6px 0 14px; }
-  .note { color: var(--muted); font-size: 12px; margin-top: 14px; line-height: 1.5; }
-  .warn-note { color: var(--warn); font-size: 12px; margin-top: 14px; line-height: 1.5; }
-  .btn {
-    background: var(--bg); color: var(--text); border: 1px solid var(--border);
-    border-radius: 6px; padding: 7px 16px; font-size: 13px; cursor: pointer; font-family: inherit;
-  }
-  .btn:hover:not(:disabled) { border-color: var(--accent); }
-  .btn:disabled { opacity: 0.5; cursor: default; }
-  .btn-primary { border-color: var(--accent); color: var(--accent); }
-  .btn-warn { border-color: var(--warn); color: var(--warn); }
-  .btn-danger { border-color: var(--offline); color: var(--offline); }
-  .btn-row { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; align-items: center; }
-  .op-group { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border); }
-  .op-group h3 { font-size: 13px; color: var(--muted); margin: 0 0 10px; font-weight: 600; }
-  .test-result { margin-left: 4px; font-size: 12px; }
-  .test-result.ok { color: var(--online); }
-  .test-result.bad { color: var(--offline); }
-  .dq-open {
-    margin-top: 12px; padding: 8px 12px; border-radius: 6px; font-size: 12px;
-    border: 1px solid rgba(224, 82, 82, 0.45); background: rgba(224, 82, 82, 0.08); color: var(--offline);
-  }
-  .dq-open.warn { border-color: rgba(230, 170, 60, 0.5); background: rgba(230, 170, 60, 0.08); color: var(--warn); }
-  .dq-list { font-size: 12px; color: var(--muted); line-height: 1.6; }
-  .settings-footer {
-    display: flex; justify-content: space-between; align-items: center; gap: 12px;
-    margin-top: 14px; padding: 12px 16px; background: var(--card);
-    border: 1px solid var(--border); border-radius: 8px;
-  }
-  .settings-footer .btn-row { margin-top: 0; }
-  .dirty-badge { color: var(--warn); font-size: 12px; font-weight: 600; }
-  .data-kv { display: grid; grid-template-columns: 200px 1fr; gap: 4px 16px; font-size: 13px; margin-bottom: 4px; }
-  .data-kv .k { color: var(--muted); }
-  .backup-list { margin-top: 10px; font-size: 12px; color: var(--muted); max-height: 220px; overflow-y: auto; }
-  .backup-list div { padding: 4px 0; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; word-break: break-all; }
-  /* Phase 13：Updates 区域 */
-  .release-notes {
-    white-space: pre-wrap; word-break: break-word; margin: 0 0 6px; padding: 10px 12px;
-    background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
-    font-size: 12px; line-height: 1.55; color: var(--text); max-height: 240px; overflow-y: auto;
-    font-family: inherit;
-  }
-  .progress-track {
-    height: 8px; border-radius: 5px; background: var(--bg);
-    border: 1px solid var(--border); overflow: hidden;
-  }
-  .progress-fill {
-    height: 100%; width: 0%; background: var(--accent); border-radius: 5px;
-    transition: width 0.25s ease;
-  }
-  /* 顶部更新横幅（非阻塞，§44） */
-  #updateBanner {
-    display: flex; align-items: center; gap: 12px;
-    padding: 8px 16px; margin: 10px 18px 0;
-    background: rgba(77,163,255,0.10); border: 1px solid rgba(77,163,255,0.4);
-    border-radius: 8px; font-size: 13px; color: var(--text);
-  }
-  #updateBanner .banner-text { flex: 1; }
-  #updateBanner .banner-close {
-    background: none; border: none; color: var(--muted); font-size: 16px; cursor: pointer; padding: 0 4px;
-  }
-  #updateBanner .banner-close:hover { color: var(--text); }
-  @media (max-width: 900px) {
-    .settings-layout { grid-template-columns: 1fr; }
-    .settings-nav { position: static; display: flex; gap: 4px; flex-wrap: wrap; }
-    .settings-nav h2 { display: none; }
-    .settings-nav button { width: auto; white-space: nowrap; }
-  }
-
-  /* ---------- Phase 9：GPU / Server Runtime / MTP 详情 ---------- */
-  .cards-5 { grid-template-columns: repeat(5, 1fr); }
-  @media (max-width: 900px) { .cards-5 { grid-template-columns: repeat(3, 1fr); } }
-  .gpu-unavailable { color: var(--warn); font-size: 13px; margin-bottom: 10px; }
-  .gpu-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; margin-bottom: 14px; }
-  .gpu-card { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
-  .gpu-card-head { font-size: 14px; font-weight: 700; }
-  .gpu-card-head span { display: block; font-size: 11px; font-weight: 400; color: var(--muted); margin: 2px 0 8px; word-break: break-all; }
-  .gpu-kv { display: grid; grid-template-columns: 100px 1fr; gap: 3px 10px; font-size: 12px; font-variant-numeric: tabular-nums; }
-  .gpu-kv .k { color: var(--muted); }
-  .gpu-kv .v { color: var(--text); }
-  .gpu-pick { font-size: 12px; color: var(--muted); margin-bottom: 8px; display: flex; flex-wrap: wrap; gap: 12px; }
-  .gpu-pick label { display: inline-flex; gap: 4px; align-items: center; cursor: pointer; }
-  .energy-box { margin-top: 6px; }
-  .energy-title { font-size: 13px; font-weight: 600; margin-bottom: 6px; }
-  .energy-rows { display: flex; flex-direction: column; gap: 2px; font-size: 13px; font-variant-numeric: tabular-nums; }
-  .energy-row { display: flex; justify-content: space-between; max-width: 460px; }
-  .energy-row.total { font-weight: 700; border-top: 1px solid var(--border); margin-top: 4px; padding-top: 4px; }
-  .gpu-detected { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--text); max-width: 620px; }
-  .gpu-detected label { display: flex; gap: 6px; align-items: baseline; cursor: pointer; flex-wrap: wrap; }
-  .gpu-detected .uuid { color: var(--muted); font-size: 11px; word-break: break-all; }
-  .mtp-section { margin-top: 16px; }
-
-  /* Toast 通知（不用 alert） */
-  #toastBox { position: fixed; right: 18px; bottom: 18px; display: flex; flex-direction: column; gap: 8px; z-index: 1000; }
-  .toast {
-    background: var(--card); border: 1px solid var(--border); border-left: 3px solid var(--accent);
-    border-radius: 6px; padding: 10px 14px; font-size: 13px; max-width: 460px;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.3); animation: toast-in 0.15s ease-out;
-  }
-  .toast.ok { border-left-color: var(--online); }
-  .toast.err { border-left-color: var(--offline); }
-  .toast.warn { border-left-color: var(--warn); }
-  @keyframes toast-in { from { transform: translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
-
-  /* 自定义确认弹窗 */
-  #modalOverlay {
-    position: fixed; inset: 0; background: rgba(0,0,0,0.55); display: flex;
-    align-items: center; justify-content: center; z-index: 1100;
-  }
-  #modalOverlay[hidden] { display: none; }
-  .modal { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 20px 22px; width: 460px; max-width: calc(100vw - 40px); }
-  .modal h3 { margin: 0 0 10px; font-size: 15px; }
-  .modal p { font-size: 13px; color: var(--muted); margin: 0 0 12px; line-height: 1.55; white-space: pre-line; }
-  .modal input {
-    width: 100%; box-sizing: border-box; background: var(--bg); color: var(--text);
-    border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; font-size: 13px; margin-bottom: 14px; font-family: inherit;
-  }
-  .modal .modal-btns { display: flex; justify-content: flex-end; gap: 10px; }
-
-  /* 浅色主题（config ui.theme = light / system 跟随系统） */
-  [data-theme="light"] {
-    --bg: #f3f4f6;
-    --card: #ffffff;
-    --border: #d8dce3;
-    --text: #1f2328;
-    --muted: #5f6368;
-    --online: #1e9e52;
-    --offline: #d03b3b;
-  }
-  [data-theme="light"] tbody tr:hover td { background: #eef1f5; }
-  [data-theme="light"] tbody td { border-bottom-color: #e4e8ee; }
-  [data-theme="light"] .ranges button.active { background: #e8ecf2; }
-  * { box-sizing: border-box; }
-  html, body {
-    margin: 0;
-    padding: 0;
-    height: 100%;
-    background: var(--bg);
-    color: var(--text);
-    /* Windows 系统字体栈，兼容各 DPI 缩放 */
-    font-family: "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
-    font-size: 14px;
-  }
-  .wrap { max-width: 1760px; margin: 0 auto; padding: 16px 20px 24px; }
-
-  /* ---------- 顶栏 ---------- */
-  .topbar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-    flex-wrap: wrap;
-    padding: 4px 2px 14px;
-  }
-  .brand { font-size: 20px; font-weight: 600; letter-spacing: 0.2px; }
-  .server { color: var(--muted); margin-left: 14px; font-size: 13px; }
-  .topbar-right { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
-  .badge {
-    padding: 3px 12px;
-    border-radius: 999px;
-    font-size: 12px;
-    font-weight: 600;
-    letter-spacing: 0.5px;
-    border: 1px solid transparent;
-  }
-  .badge.online { color: var(--online); border-color: rgba(52, 195, 104, 0.45); background: rgba(52, 195, 104, 0.08); }
-  .badge.offline { color: var(--offline); border-color: rgba(224, 82, 82, 0.45); background: rgba(224, 82, 82, 0.08); }
-  .updated { color: var(--muted); font-size: 12px; }
-  .updated.err { color: var(--offline); }
-  .updated.warn { color: var(--warn); }
-
-  /* ---------- 统计卡 ---------- */
-  .cards {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 12px;
-  }
-  .cards + .cards { margin-top: 12px; }
-  .card {
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 14px 16px;
-    min-width: 0;
-  }
-  .card .label {
-    color: var(--muted);
-    font-size: 12px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .card .value {
-    margin-top: 6px;
-    font-size: 28px;
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .card .value.dim { color: var(--muted); }
-  @media (max-width: 1280px) {
-    .cards { grid-template-columns: repeat(2, 1fr); }
-  }
-
-  /* ---------- 图表区 ---------- */
-  .charts {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 12px;
-    margin-top: 16px;
-  }
-  .chart-box {
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 12px 14px;
-    min-width: 0;
-  }
-  .chart-box h2 {
-    margin: 0 0 8px;
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--muted);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
-  }
-  .chart { width: 100%; height: 300px; }
-  @media (max-width: 1400px) {
-    .charts { grid-template-columns: 1fr; }
-    .chart { height: 260px; }
-  }
-
-  /* 时间范围按钮 */
-  .ranges { display: inline-flex; gap: 4px; }
-  .ranges button {
-    background: transparent;
-    color: var(--muted);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    padding: 3px 10px;
-    font-size: 12px;
-    font-family: inherit;
-    cursor: pointer;
-  }
-  .ranges button:hover { color: var(--text); border-color: #3a4150; }
-  .ranges button.active {
-    color: #fff;
-    background: #232833;
-    border-color: var(--accent);
-  }
-
-  /* ---------- 每日统计表 ---------- */
-  .table-section {
-    margin-top: 16px;
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 12px 14px;
-  }
-  .table-section h2 { margin: 0 0 10px; font-size: 13px; font-weight: 600; color: var(--muted); }
-  .table-scroll { max-height: 360px; overflow-y: auto; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  thead th {
-    position: sticky;
-    top: 0;
-    background: var(--card);
-    text-align: right;
-    color: var(--muted);
-    font-weight: 600;
-    padding: 6px 10px;
-    border-bottom: 1px solid var(--border);
-    white-space: nowrap;
-  }
-  thead th:first-child { text-align: left; }
-  tbody td {
-    text-align: right;
-    padding: 6px 10px;
-    border-bottom: 1px solid #22262f;
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-  }
-  tbody td:first-child { text-align: left; color: var(--muted); }
-  tbody tr:hover td { background: #1f242e; }
-  .na { color: var(--muted); }
-</style>
+<script src="/static/js/icons.js"></script>
+<script src="/static/js/formatters.js"></script>
+<script src="/static/js/api.js"></script>
+<script src="/static/js/components.js"></script>
+<script src="/static/js/charts.js"></script>
+<script src="/static/js/navigation.js"></script>
+<script src="/static/js/polling.js"></script>
+<script src="/static/js/settings.js"></script>
+<script src="/static/js/app.js"></script>
 </head>
 <body>
-<div class="wrap">
+<div class="app" id="appShell">
 
-  <!-- 顶栏 -->
-  <div class="topbar">
-    <div class="brand">LlamaMonitor<span class="server" id="serverUrl">Server: --</span></div>
-    <nav class="nav" id="mainNav">
-      <button data-view="dashboard" class="active">Dashboard</button>
-      <button data-view="settings">Settings</button>
-    </nav>
-    <div class="topbar-right">
-      <span class="badge offline" id="statusBadge">--</span>
-      <span class="updated" id="lastUpdate">最后更新: --</span>
-      <span class="updated" id="configStatus" title="">Config: --</span>
+  <!-- ============ NavigationView（spec §6-§9） ============ -->
+  <nav class="navview" aria-label="Main navigation">
+    <div class="nav-brand">
+      <span class="brand-icon" id="brandIcon" style="color:var(--accent)"></span>
+      <span class="brand-name">LlamaMonitor</span>
     </div>
-  </div>
-
-  <!-- Dashboard 视图 -->
-  <div id="dashboard-view">
-
-  <!-- Phase 13：更新可用横幅（非阻塞；点击 View Update -> Settings -> Updates） -->
-  <div id="updateBanner" hidden>
-    <span class="banner-text" id="updateBannerText"></span>
-    <button class="btn" id="btnBannerViewUpdate">View Update</button>
-    <button class="banner-close" id="btnBannerDismiss" title="Dismiss">&times;</button>
-  </div>
-
-  <!-- 第一行：今日 -->
-  <div class="cards">
-    <div class="card"><div class="label">今日 Logical Token</div><div class="value" id="todayLogical">--</div></div>
-    <div class="card"><div class="label">今日 Compute Token</div><div class="value" id="todayCompute">--</div></div>
-    <div class="card"><div class="label">今日 Prompt</div><div class="value" id="todayPrompt">--</div></div>
-    <div class="card"><div class="label">今日 Output</div><div class="value" id="todayOutput">--</div></div>
-  </div>
-
-  <!-- 第二行：累计 / 缓存 -->
-  <div class="cards">
-    <div class="card"><div class="label">累计 Logical Token</div><div class="value" id="totalLogical">--</div></div>
-    <div class="card"><div class="label">累计 Compute Token</div><div class="value" id="totalCompute">--</div></div>
-    <div class="card"><div class="label">Cache Token（累计）</div><div class="value" id="totalCached">--</div></div>
-    <div class="card"><div class="label">Cache Ratio（累计）</div><div class="value" id="cacheRatio">--</div></div>
-  </div>
-
-  <!-- 第三行：当前速率 / 状态 -->
-  <div class="cards">
-    <div class="card"><div class="label">Prompt TPS</div><div class="value" id="statPromptTps">--</div></div>
-    <div class="card"><div class="label">Decode TPS</div><div class="value" id="statDecodeTps">--</div></div>
-    <div class="card"><div class="label">Context Max</div><div class="value" id="statContext">--</div></div>
-    <div class="card"><div class="label">MTP Accept Rate（今日）</div><div class="value" id="statMtp">--</div></div>
-  </div>
-
-  <!-- Server Runtime（Phase 9：llama-server 运行时 gauge；缺失指标显示 --） -->
-  <div class="cards cards-5">
-    <div class="card" title="llama.cpp metric: llamacpp:requests_processing"><div class="label">Processing</div><div class="value" id="rtProcessing">--</div></div>
-    <div class="card" title="llama.cpp metric: llamacpp:requests_deferred"><div class="label">Queued</div><div class="value" id="rtQueued">--</div></div>
-    <div class="card" title="llama.cpp metric: llamacpp:n_busy_slots_per_decode"><div class="label">Busy Slots</div><div class="value" id="rtBusySlots">--</div></div>
-    <div class="card" title="llama.cpp metric: llamacpp:kv_cache_usage_ratio（0~1；指标不存在时 --）"><div class="label">KV Cache</div><div class="value" id="rtKvCache">--</div></div>
-    <div class="card" title="Value reported by llama.cpp metric: llamacpp:n_tokens_max"><div class="label">Token Max</div><div class="value" id="rtTokenMax">--</div></div>
-  </div>
-
-  <!-- 图表 -->
-  <div class="charts">
-    <div class="chart-box">
-      <h2>
-        <span>Token Usage（按天）</span>
-        <span class="ranges" id="rangeButtons">
-          <button data-days="1">Today</button>
-          <button data-days="7">7 Days</button>
-          <button data-days="30" class="active">30 Days</button>
-          <button data-days="365">All</button>
-        </span>
-      </h2>
-      <div class="chart" id="chartUsage"></div>
+    <div class="nav-items">
+      <button class="nav-item" data-page="overview" title="Overview">
+        <span class="nav-icon" data-icon="overview"></span><span class="nav-label">Overview</span></button>
+      <button class="nav-item" data-page="usage" title="Usage">
+        <span class="nav-icon" data-icon="usage"></span><span class="nav-label">Usage</span></button>
+      <button class="nav-item" data-page="performance" title="Performance">
+        <span class="nav-icon" data-icon="performance"></span><span class="nav-label">Performance</span></button>
+      <button class="nav-item" data-page="gpu" title="GPU">
+        <span class="nav-icon" data-icon="gpu"></span><span class="nav-label">GPU</span></button>
+      <button class="nav-item" data-page="history" title="History">
+        <span class="nav-icon" data-icon="history"></span><span class="nav-label">History</span></button>
     </div>
-    <div class="chart-box">
-      <h2><span>TPS（最近 60 分钟）</span></h2>
-      <div class="chart" id="chartTps"></div>
+    <div class="nav-items bottom">
+      <button class="nav-item" data-page="settings" title="Settings">
+        <span class="nav-icon" data-icon="settings"></span><span class="nav-label">Settings</span></button>
+      <button class="nav-item" data-page="about" title="About">
+        <span class="nav-icon" data-icon="about"></span><span class="nav-label">About</span></button>
     </div>
-    <div class="chart-box">
-      <h2><span>MTP Accept Rate（每日趋势）</span></h2>
-      <div class="chart" id="chartMtp"></div>
-    </div>
-  </div>
+  </nav>
 
-  <!-- GPU（Phase 9：nvidia-smi 只读监控；历史/能耗/曲线） -->
-  <div class="table-section" id="gpuSection">
-    <h2>
-      <span>GPU</span>
-      <span class="ranges" id="gpuRangeButtons">
-        <button data-min="15">15 min</button>
-        <button data-min="60" class="active">1 hour</button>
-        <button data-min="360">6 hours</button>
-        <button data-min="1440">24 hours</button>
-      </span>
-    </h2>
-    <div class="gpu-unavailable" id="gpuUnavailable" hidden>GPU Monitoring Unavailable</div>
-    <div class="gpu-cards" id="gpuCards"></div>
-    <div class="gpu-pick" id="gpuPick" hidden></div>
-    <div class="charts">
-      <div class="chart-box">
-        <h2><span>GPU Utilization + VRAM Usage %（VRAM 虚线）</span></h2>
-        <div class="chart" id="chartGpuUtil"></div>
-      </div>
-      <div class="chart-box">
-        <h2><span>GPU Power (W)</span></h2>
-        <div class="chart" id="chartGpuPower"></div>
-      </div>
-      <div class="chart-box">
-        <h2><span>GPU Temperature (°C)</span></h2>
-        <div class="chart" id="chartGpuTemp"></div>
-      </div>
-    </div>
-    <div class="energy-box" id="gpuEnergy"></div>
-  </div>
+  <!-- ============ Page Content（唯一滚动区，spec §56） ============ -->
+  <main class="content">
+    <div class="content-inner">
 
-  <!-- MTP 详情（Phase 9：Draft/Accepted/Draft Sequences + per-position 接受数） -->
-  <div class="table-section mtp-section">
-    <h2><span>MTP / Spec Decode（今日）</span></h2>
-    <div class="cards">
-      <div class="card" title="llamacpp:spec_decode_num_draft_tokens_total 当日 delta"><div class="label">Draft Tokens</div><div class="value" id="mtpDraft">--</div></div>
-      <div class="card" title="llamacpp:spec_decode_num_accepted_tokens_total 当日 delta"><div class="label">Accepted Tokens</div><div class="value" id="mtpAccepted">--</div></div>
-      <div class="card" title="llamacpp:spec_decode_num_drafts_total 当日 delta（推测解码序列数）"><div class="label">Draft Sequences</div><div class="value" id="mtpSeqs">--</div></div>
-    </div>
-    <div class="chart-box" style="margin-top:12px">
-      <h2><span>Accepted Tokens by Draft Position（今日累计；tooltip 含相对 position 0 的相对值）</span></h2>
-      <div class="chart" id="chartMtpPos"></div>
-    </div>
-  </div>
+      <!-- 全局 InfoBar 槽位（Offline / Update available，UI-015） -->
+      <div id="globalInfobars"></div>
 
-  <!-- 每日统计表 -->
-  <div class="table-section">
-    <h2>每日统计（随上方时间范围切换）</h2>
-    <div class="table-scroll">
-      <table>
-        <thead>
-          <tr>
-            <th>日期</th>
-            <th>Prompt</th>
-            <th>Cached</th>
-            <th>Output</th>
-            <th>Logical</th>
-            <th>Compute</th>
-            <th>MTP 接受率</th>
-          </tr>
-        </thead>
-        <tbody id="dailyTbody"><tr><td colspan="7" class="na">加载中…</td></tr></tbody>
-      </table>
-    </div>
-  </div>
+      <!-- ================= Overview（spec §11/§132：摘要） ================= -->
+      <section class="page" id="page-overview">
+        <div class="page-header">
+          <h1 class="page-title">Overview</h1>
+          <p class="page-subtitle">Monitor llama.cpp usage and runtime status.</p>
+        </div>
 
-  <!-- Data Quality（Phase 11：监控覆盖率 / 已知缺口 / token 丢失提示） -->
-  <div class="table-section" id="dqSection">
-    <h2>
-      <span>Data Quality</span>
-      <span class="ranges"><button id="btnDqDetail">Gap Details</button></span>
-    </h2>
-    <div class="cards cards-5">
-      <div class="card" title="数据库健康状态（PRAGMA quick_check）">
-        <div class="label">Database</div>
-        <div class="value" id="dqDb">--</div>
-        <div class="hint" id="dqDbHint">WAL / 详情见 Settings → Data</div>
-      </div>
-      <div class="card" title="Monitoring Coverage：当天首样本→末样本时间窗内无已知缺口的比例。不是 Token 统计准确率——Token 统计是 Counter delta 精确累计，覆盖率只衡量监控断档。">
-        <div class="label">Coverage (Today)</div>
-        <div class="value" id="dqCoverage">--</div>
-        <div class="hint">无断档 = 100%；有离线/重启/睡眠缺口则低于 100%</div>
-      </div>
-      <div class="card" title="当天已知缺口数量（server 离线 / monitor 重启 / 系统睡眠等）">
-        <div class="label">Known Gaps (Today)</div>
-        <div class="value" id="dqGapsToday">--</div>
-        <div class="hint" id="dqLossToday"></div>
-      </div>
-      <div class="card">
-        <div class="label">Known Gaps (Total)</div>
-        <div class="value" id="dqGapsTotal">--</div>
-        <div class="hint">data_gaps 永久保留（不含轮转）</div>
-      </div>
-      <div class="card" title="最近一次有效 metrics 样本距今">
-        <div class="label">Last Valid Sample</div>
-        <div class="value" id="dqLastSample">--</div>
-      </div>
-    </div>
-    <div class="dq-open" id="dqOpen" hidden></div>
-    <div id="dqDetails" hidden>
-      <div class="table-scroll">
-        <table>
-          <thead>
-            <tr><th>Started</th><th>Ended</th><th>Duration</th><th>Source</th><th>Reason</th><th>Token Loss?</th></tr>
-          </thead>
-          <tbody id="dqGapTbody"><tr><td colspan="6" class="na">No gaps recorded.</td></tr></tbody>
-        </table>
-      </div>
-    </div>
-  </div>
+        <div class="grid cols-2-1">
+          <!-- Server Status -->
+          <div class="card page-section">
+            <div class="card-title">Server Status</div>
+            <div class="stat-grid">
+              <div class="stat">
+                <div class="stat-label">llama.cpp</div>
+                <div id="ovServerState" class="status-badge paused"><span class="dot"></span><span class="status-text">Starting</span></div>
+                <div class="stat-hint" id="ovServerUrl">--</div>
+              </div>
+              <div class="stat">
+                <div class="stat-label">Last update</div>
+                <div class="stat-value mid" id="ovLastUpdate" style="font-size:var(--font-size-subtitle)">--</div>
+              </div>
+              <div class="stat">
+                <div class="stat-label">Config</div>
+                <div class="stat-value small" id="ovConfigState" style="font-size:var(--font-size-body)">--</div>
+              </div>
+            </div>
+            <div class="card-section-gap">
+              <div class="stat-grid">
+                <div class="stat">
+                  <div class="stat-label">Prompt TPS</div>
+                  <div class="stat-value mid" id="ovPromptTps">--</div>
+                </div>
+                <div class="stat">
+                  <div class="stat-label">Decode TPS</div>
+                  <div class="stat-value mid" id="ovDecodeTps">--</div>
+                </div>
+                <div class="stat">
+                  <div class="stat-label">Context Max</div>
+                  <div class="stat-value mid" id="ovContext">--</div>
+                </div>
+                <div class="stat">
+                  <div class="stat-label">Requests</div>
+                  <div class="stat-value mid" id="ovRequests">--</div>
+                  <div class="stat-hint">queued: <span id="ovQueued">--</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
 
-  </div><!-- /dashboard-view -->
+          <!-- GPU Summary -->
+          <div class="card page-section">
+            <div class="card-title">GPU</div>
+            <div id="ovGpuState" class="status-badge paused"><span class="dot"></span><span class="status-text">--</span></div>
+            <div class="stat-hint" id="ovGpuLine">--</div>
+          </div>
+        </div>
 
-  <!-- Settings 视图 -->
-  <div id="settings-view" hidden>
-    <div class="settings-layout">
-      <div class="settings-nav" id="settingsNav">
-        <h2>Settings</h2>
-        <button data-section="server" class="active">Server</button>
-        <button data-section="collector">Collector</button>
-        <button data-section="gpu">GPU</button>
-        <button data-section="interface">Interface</button>
-        <button data-section="web">Web</button>
-        <button data-section="storage">Storage</button>
-        <button data-section="logging">Logging</button>
-        <button data-section="data">Data</button>
-        <button data-section="application">Application</button>
-        <button data-section="updates">Updates</button>
-        <button data-section="about">About</button>
-      </div>
-      <div class="settings-content">
+        <!-- Today Usage（摘要；明细在 Usage 页） -->
+        <div class="card page-section">
+          <div class="card-title">Today <span class="card-sub">full breakdown in Usage</span></div>
+          <div class="stat-grid">
+            <div class="stat">
+              <div class="stat-label">Logical Tokens <span class="info-tip-slot" data-tip="Prompt + Cached Prompt + Generated Output."></span></div>
+              <div class="stat-value mid" id="ovTodayLogical">--</div>
+            </div>
+            <div class="stat">
+              <div class="stat-label">Compute Tokens <span class="info-tip-slot" data-tip="New Prompt + Generated Output."></span></div>
+              <div class="stat-value mid" id="ovTodayCompute">--</div>
+            </div>
+            <div class="stat">
+              <div class="stat-label">Prompt</div>
+              <div class="stat-value small" id="ovTodayPrompt">--</div>
+            </div>
+            <div class="stat">
+              <div class="stat-label">Cache</div>
+              <div class="stat-value small" id="ovTodayCached">--</div>
+            </div>
+            <div class="stat">
+              <div class="stat-label">Output</div>
+              <div class="stat-value small" id="ovTodayOutput">--</div>
+            </div>
+          </div>
+        </div>
 
-        <section class="settings-section active" id="sec-server">
-          <h2>Server</h2>
-          <p class="desc">llama-server 基础地址。监控只 GET metrics 端点，绝不触碰服务器本身。</p>
-          <div class="field"><label for="setServerUrl">Llama Server URL</label>
-            <input id="setServerUrl" type="text" spellcheck="false" placeholder="http://127.0.0.1:9091"></div>
-          <div class="hint">任意基础地址（http/https），如 http://192.168.1.100:9091；不要包含 metrics 路径。</div>
-          <div class="field"><label for="setMetricsPath">Metrics Path</label>
-            <input id="setMetricsPath" type="text" spellcheck="false"></div>
-          <div class="field"><label for="setTimeoutSec">Connection Timeout (seconds)</label>
-            <input id="setTimeoutSec" type="number" min="0.5" max="60" step="0.5"></div>
+        <!-- Data Quality -->
+        <div class="card page-section">
+          <div class="card-title">Data Quality <span class="card-sub">details in History</span></div>
+          <div class="stat-grid">
+            <div class="stat">
+              <div class="stat-label">Database</div>
+              <div class="stat-value small" id="dqDb" style="font-size:var(--font-size-body)">--</div>
+              <div class="stat-hint" id="dqDbHint"></div>
+            </div>
+            <div class="stat">
+              <div class="stat-label">Coverage Today</div>
+              <div class="stat-value mid" id="dqCoverage">--</div>
+            </div>
+            <div class="stat">
+              <div class="stat-label">Gaps Today</div>
+              <div class="stat-value mid" id="dqGapsToday">--</div>
+              <div class="stat-hint" id="dqLossToday"></div>
+            </div>
+            <div class="stat">
+              <div class="stat-label">Last Sample</div>
+              <div class="stat-value small" id="dqLastSample" style="font-size:var(--font-size-body)">--</div>
+            </div>
+          </div>
+          <div class="stat-hint bad" id="dqOpenGap" style="margin-top:var(--spacing-sm)"></div>
+        </div>
+      </section>
+
+      <!-- ================= Usage（spec §133） ================= -->
+      <section class="page" id="page-usage">
+        <div class="page-header" style="display:flex;align-items:flex-start;justify-content:space-between;gap:var(--spacing-lg);flex-wrap:wrap">
+          <div>
+            <h1 class="page-title">Usage</h1>
+            <p class="page-subtitle">Token usage by day, month and total.</p>
+          </div>
+          <div class="seg" id="usageRange" role="group" aria-label="Time range"></div>
+        </div>
+
+        <div class="card page-section chart-box" id="chartUsageBox">
+          <div class="card-title">Daily Token Usage <span class="card-sub">Prompt / Cached / Output (stacked)</span></div>
+          <div class="chart" id="chartUsage" data-chart="chartUsage"></div>
+          <div class="chart-empty-overlay"></div>
+        </div>
+
+        <div class="grid cols-3">
+          <div class="card page-section">
+            <div class="card-title">Today</div>
+            <div class="stat" style="margin-bottom:var(--spacing-md)">
+              <div class="stat-label">Logical Tokens <span class="info-tip-slot" data-tip="Prompt + Cached Prompt + Generated Output."></span></div>
+              <div class="stat-value" id="sumTodayLogical" title="">--</div>
+            </div>
+            <div class="stat">
+              <div class="stat-label">Compute Tokens <span class="info-tip-slot" data-tip="New Prompt + Generated Output."></span></div>
+              <div class="stat-value mid" id="sumTodayCompute">--</div>
+            </div>
+            <div class="card-section-gap">
+              <div class="stat-grid">
+                <div class="stat"><div class="stat-label">Prompt</div><div class="stat-value small" id="sumTodayPrompt">--</div></div>
+                <div class="stat"><div class="stat-label">Cache</div><div class="stat-value small" id="sumTodayCached">--</div></div>
+                <div class="stat"><div class="stat-label">Output</div><div class="stat-value small" id="sumTodayOutput">--</div></div>
+              </div>
+            </div>
+          </div>
+          <div class="card page-section">
+            <div class="card-title">This Month</div>
+            <div class="stat" style="margin-bottom:var(--spacing-md)">
+              <div class="stat-label">Logical Tokens</div>
+              <div class="stat-value" id="sumMonthLogical">--</div>
+            </div>
+            <div class="stat">
+              <div class="stat-label">Compute Tokens</div>
+              <div class="stat-value mid" id="sumMonthCompute">--</div>
+            </div>
+          </div>
+          <div class="card page-section">
+            <div class="card-title">Total</div>
+            <div class="stat" style="margin-bottom:var(--spacing-md)">
+              <div class="stat-label">Logical Tokens</div>
+              <div class="stat-value" id="sumTotalLogical" title="">--</div>
+            </div>
+            <div class="stat">
+              <div class="stat-label">Compute Tokens</div>
+              <div class="stat-value mid" id="sumTotalCompute">--</div>
+            </div>
+            <div class="card-section-gap">
+              <div class="stat-grid">
+                <div class="stat"><div class="stat-label">Prompt</div><div class="stat-value small" id="sumTotalPrompt">--</div></div>
+                <div class="stat"><div class="stat-label">Cache</div><div class="stat-value small" id="sumTotalCached">--</div></div>
+                <div class="stat"><div class="stat-label">Output</div><div class="stat-value small" id="sumTotalOutput">--</div></div>
+              </div>
+              <div class="stat" style="margin-top:var(--spacing-sm)">
+                <div class="stat-label">Cache Ratio <span class="info-tip-slot" data-tip="Cached Prompt / (New Prompt + Cached Prompt)."></span></div>
+                <div class="stat-value small" id="sumCacheRatio" style="font-size:var(--font-size-body)">--</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card page-section">
+          <div class="card-title">Daily Usage <span class="card-sub">coverage and gaps per day</span></div>
+          <div class="table-wrap">
+            <table class="table-full">
+              <thead><tr>
+                <th>Date</th><th>Prompt</th><th>Cached</th><th>Output</th>
+                <th>Logical</th><th>Compute</th><th>Coverage</th><th>Gaps</th>
+              </tr></thead>
+              <tbody id="dailyTbody"><tr><td colspan="8" class="na">No data yet.</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= Performance（spec §134） ================= -->
+      <section class="page" id="page-performance">
+        <div class="page-header">
+          <h1 class="page-title">Performance</h1>
+          <p class="page-subtitle">Inference speed, requests and MTP (spec-decode) activity.</p>
+        </div>
+
+        <div class="card page-section chart-box" id="chartTpsBox">
+          <div class="card-title">Token Throughput <span class="card-sub">last 60 minutes</span></div>
+          <div class="chart" id="chartTps" data-chart="chartTps"></div>
+          <div class="chart-empty-overlay"></div>
+        </div>
+
+        <div class="card page-section">
+          <div class="card-title">Server Runtime</div>
+          <div class="stat-grid">
+            <div class="stat"><div class="stat-label">Processing</div><div class="stat-value mid" id="rtProcessing">--</div></div>
+            <div class="stat"><div class="stat-label">Queued (deferred)</div><div class="stat-value mid" id="rtQueued">--</div></div>
+            <div class="stat"><div class="stat-label">Busy Decode Slots</div><div class="stat-value mid" id="rtBusySlots">--</div></div>
+            <div class="stat"><div class="stat-label">KV Cache Usage</div><div class="stat-value mid" id="rtKvCache">--</div></div>
+            <div class="stat"><div class="stat-label">Token Max</div><div class="stat-value mid" id="rtTokenMax">--</div></div>
+          </div>
+        </div>
+
+        <div class="card page-section">
+          <div class="card-title">MTP / Spec-Decode <span class="card-sub">today</span></div>
+          <div class="stat-grid">
+            <div class="stat">
+              <div class="stat-label">Acceptance Rate <span class="info-tip-slot" data-tip="Accepted draft tokens / Draft tokens."></span></div>
+              <div class="stat-value mid" id="mtpAcceptRate">--</div>
+            </div>
+            <div class="stat"><div class="stat-label">Draft Tokens</div><div class="stat-value mid" id="mtpDraft">--</div></div>
+            <div class="stat"><div class="stat-label">Accepted Tokens</div><div class="stat-value mid" id="mtpAccepted">--</div></div>
+            <div class="stat"><div class="stat-label">Draft Sequences</div><div class="stat-value mid" id="mtpSeqs">--</div></div>
+          </div>
+        </div>
+
+        <div class="grid cols-2">
+          <div class="card page-section chart-box" id="chartMtpBox">
+            <div class="card-title">Acceptance Rate Trend <span class="card-sub">by day</span></div>
+            <div class="chart" id="chartMtp" data-chart="chartMtp"></div>
+            <div class="chart-empty-overlay"></div>
+          </div>
+          <div class="card page-section chart-box" id="chartMtpPosBox">
+            <div class="card-title">Accepted Tokens by Draft Position <span class="card-sub">today, per draft position</span></div>
+            <div class="chart" id="chartMtpPos" data-chart="chartMtpPos"></div>
+            <div class="chart-empty-overlay"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= GPU（spec §135） ================= -->
+      <section class="page" id="page-gpu">
+        <div class="page-header" style="display:flex;align-items:flex-start;justify-content:space-between;gap:var(--spacing-lg);flex-wrap:wrap">
+          <div>
+            <h1 class="page-title">GPU</h1>
+            <p class="page-subtitle">
+              NVIDIA GPU utilization, memory, power and temperature.
+              <span id="gpuPageState" class="status-badge paused" style="margin-left:var(--spacing-sm)"><span class="dot"></span><span class="status-text">--</span></span>
+              <span class="stat-hint bad" id="gpuUnavailReason" style="display:none"></span>
+            </p>
+          </div>
+          <div class="seg" id="gpuRange" role="group" aria-label="GPU history range"></div>
+        </div>
+
+        <div class="gpu-grid page-section" id="gpuCards">
+          <div class="empty-state" style="grid-column:1/-1"><div class="empty-title">Loading</div></div>
+        </div>
+
+        <div class="card page-section">
+          <div class="gpu-pick" id="gpuPick" style="display:none"></div>
+          <div class="chart-box" id="chartGpuUtilBox" style="margin-top:var(--spacing-md)">
+            <div class="card-title">Utilization &amp; VRAM <span class="card-sub">0-100%</span></div>
+            <div class="chart" id="chartGpuUtil" data-chart="chartGpuUtil"></div>
+            <div class="chart-empty-overlay"></div>
+          </div>
+          <div class="chart-box" id="chartGpuPowerBox" style="margin-top:var(--spacing-lg)">
+            <div class="card-title">Power Draw</div>
+            <div class="chart" id="chartGpuPower" data-chart="chartGpuPower"></div>
+            <div class="chart-empty-overlay"></div>
+          </div>
+          <div class="chart-box" id="chartGpuTempBox" style="margin-top:var(--spacing-lg)">
+            <div class="card-title">Temperature</div>
+            <div class="chart" id="chartGpuTemp" data-chart="chartGpuTemp"></div>
+            <div class="chart-empty-overlay"></div>
+          </div>
+        </div>
+
+        <div class="card page-section">
+          <div class="card-title">Energy Today</div>
+          <div id="gpuEnergy"></div>
+        </div>
+      </section>
+
+      <!-- ================= History（spec §136：与 Usage 不重复） ================= -->
+      <section class="page" id="page-history">
+        <div class="page-header">
+          <h1 class="page-title">History</h1>
+          <p class="page-subtitle">Monitoring coverage, known data gaps and exports.</p>
+        </div>
+
+        <div class="card page-section">
+          <div class="card-title">Data Quality <span class="card-sub">coverage is monitored-time, not token accuracy</span></div>
+          <div class="stat-grid">
+            <div class="stat">
+              <div class="stat-label">Database</div>
+              <div class="stat-value small" id="hqDb" style="font-size:var(--font-size-body)">--</div>
+              <div class="stat-hint" id="hqDbHint"></div>
+            </div>
+            <div class="stat">
+              <div class="stat-label">Coverage Today</div>
+              <div class="stat-value mid" id="hqCoverage">--</div>
+            </div>
+            <div class="stat">
+              <div class="stat-label">Gaps Today / Total</div>
+              <div class="stat-value mid" id="hqGaps">--</div>
+              <div class="stat-hint" id="hqLoss"></div>
+            </div>
+            <div class="stat">
+              <div class="stat-label">Last Sample</div>
+              <div class="stat-value small" id="hqLastSample" style="font-size:var(--font-size-body)">--</div>
+            </div>
+          </div>
+          <div class="stat-hint bad" id="hqOpenGap" style="margin-top:var(--spacing-sm)"></div>
+        </div>
+
+        <div class="card page-section">
+          <div class="card-title">Recent Gaps <span class="card-sub">known monitoring gaps</span></div>
+          <div class="table-wrap" id="gapsTableWrap">
+            <table class="table-full">
+              <thead><tr>
+                <th>Start</th><th>End</th><th>Duration</th><th>Source</th><th>Reason</th><th>Token Loss?</th>
+              </tr></thead>
+              <tbody id="gapsTbody"><tr><td colspan="6" class="na">No gaps recorded.</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card page-section">
+          <div class="card-title">Export</div>
           <div class="btn-row">
-            <button class="btn" id="btnTestConn">Test Connection</button>
-            <span class="test-result" id="testConnResult"></span>
+            <button class="btn" id="btnExportCsv">Export Daily CSV</button>
+            <button class="btn" id="btnExportGpuCsv">Export GPU Daily CSV</button>
+            <span class="caption">Downloads go to the browser default download location.</span>
           </div>
-        </section>
+        </div>
+      </section>
 
-        <section class="settings-section" id="sec-collector">
-          <h2>Collector</h2>
-          <p class="desc">Metrics 采集参数。</p>
-          <div class="field"><label for="setPollInterval">Polling Interval (seconds)</label>
-            <input id="setPollInterval" type="number" min="1" max="3600"></div>
-          <div class="field"><label for="setLiveRetention">Live Data Retention (hours)</label>
-            <input id="setLiveRetention" type="number" min="1" max="8760"></div>
-          <p class="note">Changes take effect after restarting LlamaMonitor.</p>
-        </section>
+      <!-- ================= Settings（spec §23-§25/§137：setting rows） ================= -->
+      <section class="page" id="page-settings">
+        <div class="page-header">
+          <h1 class="page-title">Settings</h1>
+          <p class="page-subtitle">Configuration. Changes other than Appearance require a restart.</p>
+        </div>
 
-        <section class="settings-section" id="sec-gpu">
-          <h2>GPU</h2>
-          <p class="desc">Windows NVIDIA 只读监控（数据来自系统 NVIDIA 驱动自带的 nvidia-smi；不控制 GPU、不改功耗/频率）。</p>
-          <label class="field" style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
-            <input type="checkbox" id="setGpuEnabled" style="width:auto">
-            <span>Enable GPU Monitoring</span>
-          </label>
-          <div class="field"><label for="setGpuPoll">Polling Interval (seconds)</label>
-            <input id="setGpuPoll" type="number" min="1" max="3600"></div>
-          <div class="field"><label for="setGpuRetention">History Retention (hours)</label>
-            <input id="setGpuRetention" type="number" min="1" max="8760"></div>
-          <div class="field"><label>Detected GPUs（不勾选任何项 = 监控所有检测到的 GPU）</label>
-            <div class="gpu-detected" id="gpuDetected">--</div></div>
-          <p class="note">Changes take effect after restarting LlamaMonitor.</p>
-        </section>
+        <div class="settings-sections">
 
-        <section class="settings-section" id="sec-interface">
-          <h2>Interface</h2>
-          <p class="desc">Dashboard 显示参数。</p>
-          <div class="field"><label for="setRefreshInterval">Dashboard Refresh Interval (seconds)</label>
-            <input id="setRefreshInterval" type="number" min="1" max="3600"></div>
-          <div class="field"><label for="setDefaultDays">Default History Range (days)</label>
-            <input id="setDefaultDays" type="number" min="1" max="3650"></div>
-          <div class="field"><label for="setTheme">Theme</label>
-            <select id="setTheme">
-              <option value="dark">Dark</option>
-              <option value="light">Light</option>
-              <option value="system">System</option>
-            </select></div>
-          <p class="note">Theme 立即生效（预览）；其余设置保存后需重启 LlamaMonitor。</p>
-        </section>
-
-        <section class="settings-section" id="sec-web">
-          <h2>Web</h2>
-          <p class="desc">LlamaMonitor 自身 FastAPI 服务地址。</p>
-          <div class="field"><label for="setWebHost">Host</label>
-            <input id="setWebHost" type="text" spellcheck="false"></div>
-          <div class="field"><label for="setWebPort">Port</label>
-            <input id="setWebPort" type="number" min="1" max="65535"></div>
-          <p class="warn-note">Changing host away from 127.0.0.1 may expose the dashboard to the local network.<br>修改 Host/Port 后需重启 LlamaMonitor 生效。</p>
-        </section>
-
-        <section class="settings-section" id="sec-storage">
-          <h2>Storage</h2>
-          <p class="desc">SQLite 数据库位置与日志模式。</p>
-          <div class="field"><label for="setDbPath">Database Path</label>
-            <input id="setDbPath" type="text" spellcheck="false" placeholder="Default"></div>
-          <div class="hint" id="dbPathHint"></div>
-          <div class="field"><label for="setWal">SQLite WAL</label>
-            <select id="setWal">
-              <option value="true">Enabled</option>
-              <option value="false">Disabled</option>
-            </select></div>
-          <p class="note">修改数据库路径或 WAL 后需重启 LlamaMonitor。</p>
-        </section>
-
-        <section class="settings-section" id="sec-logging">
-          <h2>Logging</h2>
-          <p class="desc">日志级别与滚动参数（文件：%LOCALAPPDATA%\LlamaMonitor\logs\monitor.log）。</p>
-          <div class="field"><label for="setLogLevel">Log Level</label>
-            <select id="setLogLevel">
-              <option value="DEBUG">DEBUG</option>
-              <option value="INFO">INFO</option>
-              <option value="WARNING">WARNING</option>
-              <option value="ERROR">ERROR</option>
-              <option value="CRITICAL">CRITICAL</option>
-            </select></div>
-          <div class="field"><label for="setMaxLogSize">Max Log Size (MB)</label>
-            <input id="setMaxLogSize" type="number" min="1" max="1024"></div>
-          <div class="field"><label for="setLogBackupCount">Backup Count</label>
-            <input id="setLogBackupCount" type="number" min="1" max="100"></div>
-          <p class="note">Changes take effect after restarting LlamaMonitor.</p>
-        </section>
-
-        <section class="settings-section" id="sec-data">
-          <h2>Data Management</h2>
-          <p class="desc">存储信息、CSV 导出、备份与历史清理。</p>
-          <div class="data-kv" id="dataInfo">加载中…</div>
-          <div class="btn-row"><button class="btn" id="btnRefreshData">Refresh</button></div>
-          <div class="op-group">
-            <h3>Database Health</h3>
-            <div class="data-kv" id="dbHealthInfo">
-              <span class="k">Status</span><span id="dbHealthStatus">加载中…</span>
-              <span class="k">Journal Mode</span><span id="dbHealthJournal">--</span>
+          <div class="settings-card" id="sec-server">
+            <h2>Server</h2>
+            <p class="settings-desc">llama-server base address. Monitoring only GETs the metrics endpoint and never touches the server itself.</p>
+            <div class="setting-row">
+              <div class="setting-info">
+                <div class="setting-title">Llama Server URL</div>
+                <div class="setting-desc">Base address (http/https), e.g. http://192.168.1.100:9091. Do not include the metrics path.</div>
+              </div>
+              <div class="setting-control">
+                <input class="input" id="setServerUrl" type="text" spellcheck="false" placeholder="http://127.0.0.1:9091" style="width:280px" aria-label="Llama Server URL">
+              </div>
             </div>
-            <div class="btn-row" style="margin-top:0">
-              <button class="btn" id="btnRunCheck">Run Integrity Check Now</button>
-              <span class="test-result" id="runCheckResult"></span>
+            <div class="setting-row">
+              <div class="setting-info"><div class="setting-title">Metrics Path</div></div>
+              <div class="setting-control">
+                <input class="input" id="setMetricsPath" type="text" spellcheck="false" style="width:280px" aria-label="Metrics path">
+              </div>
             </div>
-            <p class="note">检查 = PRAGMA quick_check（只读，不修复、不删库）。通过：状态恢复 healthy、写入继续；失败：进入 protective mode（只读，停止修改类写入，采集与展示继续）。启动时已自动执行一次。</p>
+            <div class="setting-row">
+              <div class="setting-info"><div class="setting-title">Connection Timeout</div><div class="setting-desc">Seconds.</div></div>
+              <div class="setting-control">
+                <input class="input" id="setTimeoutSec" type="number" min="0.5" max="60" step="0.5" style="width:100px" aria-label="Connection timeout seconds">
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-info"><div class="setting-title">Test</div></div>
+              <div class="setting-control">
+                <button class="btn" id="btnTestConn">Test Connection</button>
+                <span class="inline-result" id="testConnResult"></span>
+              </div>
+            </div>
           </div>
-          <div class="op-group">
-            <h3>Automatic Backup</h3>
-            <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-              <input type="checkbox" id="setBackupAuto"> 启用自动备份（SQLite Backup API 一致性快照，WAL 安全）
-            </label>
-            <div class="field"><label for="setBackupInterval">Backup Interval (hours)</label>
-              <input id="setBackupInterval" type="number" min="1" max="8760" step="1"></div>
-            <div class="field"><label for="setBackupKeep">Keep Count (自动备份保留份数)</label>
-              <input id="setBackupKeep" type="number" min="1" max="365"></div>
-            <p class="note">手动备份永不参与轮转。每个备份创建后立即 quick_check 验证（见下方列表的 Verified 列）。更改需重启 LlamaMonitor 生效。Backup restore is not yet supported from the running application.</p>
+
+          <div class="settings-card" id="sec-collector">
+            <h2>Collector</h2>
+            <p class="settings-desc">Metrics collection parameters. Changes apply after restart.</p>
+            <div class="setting-row">
+              <div class="setting-info"><div class="setting-title">Polling Interval</div><div class="setting-desc">How often metrics are collected, in seconds.</div></div>
+              <div class="setting-control">
+                <input class="input" id="setPollInterval" type="number" min="1" max="3600" style="width:100px" aria-label="Polling interval seconds">
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-info"><div class="setting-title">Live Data Retention</div><div class="setting-desc">Hours of live samples to keep.</div></div>
+              <div class="setting-control">
+                <input class="input" id="setLiveRetention" type="number" min="1" max="8760" style="width:100px" aria-label="Live retention hours">
+              </div>
+            </div>
           </div>
-          <div class="op-group">
-            <h3>Export &amp; Backup</h3>
-            <div class="btn-row" style="margin-top:0">
-              <button class="btn" id="btnExportCsv">Export Daily Usage CSV</button>
-              <button class="btn" id="btnExportGpuCsv">Export GPU Daily CSV</button>
+
+          <div class="settings-card" id="sec-appearance">
+            <h2>Appearance</h2>
+            <p class="settings-desc">Theme applies immediately. Other changes apply after restart.</p>
+            <div class="setting-row">
+              <div class="setting-info"><div class="setting-title">Theme</div><div class="setting-desc">System follows the Windows color scheme live.</div></div>
+              <div class="setting-control">
+                <select class="select" id="setTheme" aria-label="Theme">
+                  <option value="system">System</option>
+                  <option value="light">Light</option>
+                  <option value="dark">Dark</option>
+                </select>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-info"><div class="setting-title">Dashboard Refresh Interval</div><div class="setting-desc">Seconds.</div></div>
+              <div class="setting-control">
+                <input class="input" id="setRefreshInterval" type="number" min="1" max="3600" style="width:100px" aria-label="Refresh interval seconds">
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-info"><div class="setting-title">Default History Range</div><div class="setting-desc">Days, for the Usage page default.</div></div>
+              <div class="setting-control">
+                <input class="input" id="setDefaultDays" type="number" min="1" max="3650" style="width:100px" aria-label="Default history range days">
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-card" id="sec-gpu">
+            <h2>GPU</h2>
+            <p class="settings-desc">Windows NVIDIA read-only monitoring (data from the NVIDIA driver's nvidia-smi; never controls the GPU). Changes apply after restart.</p>
+            <div class="setting-row">
+              <div class="setting-info"><div class="setting-title">Enable GPU Monitoring</div></div>
+              <div class="setting-control">
+                <label class="switch"><input type="checkbox" id="setGpuEnabled" aria-label="Enable GPU monitoring"><span class="track"></span></label>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-info"><div class="setting-title">Polling Interval</div><div class="setting-desc">Seconds.</div></div>
+              <div class="setting-control">
+                <input class="input" id="setGpuPoll" type="number" min="1" max="3600" style="width:100px" aria-label="GPU polling interval seconds">
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-info"><div class="setting-title">History Retention</div><div class="setting-desc">Hours.</div></div>
+              <div class="setting-control">
+                <input class="input" id="setGpuRetention" type="number" min="1" max="8760" style="width:100px" aria-label="GPU retention hours">
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-info"><div class="setting-title">Detected GPUs</div><div class="setting-desc">No boxes checked = monitor all detected GPUs.</div></div>
+              <div class="setting-control" style="flex-direction:column;align-items:flex-end">
+                <div class="gpu-detected" id="gpuDetected" style="display:flex;flex-direction:column;gap:6px;font-size:var(--font-size-caption);max-width:420px;align-items:flex-end"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-card" id="sec-storage">
+            <h2>Storage</h2>
+            <p class="settings-desc">Database location and journal mode. Changes apply after restart.</p>
+            <div class="setting-row">
+              <div class="setting-info"><div class="setting-title">Database Path</div><div class="setting-desc" id="dbPathHint">Default: --</div></div>
+              <div class="setting-control">
+                <input class="input" id="setDbPath" type="text" spellcheck="false" style="width:320px" aria-label="Database path">
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-info"><div class="setting-title">SQLite WAL</div><div class="setting-desc">Write-ahead logging (recommended).</div></div>
+              <div class="setting-control">
+                <select class="select" id="setWal" aria-label="SQLite WAL">
+                  <option value="true">Enabled</option>
+                  <option value="false">Disabled</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-card" id="sec-backup">
+            <h2>Backup</h2>
+            <p class="settings-desc">Automatic consistent snapshots (SQLite Backup API, WAL-safe). Changes apply after restart.</p>
+            <div class="setting-row">
+              <div class="setting-info"><div class="setting-title">Automatic Backup</div></div>
+              <div class="setting-control">
+                <label class="switch"><input type="checkbox" id="setBackupAuto" aria-label="Enable automatic backup"><span class="track"></span></label>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-info"><div class="setting-title">Backup Interval</div><div class="setting-desc">Hours.</div></div>
+              <div class="setting-control">
+                <input class="input" id="setBackupInterval" type="number" min="1" max="8760" step="1" style="width:100px" aria-label="Backup interval hours">
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-info"><div class="setting-title">Keep Count</div><div class="setting-desc">Automatic backups to keep.</div></div>
+              <div class="setting-control">
+                <input class="input" id="setBackupKeep" type="number" min="1" max="365" style="width:100px" aria-label="Backup keep count">
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-card" id="sec-logging">
+            <h2>Logging</h2>
+            <p class="settings-desc">Monitor log rotation. Changes apply after restart.</p>
+            <div class="setting-row">
+              <div class="setting-info"><div class="setting-title">Log Level</div></div>
+              <div class="setting-control">
+                <select class="select" id="setLogLevel" aria-label="Log level">
+                  <option>DEBUG</option><option>INFO</option><option>WARNING</option><option>ERROR</option><option>CRITICAL</option>
+                </select>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-info"><div class="setting-title">Max Log Size</div><div class="setting-desc">MB.</div></div>
+              <div class="setting-control">
+                <input class="input" id="setMaxLogSize" type="number" min="1" max="1024" style="width:100px" aria-label="Max log size MB">
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-info"><div class="setting-title">Backup Count</div><div class="setting-desc">Rotated log files to keep.</div></div>
+              <div class="setting-control">
+                <input class="input" id="setLogBackupCount" type="number" min="1" max="100" style="width:100px" aria-label="Log backup count">
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-card" id="sec-data">
+            <h2>Data</h2>
+            <p class="settings-desc">Database status, backups and data operations.</p>
+            <div id="dataInfo" class="kv-list" style="margin-bottom:var(--spacing-md)"></div>
+            <div class="btn-row" style="margin-bottom:var(--spacing-md)">
+              <button class="btn" id="btnRefreshData">Refresh</button>
               <button class="btn" id="btnBackup">Backup Database</button>
+              <button class="btn" id="btnRunCheck">Database Check</button>
+              <span class="inline-result" id="dbCheckResult"></span>
             </div>
             <div class="backup-list" id="backupList"></div>
-            <p class="note">备份保存在 backups 目录（见上方 Backup Count）。手动备份立即创建并验证。</p>
+            <div class="card-section-gap">
+              <div class="setting-title" style="margin-bottom:var(--spacing-sm)">Danger Zone</div>
+              <div class="btn-row">
+                <button class="btn danger" id="btnClearLive">Clear Live History</button>
+                <button class="btn danger" id="btnResetStats">Reset All Statistics</button>
+              </div>
+            </div>
           </div>
-          <div class="op-group">
-            <h3>Clear（警告操作）</h3>
-            <div class="btn-row" style="margin-top:0"><button class="btn btn-warn" id="btnClearLive">Clear Live History</button></div>
-            <p class="note">只删除 live_samples（实时采样）；每日累计与计数器 baseline 不受影响。</p>
-          </div>
-          <div class="op-group">
-            <h3>Danger Zone（危险操作）</h3>
-            <div class="btn-row" style="margin-top:0"><button class="btn btn-danger" id="btnResetStats">Reset All Statistics</button></div>
-            <p class="note">删除全部历史统计并从现在开始重新累计。不影响 llama.cpp（Counter baseline 保留，旧 Token 不会重新计入）。</p>
-          </div>
-        </section>
 
-        <section class="settings-section" id="sec-application">
-          <h2>Application</h2>
-          <p class="desc">系统托盘、单实例、Windows 开机自启与退出。关闭 Dashboard 窗口只会隐藏到托盘，监控继续。</p>
-          <div class="data-kv" id="appInfo">加载中…</div>
-          <div class="op-group">
-            <h3>System Tray</h3>
-            <div class="data-kv" id="trayBehavior">
-              <span class="k">Show tray icon</span><span>Enabled</span>
-              <span class="k">Close button behavior</span><span>Hide to tray</span>
+          <div class="settings-card" id="sec-application">
+            <h2>Application</h2>
+            <p class="settings-desc">Runtime, autostart and app server. API host/port changes apply after restart.</p>
+            <div id="appInfo" class="kv-list" style="margin-bottom:var(--spacing-md)"></div>
+            <div class="setting-row">
+              <div class="setting-info"><div class="setting-title">Start with Windows</div><div class="setting-status" id="autostartStatus"></div></div>
+              <div class="setting-control">
+                <label class="switch"><input type="checkbox" id="setAutostart" aria-label="Start with Windows"><span class="track"></span></label>
+              </div>
             </div>
-            <p class="note">关闭窗口（右上角 X）= 隐藏到托盘，FastAPI / Collector / GPU / SQLite / 托盘全部继续运行。真正退出：托盘右键 -> Exit，或本页底部 Exit LlamaMonitor。</p>
-          </div>
-          <div class="op-group">
-            <h3>Start with Windows</h3>
-            <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-              <input type="checkbox" id="setAutostart"> 开机时自动启动（登录时进托盘，不弹窗口）
-            </label>
-            <p class="note" id="autostartStatus">加载中…</p>
-            <div class="data-kv" id="autostartCommand"><span class="k">Startup command</span><span>—</span></div>
-            <div class="btn-row" id="autostartRepairRow" style="display:none">
-              <button class="btn btn-warn" id="btnAutostartRepair">Repair startup entry</button>
+            <div class="setting-row" id="autostartRepairRow" style="display:none">
+              <div class="setting-info"><div class="setting-desc" id="autostartCommand" style="word-break:break-all"></div></div>
+              <div class="setting-control"><button class="btn" id="btnAutostartRepair">Repair</button></div>
             </div>
-            <p class="note">写入 HKCU\...\Run（当前用户登录时启动，无需管理员；不是 Windows Service）。仅 EXE 模式可用。</p>
-          </div>
-          <div class="op-group">
-            <h3>Folders</h3>
-            <div class="btn-row" style="margin-top:0">
-              <button class="btn" id="btnOpenData">Open Data Folder</button>
-              <button class="btn" id="btnOpenLogs">Open Log Folder</button>
-              <button class="btn" id="btnOpenBackups">Open Backups Folder</button>
+            <div class="setting-row">
+              <div class="setting-info"><div class="setting-title">API Host</div></div>
+              <div class="setting-control">
+                <input class="input" id="setWebHost" type="text" spellcheck="false" style="width:160px" aria-label="API host">
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-info"><div class="setting-title">API Port</div></div>
+              <div class="setting-control">
+                <input class="input" id="setWebPort" type="number" min="1" max="65535" style="width:120px" aria-label="API port">
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-info"><div class="setting-title">Folders</div></div>
+              <div class="setting-control">
+                <button class="btn subtle" id="btnOpenData">Open Data</button>
+                <button class="btn subtle" id="btnOpenLogs">Open Logs</button>
+                <button class="btn subtle" id="btnOpenBackups">Open Backups</button>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-info"><div class="setting-title">Exit</div></div>
+              <div class="setting-control"><button class="btn danger" id="btnExitApp">Exit LlamaMonitor</button></div>
             </div>
           </div>
-          <div class="op-group">
-            <h3>Exit</h3>
-            <div class="btn-row" style="margin-top:0"><button class="btn btn-danger" id="btnExitApp">Exit LlamaMonitor</button></div>
-            <p class="note">停止所有监控（Collector / GPU / 托盘）并完整保存状态，直到再次启动程序。</p>
-          </div>
-        </section>
 
-        <section class="settings-section" id="sec-updates">
-          <h2>Updates</h2>
-          <p class="desc">版本检查与更新（GitHub Releases + Ed25519 签名 manifest + SHA-256 校验）。
-          更新检查默认关闭；启用后 LlamaMonitor 会定期向受信任的 GitHub 仓库请求最新版本信息
-          （只发送版本相关请求，不发送 token / GPU / 模型名 / 数据库数据 / 设备 ID）。
-          更新永远需要确认后才安装，绝不静默自动安装。</p>
-          <div class="op-group">
-            <h3>Version</h3>
-            <div class="data-kv" id="updateVersionInfo">
-              <span class="k">Current Version</span><span id="updCurrentVersion">--</span>
-              <span class="k">Latest Version</span><span id="updLatestVersion">--</span>
-              <span class="k">Installation Mode</span><span id="updInstallMode">--</span>
+          <div class="settings-card" id="sec-updates">
+            <h2>Updates</h2>
+            <p class="settings-desc">Secure updates from the GitHub release. Every update is Ed25519-signature and SHA-256 verified before install.</p>
+            <div class="kv-list" style="margin-bottom:var(--spacing-md)">
+              <span class="k">Current Version</span><span class="v" id="updCurrentVersion">--</span>
+              <span class="k">Installation Mode</span><span class="v" id="updInstallMode">--</span>
+              <span class="k">Last Check</span><span class="v" id="updLastCheck">Never</span>
+              <span class="k">Latest Release</span><span class="v" id="updLatestVersion">--</span>
+              <span class="k">Status</span><span class="v"><span class="update-state" id="updStatus">--</span></span>
             </div>
-          </div>
-          <div class="op-group">
-            <h3>Settings</h3>
-            <label class="field" style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
-              <input type="checkbox" id="setUpdatesEnabled" style="width:auto">
-              <span>Enable automatic update checks</span>
-            </label>
-            <div class="field"><label for="setUpdateInterval">Check Interval (hours)</label>
-              <input id="setUpdateInterval" type="number" min="1" max="8760" step="1"></div>
-            <label class="field" style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
-              <input type="checkbox" id="setUpdateAutoDownload" style="width:auto">
-              <span>Auto-download verified updates</span>
-            </label>
-            <p class="note">自动下载只会"下载 + 校验"，不会自动安装。更新需要在此页点击 Install Update 确认。
-            更改保存后生效（下次启动执行定期检查）。</p>
-          </div>
-          <div class="op-group">
-            <h3>Status</h3>
-            <div class="data-kv" id="updateStatusBox">
-              <span class="k">Last Checked</span><span id="updLastCheck">Never</span>
-              <span class="k">Status</span><span id="updStatus">--</span>
+            <div class="setting-row">
+              <div class="setting-info"><div class="setting-title">Automatic Update Check</div></div>
+              <div class="setting-control">
+                <label class="switch"><input type="checkbox" id="setUpdatesEnabled" aria-label="Enable automatic update check"><span class="track"></span></label>
+              </div>
             </div>
-            <div class="btn-row">
-              <button class="btn btn-primary" id="btnUpdateCheck">Check for Updates</button>
+            <div class="setting-row">
+              <div class="setting-info"><div class="setting-title">Check Interval</div><div class="setting-desc">Hours.</div></div>
+              <div class="setting-control">
+                <input class="input" id="setUpdateInterval" type="number" min="1" max="8760" style="width:100px" aria-label="Update check interval hours">
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-info"><div class="setting-title">Automatic Download</div><div class="setting-desc">Download (still never auto-install) when a new version is found.</div></div>
+              <div class="setting-control">
+                <label class="switch"><input type="checkbox" id="setUpdateAutoDownload" aria-label="Automatic download"><span class="track"></span></label>
+              </div>
+            </div>
+            <div class="btn-row" style="margin-top:var(--spacing-md)">
+              <button class="btn primary" id="btnUpdateCheck">Check for Updates</button>
               <button class="btn" id="btnUpdateDownload" disabled>Download Update</button>
               <button class="btn" id="btnUpdateInstall" disabled>Install Update</button>
               <button class="btn" id="btnUpdateCancel" hidden>Cancel</button>
             </div>
-            <div id="updProgressWrap" hidden style="margin:10px 0">
+            <div id="updProgressWrap" hidden style="margin-top:var(--spacing-md)">
               <div class="progress-track"><div class="progress-fill" id="updProgressBar"></div></div>
-              <div class="note" id="updProgressText"></div>
+              <div class="progress-label" id="updProgressText"></div>
             </div>
-            <div id="updReleaseNotesWrap" hidden>
-              <h3>Release Notes</h3>
-              <pre class="release-notes" id="updReleaseNotes"></pre>
+            <div id="updReleaseNotesWrap" hidden style="margin-top:var(--spacing-md)">
+              <div class="release-notes" id="updReleaseNotes"></div>
             </div>
-            <div class="btn-row" id="updPortableActions" hidden>
-              <button class="btn" id="btnUpdateOpenFolder">Open Download Folder</button>
-              <button class="btn" id="btnUpdateOpenRelease">Open GitHub Release</button>
+            <div class="update-verified" id="updSignatureNote" style="margin-top:var(--spacing-sm)"></div>
+            <div class="update-note" id="updModeNote" style="margin-top:var(--spacing-sm)"></div>
+            <div class="btn-row" id="updPortableActions" hidden style="margin-top:var(--spacing-sm)">
+              <button class="btn subtle" id="btnUpdateOpenFolder">Open Download Folder</button>
+              <button class="btn subtle" id="btnUpdateOpenRelease">Open GitHub Release</button>
             </div>
-            <p class="note" id="updModeNote"></p>
-            <p class="note" id="updSignatureNote"></p>
           </div>
-        </section>
 
-        <section class="settings-section" id="sec-about">
-          <h2>About</h2>
-          <p class="desc">版本与运行信息。Version / Database Schema 来自后端 API（唯一版本源 version.py），不硬编码。</p>
-          <div class="op-group">
-            <h3>LlamaMonitor</h3>
-            <div class="data-kv" id="aboutInfo">
-              <span class="k">Version</span><span id="aboutVersion">--</span>
-              <span class="k">Platform</span><span id="aboutPlatform">Windows x64</span>
-              <span class="k">Data Directory</span><span id="aboutDataDir">--</span>
-              <span class="k">Database Schema</span><span id="aboutSchema">--</span>
-              <span class="k">Python Runtime</span><span id="aboutRuntime">--</span>
-            </div>
-            <div class="btn-row" style="margin-top:0">
-              <button class="btn" id="btnCopyVersion">Copy Version Info</button>
-              <span class="test-result" id="copyVersionResult"></span>
-            </div>
-            <p class="note">用户数据（数据库 / 配置 / 备份 / 日志）位于 Data Directory；卸载 LlamaMonitor 默认保留该目录。</p>
+        </div>
+
+        <div class="settings-footer">
+          <span class="dirty-badge" id="dirtyBadge" hidden>Unsaved changes</span>
+          <div class="btn-row">
+            <button class="btn" id="btnResetDefaults">Reset to Defaults</button>
+            <button class="btn primary" id="btnSaveSettings" disabled>Save</button>
           </div>
-        </section>
+        </div>
+      </section>
 
-      </div>
+      <!-- ================= About（spec §138） ================= -->
+      <section class="page" id="page-about">
+        <div class="page-header">
+          <h1 class="page-title">About</h1>
+          <p class="page-subtitle">Local read-only monitor for llama.cpp.</p>
+        </div>
+        <div class="card page-section">
+          <div class="kv-list">
+            <span class="k">Application</span><span class="v" id="aboutName">LlamaMonitor</span>
+            <span class="k">Version</span><span class="v" id="aboutVersion">--</span>
+            <span class="k">Database Schema</span><span class="v" id="aboutSchema">--</span>
+            <span class="k">Data Directory</span><span class="v" id="aboutDataDir">--</span>
+          </div>
+          <div class="btn-row" style="margin-top:var(--spacing-md)">
+            <button class="btn subtle" id="btnCopyVersion">Copy Version Info</button>
+            <span class="inline-result" id="aboutCopyResult"></span>
+          </div>
+        </div>
+      </section>
+
     </div>
-
-    <div class="settings-footer">
-      <span class="dirty-badge" id="dirtyBadge" hidden>● Unsaved changes</span>
-      <div class="btn-row">
-        <button class="btn" id="btnResetDefaults">Reset to Defaults</button>
-        <button class="btn btn-primary" id="btnSaveSettings" disabled>Save</button>
-      </div>
-    </div>
-  </div><!-- /settings-view -->
-
+  </main>
 </div>
 
-<div id="toastBox"></div>
-<div id="modalOverlay" hidden>
-  <div class="modal">
-    <h3 id="modalTitle"></h3>
-    <p id="modalText"></p>
-    <input id="modalInput" type="text" hidden spellcheck="false" autocomplete="off">
+<!-- Toast 槽位（spec §80：右下） -->
+<div id="toastBox" class="toast-box" role="status" aria-live="polite"></div>
+
+<!-- Modal（spec §78/§79：role=dialog + focus trap） -->
+<div id="modalOverlay" class="modal-overlay" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitleEl">
+    <h3 class="modal-title" id="modalTitleEl"></h3>
+    <p class="modal-text"></p>
+    <input class="input modal-input" type="text" hidden spellcheck="false" autocomplete="off" aria-label="Type to confirm">
     <div class="modal-btns">
-      <button class="btn" id="modalCancel">Cancel</button>
-      <button class="btn btn-primary" id="modalOk">OK</button>
+      <button class="btn modal-cancel">Cancel</button>
+      <button class="btn primary modal-ok">OK</button>
     </div>
   </div>
 </div>
-
-<script>
-"use strict";
-
-/* ================= 数字格式化 =================
-   大数字：1000 -> 1.00K，1000000 -> 1.00M，1000000000 -> 1.00B；
-   <1000 的整数原样显示；null/undefined 显示 "--"。 */
-function fmtCompact(v) {
-  if (v === null || v === undefined || isNaN(v)) return "--";
-  v = Number(v);
-  const neg = v < 0 ? "-" : "";
-  const a = Math.abs(v);
-  if (a >= 1e9) return neg + (a / 1e9).toFixed(2) + "B";
-  if (a >= 1e6) return neg + (a / 1e6).toFixed(2) + "M";
-  if (a >= 1e3) return neg + (a / 1e3).toFixed(2) + "K";
-  return neg + String(Math.round(a));
-}
-/* TPS：保留 1 位小数 */
-function fmtTps(v) {
-  if (v === null || v === undefined || isNaN(v)) return "--";
-  return Number(v).toFixed(1);
-}
-/* 百分比：保留 1 位小数 */
-function fmtRate(v) {
-  if (v === null || v === undefined || isNaN(v)) return "--";
-  return Number(v).toFixed(1) + "%";
-}
-/* 时间：epoch 秒 -> 本地 HH:MM:SS */
-function fmtTime(epoch) {
-  if (!epoch) return "--";
-  const d = new Date(epoch * 1000);
-  const p = (n) => String(n).padStart(2, "0");
-  return p(d.getHours()) + ":" + p(d.getMinutes()) + ":" + p(d.getSeconds());
-}
-/* epoch 秒 -> 本地 HH:MM（图表横轴） */
-function fmtHM(epoch) {
-  const d = new Date(epoch * 1000);
-  const p = (n) => String(n).padStart(2, "0");
-  return p(d.getHours()) + ":" + p(d.getMinutes());
-}
-
-/* ================= 状态 ================= */
-const state = {
-  online: null,      // null = 尚未取得状态 / 后端不可达
-  lastDays: 30,      // 当前时间范围（All = 365；默认值来自 /api/config 的 ui.daily_default_days）
-  dailyData: [],     // /api/daily 原始行
-  theme: "dark",     // 当前生效主题（dark / light；system 已解析为其中之一）
-};
-let lastLiveSamples = [];  // 最近一次 /api/live 数据（主题切换时重绘用）
-let cfgUi = { refreshIntervalSeconds: 5, dailyDefaultDays: 30, theme: "dark" };
-
-const $ = (id) => document.getElementById(id);
-
-/* ================= 顶栏 + 当前状态卡（每 5 秒刷新） ================= */
-function applyStatus(data) {
-  state.online = data.server_online === true;
-  const badge = $("statusBadge");
-  badge.textContent = data.server_online ? "ONLINE" : "OFFLINE";
-  badge.className = "badge " + (data.server_online ? "online" : "offline");
-  // 顶栏 Server 地址：优先用 /api/config 设置的干净 host:port（loadConfig 设置）；
-  // /api/config 不可用时退回 /api/status 的完整 metrics 地址
-  const su = $("serverUrl");
-  if (su.textContent === "Server: --" && data.llama_server_url) {
-    su.textContent = "Server: " + data.llama_server_url;
-  }
-  $("lastUpdate").textContent = "最后更新: " + fmtTime(data.last_update);
-
-  // 配置状态：Config: OK / Default / Error（悬停查看配置文件路径）
-  const cc = data.config;
-  const ce = $("configStatus");
-  if (cc) {
-    const label = cc.has_errors ? "Error" : (cc.using_defaults ? "Default" : "OK");
-    ce.textContent = "Config: " + label;
-    ce.title = "配置文件: " + cc.path + "\n修改后重启 LlamaMonitor 生效";
-    ce.classList.toggle("err", label === "Error");
-    ce.classList.toggle("warn", label === "Default");
-  }
-
-  const online = state.online;
-  // 当前速率：OFFLINE 或字段缺失时显示 "--"，历史图表不受影响
-  setStat("statPromptTps", online ? fmtTps(data.prompt_tps) : "--");
-  setStat("statDecodeTps", online ? fmtTps(data.decode_tps) : "--");
-  setStat("statContext", online ? fmtCompact(data.context_max) : "--");
-}
-function setStat(id, text) {
-  const el = $(id);
-  el.textContent = text;
-  el.classList.toggle("dim", text === "--");
-  el.title = text;
-}
-
-/* ================= 今日 / 累计卡（每 30 秒刷新） ================= */
-function applySummary(data) {
-  const t = data.today || {};
-  const s = data.total || {};
-  $("todayLogical").textContent = fmtCompact(t.logical_tokens);
-  $("todayCompute").textContent = fmtCompact(t.compute_tokens);
-  $("todayPrompt").textContent = fmtCompact(t.prompt_tokens);
-  $("todayOutput").textContent = fmtCompact(t.output_tokens);
-  $("totalLogical").textContent = fmtCompact(s.logical_tokens);
-  $("totalCompute").textContent = fmtCompact(s.compute_tokens);
-  $("totalCached").textContent = fmtCompact(s.cached_tokens);
-  const denom = (s.prompt_tokens || 0) + (s.cached_tokens || 0);
-  $("cacheRatio").textContent = denom > 0 ? fmtRate((s.cached_tokens || 0) / denom * 100) : "--";
-  /* AUDIT-DATA-002：statMtp 统一由 /api/mtp（今日口径）驱动——
-     原来这里取 /api/daily 最后一行，今日无数据时会把"昨天"的接受率当"今日"显示 */
-}
-
-/* ================= 图表 ================= */
-let chartUsage = null, chartTps = null, chartMtp = null;
-let chartGpuUtil = null, chartGpuPower = null, chartGpuTemp = null, chartMtpPos = null;  // Phase 9
-
-/* 图表配色跟随主题（config ui.theme） */
-function palette() {
-  return state.theme === "light"
-    ? { axis: "#5f6368", split: "#e0e3e8", tooltipBg: "#ffffff", tooltipBorder: "#d0d4da", textStyle: "#1f2328" }
-    : { axis: "#8b93a3", split: "#232833", tooltipBg: "#1a1d24", tooltipBorder: "#2a2f3a", textStyle: "#e8eaed" };
-}
-function tooltipStyle(pal) {
-  return { backgroundColor: pal.tooltipBg, borderColor: pal.tooltipBorder, textStyle: { color: pal.textStyle, fontSize: 12 } };
-}
-
-function initCharts() {
-  if (typeof echarts === "undefined") {
-    console.error("ECharts 未加载（static/echarts.min.js 缺失？）");
-    return;
-  }
-  const ratio = window.devicePixelRatio || 1;
-  chartUsage = echarts.init($("chartUsage"), null, { devicePixelRatio: ratio });
-  chartTps = echarts.init($("chartTps"), null, { devicePixelRatio: ratio });
-  chartMtp = echarts.init($("chartMtp"), null, { devicePixelRatio: ratio });
-  chartGpuUtil = echarts.init($("chartGpuUtil"), null, { devicePixelRatio: ratio });
-  chartGpuPower = echarts.init($("chartGpuPower"), null, { devicePixelRatio: ratio });
-  chartGpuTemp = echarts.init($("chartGpuTemp"), null, { devicePixelRatio: ratio });
-  chartMtpPos = echarts.init($("chartMtpPos"), null, { devicePixelRatio: ratio });
-
-  const allCharts = [chartUsage, chartTps, chartMtp, chartGpuUtil, chartGpuPower, chartGpuTemp, chartMtpPos];
-  const allChartDivs = ["chartUsage", "chartTps", "chartMtp", "chartGpuUtil", "chartGpuPower", "chartGpuTemp", "chartMtpPos"];
-
-  // 窗口/DPI 缩放变化时自适应（ResizeObserver 覆盖 CSS 布局变化）
-  const ro = new ResizeObserver(() => allCharts.forEach((c) => c.resize()));
-  allChartDivs.forEach((id) => ro.observe($(id)));
-  window.addEventListener("resize", () => allCharts.forEach((c) => c.resize()));
-}
-
-/* 图表 1：Token Usage 堆叠柱（Prompt / Cached / Output），按当前时间范围 */
-function renderUsageChart() {
-  if (!chartUsage) return;
-  const pal = palette();
-  const rows = state.dailyData;
-  chartUsage.setOption({
-    animation: false,
-    tooltip: Object.assign({ trigger: "axis", axisPointer: { type: "shadow" } }, tooltipStyle(pal), {
-      valueFormatter: (v) => (v === null || v === undefined ? "--" : fmtCompact(v)),
-    }),
-    legend: {
-      data: ["Prompt", "Cached", "Output"],
-      textStyle: { color: pal.axis },
-      top: 0,
-      right: 0,
-      icon: "rect",
-      itemWidth: 10,
-      itemHeight: 10,
-    },
-    grid: { left: 8, right: 8, top: 30, bottom: 0, containLabel: true },
-    xAxis: {
-      type: "category",
-      data: rows.map((r) => r.date),
-      axisLabel: { color: pal.axis, fontSize: 11 },
-      axisLine: { lineStyle: { color: pal.split } },
-    },
-    yAxis: {
-      type: "value",
-      axisLabel: { color: pal.axis, fontSize: 11, formatter: (v) => fmtCompact(v) },
-      splitLine: { lineStyle: { color: pal.split } },
-    },
-    series: [
-      { name: "Prompt", type: "bar", stack: "total", itemStyle: { color: "#4da3ff" }, data: rows.map((r) => r.prompt_tokens) },
-      { name: "Cached", type: "bar", stack: "total", itemStyle: { color: "#2fbf9f" }, data: rows.map((r) => r.cached_tokens) },
-      { name: "Output", type: "bar", stack: "total", itemStyle: { color: "#e8a33d" }, data: rows.map((r) => r.output_tokens) },
-    ],
-  }, true);
-}
-
-/* 图表 2：最近 60 分钟 TPS 双曲线 */
-function renderTpsChart(samples) {
-  if (!chartTps) return;
-  const pal = palette();
-  chartTps.setOption({
-    animation: false,
-    tooltip: Object.assign({ trigger: "axis" }, tooltipStyle(pal), {
-      valueFormatter: (v) => (v === null || v === undefined ? "--" : Number(v).toFixed(1)),
-    }),
-    legend: {
-      data: ["Prompt TPS", "Decode TPS"],
-      textStyle: { color: pal.axis },
-      top: 0,
-      right: 0,
-      icon: "rect",
-      itemWidth: 10,
-      itemHeight: 10,
-    },
-    grid: { left: 8, right: 8, top: 30, bottom: 0, containLabel: true },
-    xAxis: {
-      type: "category",
-      data: samples.map((s) => fmtHM(s.timestamp)),
-      axisLabel: { color: pal.axis, fontSize: 11 },
-      axisLine: { lineStyle: { color: pal.split } },
-    },
-    yAxis: {
-      type: "value",
-      name: "tokens/s",
-      nameTextStyle: { color: pal.axis },
-      axisLabel: { color: pal.axis, fontSize: 11 },
-      splitLine: { lineStyle: { color: pal.split } },
-    },
-    series: [
-      { name: "Prompt TPS", type: "line", showSymbol: false, connectNulls: false, lineStyle: { width: 1.5, color: "#4da3ff" }, itemStyle: { color: "#4da3ff" }, data: samples.map((s) => s.prompt_tps) },
-      { name: "Decode TPS", type: "line", showSymbol: false, connectNulls: false, lineStyle: { width: 1.5, color: "#2fbf9f" }, itemStyle: { color: "#2fbf9f" }, data: samples.map((s) => s.decode_tps) },
-    ],
-  }, true);
-}
-
-/* 图表 3：每日 MTP 接受率趋势（与图表 1 相同时间范围） */
-function renderMtpChart() {
-  if (!chartMtp) return;
-  const pal = palette();
-  const rows = state.dailyData;
-  chartMtp.setOption({
-    animation: false,
-    tooltip: Object.assign({ trigger: "axis" }, tooltipStyle(pal), {
-      valueFormatter: (v) => (v === null || v === undefined ? "--" : Number(v).toFixed(1) + "%"),
-    }),
-    grid: { left: 8, right: 8, top: 24, bottom: 0, containLabel: true },
-    xAxis: {
-      type: "category",
-      data: rows.map((r) => r.date),
-      axisLabel: { color: pal.axis, fontSize: 11 },
-      axisLine: { lineStyle: { color: pal.split } },
-    },
-    yAxis: {
-      type: "value",
-      name: "%",
-      nameTextStyle: { color: pal.axis },
-      axisLabel: { color: pal.axis, fontSize: 11 },
-      splitLine: { lineStyle: { color: pal.split } },
-    },
-    series: [
-      {
-        name: "MTP Accept Rate",
-        type: "line",
-        showSymbol: true,
-        symbolSize: 5,
-        connectNulls: false,
-        lineStyle: { width: 1.5, color: "#b58cff" },
-        itemStyle: { color: "#b58cff" },
-        areaStyle: { color: "rgba(181, 140, 255, 0.10)" },
-        data: rows.map((r) => r.mtp_accept_rate),
-      },
-    ],
-  }, true);
-}
-
-/* ================= 每日统计表 ================= */
-function renderTable() {
-  const tbody = $("dailyTbody");
-  if (!state.dailyData.length) {
-    tbody.innerHTML = '<tr><td colspan="7" class="na">暂无数据</td></tr>';
-    return;
-  }
-  const rows = state.dailyData.slice().reverse(); // 最新在上
-  tbody.innerHTML = rows.map((r) =>
-    "<tr>" +
-    "<td>" + escapeHtml(r.date) + "</td>" +  // AUDIT-WEB-005
-    "<td>" + fmtCompact(r.prompt_tokens) + "</td>" +
-    "<td>" + fmtCompact(r.cached_tokens) + "</td>" +
-    "<td>" + fmtCompact(r.output_tokens) + "</td>" +
-    "<td>" + fmtCompact(r.logical_tokens) + "</td>" +
-    "<td>" + fmtCompact(r.compute_tokens) + "</td>" +
-    "<td>" + (r.mtp_accept_rate === null || r.mtp_accept_rate === undefined ? '<span class="na">--</span>' : fmtRate(r.mtp_accept_rate)) + "</td>" +
-    "</tr>"
-  ).join("");
-}
-
-/* ================= 数据刷新 =================
-   快（5s）：/api/status
-   中（30s）：/api/summary、/api/live（60 分钟）
-   慢（120s）：/api/daily（每日历史 + MTP 趋势 + 表格）
-   OFFLINE 时历史数据保留原样，不清空图表。 */
-/* AUDIT-WEB-003：统一 30s 超时（AbortController）——后端 hang 时本轮按失败结束，
-   轮询循环不会停摆、顶栏数据不会静默过期到永远。 */
-async function fetchJson(url, timeoutMs = 30000) {
-  const ctrl = new AbortController();
-  const to = setTimeout(() => ctrl.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, { signal: ctrl.signal });
-    if (!res.ok) throw new Error(url + " -> " + res.status);
-    return await res.json();
-  } finally {
-    clearTimeout(to);
-  }
-}
-
-/* AUDIT-WEB-002：in-flight 互斥——同一 key 的上一次请求未返回时跳过本轮，
-   避免"手动点击（慢请求）+ 周期轮询"重叠导致旧结果覆盖新选择。 */
-const _inflight = new Set();
-async function onceInFlight(key, fn) {
-  if (_inflight.has(key)) return null;
-  _inflight.add(key);
-  try { return await fn(); } finally { _inflight.delete(key); }
-}
-
-async function refreshStatus() {
-  try {
-    applyStatus(await fetchJson("/api/status"));
-  } catch (e) {
-    // 后端不可达（区别于 llama-server 离线）：同样显示 OFFLINE，保留历史数据
-    const badge = $("statusBadge");
-    badge.textContent = "OFFLINE";
-    badge.className = "badge offline";
-    $("statPromptTps").textContent = "--";
-    $("statDecodeTps").textContent = "--";
-    $("statContext").textContent = "--";
-  }
-}
-
-async function refreshSummary() {
-  try {
-    applySummary(await fetchJson("/api/summary"));
-  } catch (e) { /* 保留上次数据 */ }
-}
-
-async function refreshLive() {
-  try {
-    const data = await fetchJson("/api/live?minutes=60");
-    lastLiveSamples = data.samples || [];
-    renderTpsChart(lastLiveSamples);
-  } catch (e) { /* 保留上次数据 */ }
-}
-
-async function refreshDaily() {
-  await onceInFlight("daily", _refreshDaily);  // AUDIT-WEB-002
-}
-async function _refreshDaily() {
-  try {
-    const data = await fetchJson("/api/daily?days=" + state.lastDays);
-    state.dailyData = data.days || [];
-    renderUsageChart();
-    renderMtpChart();
-    renderTable();
-    applySummarySafeMtp();
-  } catch (e) { /* 保留上次数据 */ }
-}
-
-/* daily 数据到达后补刷一次 MTP 卡（不需要等 30s 的 summary 刷新） */
-async function applySummarySafeMtp() {
-  try {
-    const data = await fetchJson("/api/mtp");
-    setStat("statMtp", fmtRate(data.accept_rate));
-  } catch (e) { /* 保留上次数据 */ }
-}
-
-/* ================= Phase 9：Server Runtime ================= */
-async function refreshRuntime() {
-  try {
-    const d = await fetchJson("/api/runtime");
-    setStat("rtProcessing", fmtCompact(d.requests_processing));
-    setStat("rtQueued", fmtCompact(d.requests_deferred));
-    setStat("rtBusySlots", fmtCompact(d.busy_slots));
-    const kv = d.kv_cache_usage_ratio;
-    $("rtKvCache").textContent = (kv === null || kv === undefined) ? "--" : (kv * 100).toFixed(1) + "%";
-    $("rtKvCache").classList.toggle("dim", kv === null || kv === undefined);
-    setStat("rtTokenMax", fmtCompact(d.n_tokens_max));
-  } catch (e) { /* 后端不可达：保留上次数据 */ }
-}
-
-/* ================= Phase 9：GPU ================= */
-let gpuState = { available: false, gpus: [], detected: [], reason: null };
-let gpuLiveData = { gpus: [] };
-let gpuRangeMinutes = 60;
-const gpuVisible = {};   // uuid -> false 表示在图中隐藏；默认全部显示
-
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-}
-
-async function refreshGpuStatus() {
-  try {
-    const d = await fetchJson("/api/gpu/status");
-    gpuState = d;
-    const banner = $("gpuUnavailable");
-    if (!d.available) {
-      // 不可用：横幅提示（历史曲线保留）；恢复后自动继续
-      banner.hidden = false;
-      banner.textContent = "GPU Monitoring Unavailable" + (d.reason ? "（" + d.reason + "）" : "");
-      renderGpuCards([]);
-    } else {
-      banner.hidden = true;
-      renderGpuCards(d.gpus || []);
-      renderGpuPick(d.detected || []);
-    }
-  } catch (e) { /* 后端不可达：保留上次状态 */ }
-}
-
-function renderGpuCards(gpus) {
-  const box = $("gpuCards");
-  box.innerHTML = "";
-  if (!gpus.length) {
-    box.innerHTML = '<div class="na" style="grid-column:1/-1">--</div>';
-    return;
-  }
-  gpus.forEach((g) => {
-    const div = document.createElement("div");
-    div.className = "gpu-card";
-    const vram = (g.memory_used_mb === null || g.memory_used_mb === undefined ||
-                 g.memory_total_mb === null || g.memory_total_mb === undefined)
-      ? "--"
-      : (g.memory_used_mb / 1024).toFixed(1) + " / " + (g.memory_total_mb / 1024).toFixed(1) + " GB" +
-        (g.memory_usage_percent !== null && g.memory_usage_percent !== undefined
-           ? "（" + Math.round(g.memory_usage_percent) + "%）" : "");
-    const rows = [
-      ["GPU Load", g.utilization_percent === null || g.utilization_percent === undefined ? "--" : g.utilization_percent + "%"],
-      ["VRAM", vram],
-      ["Temperature", g.temperature_c === null || g.temperature_c === undefined ? "--" : g.temperature_c + "°C"],
-      ["Power", g.power_draw_w === null || g.power_draw_w === undefined ? "--" : g.power_draw_w + " W"],
-      ["Fan", g.fan_percent === null || g.fan_percent === undefined ? "--" : g.fan_percent + "%"],
-      ["SM Clock", g.sm_clock_mhz === null || g.sm_clock_mhz === undefined ? "--" : g.sm_clock_mhz + " MHz"],
-      ["Memory Clock", g.memory_clock_mhz === null || g.memory_clock_mhz === undefined ? "--" : g.memory_clock_mhz + " MHz"],
-      ["PCIe", (g.pcie_generation === null || g.pcie_generation === undefined ||
-               g.pcie_width === null || g.pcie_width === undefined)
-        ? "--" : "Gen" + g.pcie_generation + " x" + g.pcie_width],
-    ];
-    let html = '<div class="gpu-card-head">GPU ' + (g.index === null || g.index === undefined ? "?" : g.index) +
-      '<span>' + escapeHtml(g.name || "") + "</span></div><div class=\"gpu-kv\">";
-    rows.forEach((r) => { html += '<div class="k">' + r[0] + '</div><div class="v">' + escapeHtml(r[1]) + "</div>"; });
-    html += "</div>";
-    div.innerHTML = html;
-    box.appendChild(div);
-  });
-}
-
-/* GPU 太多时允许勾选显示哪些（曲线） */
-function renderGpuPick(detected) {
-  const box = $("gpuPick");
-  if (!detected || detected.length < 2) {
-    box.hidden = true;
-    box.innerHTML = "";
-    return;
-  }
-  box.hidden = false;
-  box.innerHTML = "";
-  detected.forEach((g) => {
-    if (gpuVisible[g.uuid] === undefined) gpuVisible[g.uuid] = true;
-    const label = document.createElement("label");
-    const cb = document.createElement("input");
-    cb.type = "checkbox";
-    cb.checked = gpuVisible[g.uuid];
-    cb.addEventListener("change", () => { gpuVisible[g.uuid] = cb.checked; drawGpuUtilChart(); drawGpuPowerChart(); drawGpuTempChart(); });
-    label.appendChild(cb);
-    label.appendChild(document.createTextNode(" GPU " + (g.index === null || g.index === undefined ? "?" : g.index) + " " + (g.name || "")));
-    box.appendChild(label);
-  });
-}
-
-async function refreshGpuLive() {
-  await onceInFlight("gpuLive", _refreshGpuLive);  // AUDIT-WEB-002
-}
-async function _refreshGpuLive() {
-  try {
-    const d = await fetchJson("/api/gpu/live?minutes=" + gpuRangeMinutes);
-    gpuLiveData = d;
-    (d.gpus || []).forEach((g) => { if (gpuVisible[g.uuid] === undefined) gpuVisible[g.uuid] = true; });
-    drawGpuUtilChart();
-    drawGpuPowerChart();
-    drawGpuTempChart();
-  } catch (e) { /* 保留上次数据 */ }
-}
-
-function gpuTimeAxis(pal) {
-  return {
-    type: "time",
-    axisLabel: { color: pal.axis, fontSize: 11 },
-    axisLine: { lineStyle: { color: pal.split } },
-  };
-}
-
-function gpuLegend(pal) {
-  return { textStyle: { color: pal.axis, fontSize: 10 }, top: 0, type: "scroll" };
-}
-
-/* GPU Utilization + VRAM Usage %（同一张图；VRAM 用虚线区分） */
-function drawGpuUtilChart() {
-  if (!chartGpuUtil) return;
-  const pal = palette();
-  const series = [];
-  (gpuLiveData.gpus || []).forEach((g) => {
-    if (gpuVisible[g.uuid] === false) return;
-    const label = "GPU " + (g.index === null || g.index === undefined ? "?" : g.index);
-    series.push({
-      name: label + " Util", type: "line", showSymbol: false, connectNulls: false,
-      data: g.points.map((p) => [Math.round(p.timestamp * 1000), p.utilization_percent]),
-    });
-    series.push({
-      name: label + " VRAM", type: "line", showSymbol: false, connectNulls: false,
-      lineStyle: { type: "dashed", width: 1.2 },
-      data: g.points.map((p) => [Math.round(p.timestamp * 1000), p.memory_usage_percent]),
-    });
-  });
-  chartGpuUtil.setOption({
-    animation: false,
-    tooltip: Object.assign({ trigger: "axis" }, tooltipStyle(pal), {
-      valueFormatter: (v) => (v === null || v === undefined ? "--" : Number(v).toFixed(1) + "%"),
-    }),
-    legend: gpuLegend(pal),
-    grid: { left: 8, right: 8, top: 30, bottom: 0, containLabel: true },
-    xAxis: gpuTimeAxis(pal),
-    yAxis: {
-      type: "value", min: 0, max: 100,
-      axisLabel: { color: pal.axis, fontSize: 11, formatter: (v) => v + "%" },
-      splitLine: { lineStyle: { color: pal.split } },
-    },
-    series: series,
-  }, true);
-}
-
-function drawGpuPowerChart() {
-  if (!chartGpuPower) return;
-  const pal = palette();
-  const series = (gpuLiveData.gpus || []).filter((g) => gpuVisible[g.uuid] !== false).map((g) => ({
-    name: "GPU " + (g.index === null || g.index === undefined ? "?" : g.index),
-    type: "line", showSymbol: false, connectNulls: false,
-    data: g.points.map((p) => [Math.round(p.timestamp * 1000), p.power_draw_w]),
-  }));
-  chartGpuPower.setOption({
-    animation: false,
-    tooltip: Object.assign({ trigger: "axis" }, tooltipStyle(pal), {
-      valueFormatter: (v) => (v === null || v === undefined ? "--" : Number(v).toFixed(1) + " W"),
-    }),
-    legend: gpuLegend(pal),
-    grid: { left: 8, right: 8, top: 30, bottom: 0, containLabel: true },
-    xAxis: gpuTimeAxis(pal),
-    yAxis: {
-      type: "value", name: "W", nameTextStyle: { color: pal.axis },
-      axisLabel: { color: pal.axis, fontSize: 11 },
-      splitLine: { lineStyle: { color: pal.split } },
-    },
-    series: series,
-  }, true);
-}
-
-function drawGpuTempChart() {
-  if (!chartGpuTemp) return;
-  const pal = palette();
-  const series = (gpuLiveData.gpus || []).filter((g) => gpuVisible[g.uuid] !== false).map((g) => ({
-    name: "GPU " + (g.index === null || g.index === undefined ? "?" : g.index),
-    type: "line", showSymbol: false, connectNulls: false,
-    data: g.points.map((p) => [Math.round(p.timestamp * 1000), p.temperature_c]),
-  }));
-  chartGpuTemp.setOption({
-    animation: false,
-    tooltip: Object.assign({ trigger: "axis" }, tooltipStyle(pal), {
-      valueFormatter: (v) => (v === null || v === undefined ? "--" : Number(v).toFixed(0) + "°C"),
-    }),
-    legend: gpuLegend(pal),
-    grid: { left: 8, right: 8, top: 30, bottom: 0, containLabel: true },
-    xAxis: gpuTimeAxis(pal),
-    yAxis: {
-      type: "value", name: "°C", nameTextStyle: { color: pal.axis },
-      axisLabel: { color: pal.axis, fontSize: 11 },
-      splitLine: { lineStyle: { color: pal.split } },
-    },
-    series: series,
-  }, true);
-}
-
-function initGpuRangeButtons() {
-  const box = $("gpuRangeButtons");
-  box.addEventListener("click", (ev) => {
-    const btn = ev.target.closest("button[data-min]");
-    if (!btn) return;
-    gpuRangeMinutes = parseInt(btn.dataset.min, 10);
-    box.querySelectorAll("button").forEach((b) => b.classList.toggle("active", b === btn));
-    refreshGpuLive();
-  });
-}
-
-function fmtEnergy(wh) {
-  if (wh === null || wh === undefined) return "--";
-  if (wh >= 1000) return (wh / 1000).toFixed(2) + " kWh";
-  return wh.toFixed(1) + " Wh";
-}
-
-/* GPU 能耗（今日；采样估算，tooltip 明示 estimated） */
-async function refreshGpuDaily() {
-  try {
-    const d = await fetchJson("/api/gpu/daily?days=1");
-    const box = $("gpuEnergy");
-    let html = '<div class="energy-title" title="Estimated from sampled GPU power draw.">GPU Energy (Today)</div><div class="energy-rows">';
-    let total = 0;
-    (d.gpus || []).forEach((g) => {
-      const energy = (g.days || []).reduce((acc, row) => acc + (row.energy_wh || 0), 0);
-      if (energy <= 0) return;
-      total += energy;
-      const label = g.name || g.uuid.slice(0, 13) + "…";
-      html += '<div class="energy-row"><span>' + escapeHtml(label) + "</span><span>" + fmtEnergy(energy) + "</span></div>";
-    });
-    html += '<div class="energy-row total"><span>Total</span><span>' + (total > 0 ? fmtEnergy(total) : "--") + "</span></div>";
-    html += '</div><div class="hint" style="margin-top:6px">Estimated from sampled GPU power draw.（采样估算，非电表级精度）</div>';
-    box.innerHTML = html;
-  } catch (e) { /* 保留上次数据 */ }
-}
-
-/* ================= Phase 9：MTP 详情 ================= */
-let lastMtpPositions = [];
-
-function drawMtpPosChart(positions) {
-  if (!chartMtpPos) return;
-  const pal = palette();
-  const base = positions.length ? (positions[0].accepted_tokens || 0) : 0;
-  chartMtpPos.setOption({
-    animation: false,
-    tooltip: Object.assign({ trigger: "axis", axisPointer: { type: "shadow" } }, tooltipStyle(pal), {
-      formatter: (params) => {
-        const p = params[0];
-        const rel = base > 0 && p.value != null ? (p.value / base * 100).toFixed(1) + "%" : "--";
-        return p.name +
-          "<br/>Accepted Tokens: " + (p.value == null ? "--" : fmtCompact(p.value)) +
-          "<br/>Relative acceptance vs position 0: " + rel;
-      },
-    }),
-    grid: { left: 8, right: 8, top: 24, bottom: 0, containLabel: true },
-    xAxis: {
-      type: "category",
-      data: positions.map((p) => "Position " + p.position),
-      axisLabel: { color: pal.axis, fontSize: 11 },
-      axisLine: { lineStyle: { color: pal.split } },
-    },
-    yAxis: {
-      type: "value",
-      axisLabel: { color: pal.axis, fontSize: 11, formatter: (v) => fmtCompact(v) },
-      splitLine: { lineStyle: { color: pal.split } },
-    },
-    series: [
-      {
-        name: "Accepted Tokens",
-        type: "bar",
-        itemStyle: { color: "#b58cff" },
-        data: positions.map((p) => p.accepted_tokens),
-      },
-    ],
-  }, true);
-  if (!positions.length) {
-    // 无 position 数据：显示空状态
-    chartMtpPos.setOption({
-      title: { text: "N/A（服务器未提供 per-position 数据）", left: "center", top: "middle", textStyle: { color: pal.axis, fontSize: 12, fontWeight: 400 } },
-      series: [],
-    });
-  }
-}
-
-async function refreshMtpDetail() {
-  try {
-    const d = await fetchJson("/api/mtp");
-    setStat("mtpDraft", d.draft_tokens);
-    setStat("mtpAccepted", d.accepted_tokens);
-    setStat("mtpSeqs", d.num_drafts);
-    setStat("statMtp", fmtRate(d.accept_rate));  // AUDIT-DATA-002：今日 MTP 接受率唯一来源
-    lastMtpPositions = d.positions || [];
-    drawMtpPosChart(lastMtpPositions);
-  } catch (e) { /* 保留上次数据 */ }
-}
-
-/* 时间范围按钮：控制图表 1 / 图表 3 / 表格的时间窗口（图表 2 固定 60 分钟） */
-function initRangeButtons() {
-  const box = $("rangeButtons");
-  box.addEventListener("click", (ev) => {
-    const btn = ev.target.closest("button[data-days]");
-    if (!btn) return;
-    state.lastDays = parseInt(btn.dataset.days, 10);
-    box.querySelectorAll("button").forEach((b) => b.classList.toggle("active", b === btn));
-    refreshDaily();
-  });
-}
-
-/* 周期任务：固定间隔自调度，某次失败不影响后续轮次。
-   AUDIT-WEB-007：ms 下限 1000ms（config 被写成 0 时不会变忙循环） */
-function every(ms, fn) {
-  const loop = async () => {
-    try { await fn(); } catch (e) { /* fn 内部已处理 */ }
-    setTimeout(loop, Math.max(1000, ms));
-  };
-  setTimeout(loop, Math.max(1000, ms));
-}
-
-/* ================= 配置驱动 ================= */
-
-/* 主题（config ui.theme: dark / light / system）；system 跟随系统偏好 */
-function applyTheme(theme) {
-  let t = theme;
-  if (t === "system") {
-    t = (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches) ? "light" : "dark";
-  }
-  state.theme = t;
-  document.documentElement.setAttribute("data-theme", t);
-  // 图表用新主题颜色重绘
-  if (chartUsage && state.dailyData.length) { renderUsageChart(); renderMtpChart(); }
-  if (chartTps && lastLiveSamples.length) { renderTpsChart(lastLiveSamples); }
-  if (chartGpuUtil) { drawGpuUtilChart(); drawGpuPowerChart(); drawGpuTempChart(); }
-  if (chartMtpPos) { drawMtpPosChart(lastMtpPositions); }
-}
-
-/* 启动时读取 /api/config 一次：刷新间隔、默认天数、主题、服务器地址 */
-async function loadConfig() {
-  try {
-    const c = await fetchJson("/api/config");
-    if (c.ui) {
-      cfgUi.refreshIntervalSeconds = c.ui.refresh_interval_seconds || 5;
-      cfgUi.dailyDefaultDays = c.ui.daily_default_days || 30;
-      cfgUi.theme = c.ui.theme || "dark";
-    }
-    if (c.llama_server && c.llama_server.url) {
-      $("serverUrl").textContent = "Server: " + c.llama_server.url.replace(/^https?:\/\//, "");
-    }
-  } catch (e) { /* 保持默认 */ }
-  applyTheme(cfgUi.theme);
-  // 默认时间范围按钮
-  const box = $("rangeButtons");
-  const btn = box.querySelector('button[data-days="' + cfgUi.dailyDefaultDays + '"]');
-  if (btn) {
-    state.lastDays = cfgUi.dailyDefaultDays;
-    box.querySelectorAll("button").forEach((b) => b.classList.toggle("active", b === btn));
-  }
-}
-
-/* ================= Toast 通知 ================= */
-function toast(msg, type) {
-  const box = $("toastBox");
-  const el = document.createElement("div");
-  el.className = "toast " + (type || "");
-  el.textContent = msg;
-  box.appendChild(el);
-  setTimeout(() => {
-    el.style.transition = "opacity 0.4s";
-    el.style.opacity = "0";
-    setTimeout(() => el.remove(), 450);
-  }, 4200);
-}
-
-/* ================= 自定义确认弹窗 =================
-   opts: { needsInput: 需要输入确认, inputValue: 必须输入的字符串 } */
-function confirmModal(title, text, okLabel, onDone, opts) {
-  const overlay = $("modalOverlay");
-  const input = $("modalInput");
-  const need = opts && opts.inputValue;
-  $("modalTitle").textContent = title;
-  $("modalText").textContent = text;
-  input.value = "";
-  input.placeholder = need ? "输入 " + need + " 以确认" : "";
-  input.hidden = !need;
-  const okBtn = $("modalOk");
-  okBtn.textContent = okLabel || "OK";
-  okBtn.disabled = !!need;  // 需要输入时，输对之前不可点
-  const check = () => { if (need) okBtn.disabled = input.value !== need; };
-  input.addEventListener("input", check);
-  function cleanup() {
-    overlay.hidden = true;
-    okBtn.onclick = null;
-    $("modalCancel").onclick = null;
-    input.removeEventListener("input", check);
-  }
-  okBtn.onclick = () => { cleanup(); onDone(true); };
-  $("modalCancel").onclick = () => { cleanup(); onDone(false); };
-  overlay.hidden = false;
-  if (!input.hidden) input.focus();
-}
-
-/* ================= 视图切换（Dashboard / Settings） ================= */
-let currentView = "dashboard";
-let currentSection = "server";
-let settingsLoaded = false;
-let initialConfig = null;   // 进入 Settings 时读到的配置（dirty 判定基准）
-let settingsDirty = false;
-let lastPaths = null;       // /api/config 的 paths（数据库实际路径提示用）
-
-function doShowView(name) {
-  currentView = name;
-  $("dashboard-view").hidden = name !== "dashboard";
-  $("settings-view").hidden = name !== "settings";
-  document.querySelectorAll("#mainNav button").forEach((b) => b.classList.toggle("active", b.dataset.view === name));
-  if (name === "settings" && !settingsLoaded) loadSettings();
-  if (name === "settings" && settingsLoaded) loadGpuDetected();  // 每次进入 Settings 刷新一次 GPU 探测
-}
-
-function showView(name) {
-  if (name === currentView) return;
-  if (name === "dashboard" && settingsDirty) {
-    confirmModal("未保存的设置", "You have unsaved settings.\nDiscard changes?", "Discard", (ok) => {
-      if (!ok) return;
-      fillForm(initialConfig);
-      settingsDirty = false;
-      updateSettingsFooter();
-      doShowView("dashboard");
-    });
-    return;
-  }
-  doShowView(name);
-}
-
-function showSection(name) {
-  currentSection = name;
-  document.querySelectorAll("#settingsNav button").forEach((b) => b.classList.toggle("active", b.dataset.section === name));
-  document.querySelectorAll(".settings-section").forEach((s) => s.classList.toggle("active", s.id === "sec-" + name));
-  if (name === "data") { refreshDataInfo(); loadDbHealth(); }  // 进入 Data 页自动刷新一次
-  if (name === "application") loadAppIntegration();  // 进入 Application 页刷新集成状态（读真实注册表）
-  if (name === "about") loadAbout();  // 进入 About 页刷新版本信息（Phase 12）
-  if (name === "updates") loadUpdateStatus();  // Phase 13：进入 Updates 页刷新状态
-}
-
-/* ================= Settings 表单 ================= */
-function readForm() {
-  const num = (id) => { const v = $(id).value.trim(); return v === "" ? 0 : Number(v); };
-  return {
-    llama_server: {
-      url: $("setServerUrl").value.trim(),
-      metrics_path: $("setMetricsPath").value.trim(),
-      timeout_seconds: num("setTimeoutSec"),
-    },
-    collector: {
-      poll_interval_seconds: num("setPollInterval"),
-      live_retention_hours: num("setLiveRetention"),
-    },
-    gpu: {
-      enabled: $("setGpuEnabled").checked,
-      poll_interval_seconds: num("setGpuPoll"),
-      history_retention_hours: num("setGpuRetention"),
-      device_uuids: readGpuUuids(),
-    },
-    web: {
-      host: $("setWebHost").value.trim(),
-      port: num("setWebPort"),
-    },
-    database: {
-      path: $("setDbPath").value.trim(),
-      wal: $("setWal").value === "true",
-    },
-    ui: {
-      refresh_interval_seconds: num("setRefreshInterval"),
-      daily_default_days: num("setDefaultDays"),
-      theme: $("setTheme").value,
-    },
-    logging: {
-      level: $("setLogLevel").value,
-      max_size_mb: num("setMaxLogSize"),
-      backup_count: num("setLogBackupCount"),
-    },
-    backup: {
-      automatic: $("setBackupAuto").checked,
-      interval_hours: num("setBackupInterval"),
-      keep_count: num("setBackupKeep"),
-    },
-    updates: {
-      check_enabled: $("setUpdatesEnabled").checked,
-      check_interval_hours: num("setUpdateInterval"),
-      auto_download: $("setUpdateAutoDownload").checked,
-    },
-  };
-}
-
-function fillForm(c) {
-  $("setServerUrl").value = c.llama_server.url;
-  $("setMetricsPath").value = c.llama_server.metrics_path;
-  $("setTimeoutSec").value = c.llama_server.timeout_seconds;
-  $("setPollInterval").value = c.collector.poll_interval_seconds;
-  $("setLiveRetention").value = c.collector.live_retention_hours;
-  $("setGpuEnabled").checked = c.gpu ? c.gpu.enabled : true;
-  $("setGpuPoll").value = c.gpu ? c.gpu.poll_interval_seconds : 5;
-  $("setGpuRetention").value = c.gpu ? c.gpu.history_retention_hours : 48;
-  renderGpuDetected(cfgGpuDetected.detected, c.gpu ? c.gpu.device_uuids : [], cfgGpuDetected.available);
-  $("setRefreshInterval").value = c.ui.refresh_interval_seconds;
-  $("setDefaultDays").value = c.ui.daily_default_days;
-  $("setTheme").value = c.ui.theme;
-  $("setWebHost").value = c.web.host;
-  $("setWebPort").value = c.web.port;
-  $("setDbPath").value = c.database.path;
-  $("setWal").value = String(c.database.wal);
-  $("setLogLevel").value = c.logging.level;
-  $("setMaxLogSize").value = c.logging.max_size_mb;
-  $("setLogBackupCount").value = c.logging.backup_count;
-  $("setBackupAuto").checked = c.backup ? c.backup.automatic : true;
-  $("setBackupInterval").value = c.backup ? c.backup.interval_hours : 24;
-  $("setBackupKeep").value = c.backup ? c.backup.keep_count : 14;
-  const up = c.updates || {};
-  $("setUpdatesEnabled").checked = !!up.check_enabled;
-  $("setUpdateInterval").value = (up.check_interval_hours != null) ? up.check_interval_hours : 24;
-  $("setUpdateAutoDownload").checked = !!up.auto_download;
-  updateDbPathHint();
-}
-
-/* 勾选中的 GPU UUID 列表（空数组 = 监控所有检测到的 GPU） */
-function readGpuUuids() {
-  return Array.from($("gpuDetected").querySelectorAll("input[type=checkbox]"))
-    .filter((cb) => cb.checked)
-    .map((cb) => cb.dataset.uuid)
-    .filter(Boolean);
-}
-
-/* 渲染 Detected GPUs 勾选框（数据来自 /api/gpu/status 的 detected） */
-function renderGpuDetected(detected, selectedUuids, available) {
-  const box = $("gpuDetected");
-  if (!available) {
-    box.innerHTML = '<span class="na">NVIDIA monitoring unavailable（未找到 nvidia-smi）</span>';
-    return;
-  }
-  if (!detected || !detected.length) {
-    box.innerHTML = '<span class="na">No GPUs detected yet</span>';
-    return;
-  }
-  const selected = new Set(selectedUuids || []);
-  box.innerHTML = detected.map((g) => {
-    const checked = selected.size && selected.has(g.uuid) ? "checked" : "";
-    const vram = g.memory_total_mb ? " · " + (g.memory_total_mb / 1024).toFixed(0) + " GB" : "";
-    return '<label><input type="checkbox" data-uuid="' + escapeHtml(g.uuid) + '" ' + checked + ">" +
-      "<span>GPU " + (g.index === null || g.index === undefined ? "?" : g.index) + " · " + escapeHtml(g.name || "") + vram + "</span>" +
-      '<span class="uuid">' + escapeHtml(g.uuid) + "</span></label>";
-  }).join("") + '<div class="hint">不勾选任何项 = 监控所有检测到的 GPU。</div>';
-}
-
-/* GPU 探测状态（Settings 页面用；来自 /api/gpu/status） */
-let cfgGpuDetected = { available: false, detected: [] };
-async function loadGpuDetected() {
-  try {
-    const d = await fetchJson("/api/gpu/status");
-    cfgGpuDetected = { available: !!d.available, detected: d.detected || [] };
-  } catch (e) {
-    cfgGpuDetected = { available: false, detected: [] };
-  }
-  // 进入 Settings 后按当前表单值重渲染勾选框
-  // AUDIT-WEB-001：元素 id 是 settings-view（连字符）——原 $("settingsView") 返回 null，
-  // 首次进入 Settings 时 null.hidden 抛 TypeError，表单永不填充且每次进页重复报错
-  if ($("settings-view").hidden === false) {
-    renderGpuDetected(cfgGpuDetected.detected, readGpuUuids(), cfgGpuDetected.available);
-  }
-}
-
-function updateDbPathHint() {
-  const v = $("setDbPath").value.trim();
-  $("dbPathHint").textContent = v ? "当前路径: " + v : "默认: " + (lastPaths ? lastPaths.database : "--");
-}
-
-function updateSettingsFooter() {
-  $("dirtyBadge").hidden = !settingsDirty;
-  $("btnSaveSettings").disabled = !settingsDirty;
-}
-
-function markDirty() {
-  if (!settingsDirty) { settingsDirty = true; updateSettingsFooter(); }
-}
-
-/* 进入 Settings 时读取一次配置（不轮询，避免覆盖未保存的编辑） */
-async function loadSettings() {
-  try {
-    await loadGpuDetected();   // 先拿到 GPU 探测结果，fillForm 才能渲染勾选框
-    const c = await fetchJson("/api/config");
-    lastPaths = c.paths || null;
-    fillForm(c);
-    initialConfig = readForm();
-    settingsDirty = false;
-    settingsLoaded = true;
-    updateSettingsFooter();
-  } catch (e) {
-    toast("加载设置失败: " + e.message, "err");
-  }
-}
-
-/* 保存：PUT /api/config（后端校验 + 原子写入；除 ui.theme 外重启生效） */
-async function saveSettings() {
-  const btn = $("btnSaveSettings");
-  btn.disabled = true;
-  btn.textContent = "Saving...";
-  try {
-    const res = await fetch("/api/config", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(readForm()),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (res.ok && data.success) {
-      initialConfig = readForm();
-      settingsDirty = false;
-      toast(data.restart_required
-        ? "Settings saved. Restart LlamaMonitor to apply changes."
-        : "Settings saved.",
-        "ok");
-    } else {
-      toast("Configuration invalid: " + ((data.error && data.error.message) || ("HTTP " + res.status)), "err");
-    }
-  } catch (e) {
-    toast("保存失败: " + e.message, "err");
-  }
-  btn.textContent = "Save";
-  updateSettingsFooter();
-}
-
-/* Reset to Defaults：只重置表单（默认值来自后端 GET /api/config/defaults），
-   显示 Unsaved changes，用户点 Save 才写 config.json */
-async function resetToDefaults() {
-  try {
-    const d = await fetchJson("/api/config/defaults");
-    fillForm(d);
-    applyTheme(d.ui.theme);  // 主题即时预览
-    markDirty();
-    toast("表单已重置为默认值。点击 Save 写入 config.json。", "warn");
-  } catch (e) {
-    toast("获取默认配置失败: " + e.message, "err");
-  }
-}
-
-/* Test Connection：后端只 GET <url><metrics_path>，避免前端 CORS */
-async function testConnection() {
-  const btn = $("btnTestConn");
-  const out = $("testConnResult");
-  btn.disabled = true;
-  btn.textContent = "Testing...";
-  out.className = "test-result";
-  out.textContent = "";
-  try {
-    const res = await fetch("/api/config/test-connection", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        url: $("setServerUrl").value.trim(),
-        metrics_path: $("setMetricsPath").value.trim(),
-        timeout_seconds: Number($("setTimeoutSec").value) || 3,
-      }),
-    });
-    const data = await res.json();
-    if (data.success) {
-      out.className = "test-result ok";
-      out.textContent = "Success — " + data.latency_ms + " ms" + (data.metrics_detected ? "" : "（未检测到 llamacpp 指标）");
-      toast("Connection successful: " + data.latency_ms + " ms", "ok");
-    } else {
-      out.className = "test-result bad";
-      out.textContent = "Failed: " + data.error;
-      toast("Connection failed: " + data.error, "err");
-    }
-  } catch (e) {
-    out.className = "test-result bad";
-    out.textContent = "Failed: " + e.message;
-    toast("Connection failed: " + e.message, "err");
-  }
-  btn.disabled = false;
-  btn.textContent = "Test Connection";
-}
-
-/* ================= Data Management =================
-   AUDIT-WEB-004：原处重复定义的 fmtBytes 已删除（后定义会整体遮蔽先定义，
-   保留 Updates 区那个 null 安全版本，全文唯一）。 */
-
-async function refreshDataInfo() {
-  const box = $("dataInfo");
-  box.textContent = "加载中…";
-  try {
-    const d = await fetchJson("/api/data/info");
-    box.innerHTML = "";
-    [
-      ["Database", d.database_path],
-      ["Database Size", fmtBytes(d.database_size_bytes)],
-      ["First Recorded Date", d.first_recorded_date || "N/A"],
-      ["Last Recorded Date", d.last_recorded_date || "N/A"],
-      ["Total Recorded Days", d.recorded_days],
-      ["Live Samples Count", d.live_samples],
-      ["GPU Samples Count", d.gpu_samples],
-      ["Backup Count", d.backup_count],
-    ].forEach(([k, v]) => {
-      const row = document.createElement("div");
-      const kk = document.createElement("span");
-      kk.className = "k";
-      kk.textContent = k;
-      const vv = document.createElement("span");
-      vv.textContent = String(v);
-      row.appendChild(kk);
-      row.appendChild(vv);
-      box.appendChild(row);
-    });
-    loadBackups();
-  } catch (e) {
-    box.textContent = "加载失败: " + e.message;
-  }
-}
-
-async function loadBackups() {
-  const box = $("backupList");
-  try {
-    const list = await fetchJson("/api/data/backups");
-    if (!list.length) {
-      box.textContent = "暂无备份。";
-      return;
-    }
-    box.innerHTML = "";
-    list.forEach((b) => {
-      const div = document.createElement("div");
-      const vk = b.verified === true ? "  ·  ✓ verified"
-        : b.verified === false ? '  ·  <span style="color:var(--offline)">✗ NOT verified</span>' : "";
-      div.innerHTML = escapeHtml(b.filename) + "  ·  " + escapeHtml(b.kind || "") + "  ·  " +
-        fmtBytes(b.size_bytes) + "  ·  " + escapeHtml(b.created_at) + vk;
-      box.appendChild(div);
-    });
-  } catch (e) {
-    box.textContent = "备份列表加载失败";
-  }
-}
-
-/* ================= Data Quality（Phase 11） ================= */
-const GAP_REASON_LABELS = {
-  server_offline: "Server Offline",
-  monitor_restart: "Monitor Restart",
-  system_pause_or_sleep: "System Sleep / Pause",
-  invalid_metrics: "Invalid Metrics",
-  unknown: "Unknown",
-};
-const GAP_SOURCE_LABELS = { llama: "LLM", application: "App", gpu: "GPU" };
-
-function fmtDur(sec) {
-  sec = Math.max(0, Math.round(Number(sec) || 0));
-  if (sec < 60) return sec + "s";
-  if (sec < 3600) return Math.floor(sec / 60) + "m " + (sec % 60) + "s";
-  if (sec < 86400) return Math.floor(sec / 3600) + "h " + Math.floor((sec % 3600) / 60) + "m";
-  return Math.floor(sec / 86400) + "d " + Math.floor((sec % 86400) / 3600) + "h";
-}
-
-function fmtAgo(sec) {
-  if (sec === null || sec === undefined) return "no data yet";
-  if (sec < 60) return Math.round(sec) + "s ago";
-  if (sec < 3600) return Math.round(sec / 60) + "m ago";
-  if (sec < 86400) return (sec / 3600).toFixed(1) + "h ago";
-  return (sec / 86400).toFixed(1) + "d ago";
-}
-
-function fmtTs(ts) {
-  return new Date(ts * 1000).toLocaleString();
-}
-
-function setDqValue(id, text, tone) {
-  const el = $(id);
-  el.textContent = text;
-  el.style.color = tone === "ok" ? "var(--online)" : tone === "warn" ? "var(--warn)" : tone === "bad" ? "var(--offline)" : "";
-}
-
-async function refreshDataQuality() {
-  let q = null, h = null;
-  try { q = await fetchJson("/api/data/quality"); } catch (e) { /* 保留上次 */ }
-  try { h = await fetchJson("/api/health"); } catch (e) { /* 保留上次 */ }
-  if (!q && !h) return;
-
-  if (h) {
-    const tone = h.database === "healthy" ? "ok" : h.database === "warning" ? "warn" : "bad";
-    setDqValue("dqDb", h.database, tone);
-    $("dqDbHint").textContent = (h.journal_mode ? h.journal_mode.toUpperCase() + " · " : "") +
-      (h.database_detail || "详情见 Settings → Data");
-    if (h.application === "degraded") {
-      $("dqDbHint").textContent += " · PROTECTIVE MODE（只读）";
-    }
-  }
-  if (q) {
-    const t = q.today;
-    // AUDIT-WEB-004：字段缺失时显示 -- / 0，不再出现 "undefined"（== 同时覆盖 null/undefined）
-    const cov = t.monitoring_coverage_percent;
-    setDqValue("dqCoverage", cov == null ? "--" : cov.toFixed(1) + "%",
-      cov == null ? null : cov >= 99.9 ? "ok" : cov >= 95 ? "warn" : "bad");
-    setDqValue("dqGapsToday", String(t.gap_count || 0),
-      (t.gap_count || 0) === 0 ? "ok" : t.possible_token_loss ? "bad" : "warn");
-    $("dqLossToday").textContent = t.possible_token_loss
-      ? "⚠ 存在可能 token 丢失的缺口" : "无 token 丢失缺口";
-    $("dqLossToday").style.color = t.possible_token_loss ? "var(--offline)" : "";
-    setDqValue("dqGapsTotal", String(q.total.gap_count || 0),
-      (q.total.gap_count || 0) === 0 ? "ok" : q.total.possible_token_loss ? "bad" : "warn");
-    $("dqLastSample").textContent = fmtAgo(t.last_valid_sample_seconds_ago);
-
-    const openEl = $("dqOpen");
-    if (q.open_gap) {
-      const g = q.open_gap;
-      const startStr = g.start ? fmtTs(g.start) : "?";
-      openEl.textContent = "监控缺口进行中： " + (GAP_REASON_LABELS[g.reason] || g.reason) +
-        "（" + startStr + " 起，尚未结束）";
-      openEl.className = "dq-open";
-      openEl.hidden = false;
-    } else {
-      openEl.hidden = true;
-    }
-    renderDqGapTable(q.recent_gaps || []);
-  }
-}
-
-let dqDetailOpen = false;
-function toggleDqDetails() {
-  dqDetailOpen = !dqDetailOpen;
-  $("dqDetails").hidden = !dqDetailOpen;
-  $("btnDqDetail").textContent = dqDetailOpen ? "Hide Details" : "Gap Details";
-}
-
-function renderDqGapTable(gaps) {
-  const tbody = $("dqGapTbody");
-  if (!dqDetailOpen) return;  // 收起时不渲染
-  if (!gaps.length) {
-    tbody.innerHTML = '<tr><td colspan="6" class="na">No gaps recorded.</td></tr>';
-    return;
-  }
-  tbody.innerHTML = gaps.map((g) => {
-    const loss = g.possible_token_loss
-      ? '<span style="color:var(--offline);font-weight:600">Possible</span>'
-      : '<span class="na">No</span>';
-    // AUDIT-WEB-004/005：start null 守卫（不再 Invalid Date）；
-    // source/reason 枚举回退值套 escapeHtml（后端自产值，防御性）
-    return "<tr>" +
-      "<td>" + (g.start ? fmtTs(g.start) : "--") + "</td>" +
-      "<td>" + (g.end ? fmtTs(g.end) : '<span class="na">…</span>') + "</td>" +
-      "<td>" + fmtDur(g.duration_seconds) + "</td>" +
-      "<td>" + escapeHtml(GAP_SOURCE_LABELS[g.source] || g.source || "--") + "</td>" +
-      "<td>" + escapeHtml(GAP_REASON_LABELS[g.reason] || g.reason || "--") + "</td>" +
-      "<td>" + loss + "</td>" +
-      "</tr>";
-  }).join("");
-}
-
-/* ================= Database Health（Settings → Data） ================= */
-async function loadDbHealth() {
-  try {
-    const h = await fetchJson("/api/health");
-    $("dbHealthStatus").textContent = h.database + (h.database_detail ? " — " + h.database_detail : "");
-    $("dbHealthJournal").textContent = h.journal_mode ? h.journal_mode.toUpperCase() : "--";
-  } catch (e) {
-    $("dbHealthStatus").textContent = "unavailable";
-  }
-}
-
-async function runDbCheck() {
-  const btn = $("btnRunCheck");
-  const out = $("runCheckResult");
-  btn.disabled = true;
-  btn.textContent = "Checking...";
-  out.className = "test-result";
-  out.textContent = "";
-  try {
-    const res = await fetch("/api/data/check-database", { method: "POST" });
-    const d = await res.json();
-    if (d.healthy) {
-      out.className = "test-result ok";
-      out.textContent = "PASS（" + d.status + "）";
-      toast("Database integrity check passed", "ok");
-    } else {
-      out.className = "test-result bad";
-      out.textContent = d.status + (d.detail ? " — " + d.detail : "");
-      toast("Database integrity check: " + d.status, "err");
-    }
-    loadDbHealth();
-  } catch (e) {
-    out.className = "test-result bad";
-    out.textContent = "检查失败: " + e.message;
-  }
-  btn.disabled = false;
-  btn.textContent = "Run Integrity Check Now";
-}
-
-/* ================= About（Settings → About，Phase 12） ================= */
-let aboutCache = null;  // 供 Copy Version Info 使用
-
-async function loadAbout() {
-  try {
-    const v = await fetchJson("/api/version");
-    let integration = null;
-    try { integration = await fetchJson("/api/app/integration"); } catch (e) { /* 浏览器模式无 provider */ }
-    aboutCache = v;
-    $("aboutVersion").textContent = v.version;
-    $("aboutPlatform").textContent =
-      (integration && integration.platform === "windows") ? "Windows x64" : (integration ? integration.platform : "Windows x64");
-    $("aboutDataDir").textContent = integration && integration.app_data ? integration.app_data : "--";
-    $("aboutSchema").textContent = v.schema_version != null ? String(v.schema_version) : "--";
-    const frozen = integration ? integration.frozen : null;
-    const py = integration ? integration.python : null;
-    if (frozen) {
-      // 正式版（PyInstaller）：不给普通用户展示完整 Python 内部信息
-      $("aboutRuntime").textContent = "PyInstaller (embedded runtime)";
-    } else if (py) {
-      $("aboutRuntime").textContent = py + " (development mode)";
-    } else {
-      $("aboutRuntime").textContent = "--";
-    }
-  } catch (e) {
-    $("aboutVersion").textContent = "unavailable";
-  }
-}
-
-async function copyVersionInfo() {
-  const out = $("copyVersionResult");
-  try {
-    if (!aboutCache) await loadAbout();
-    const v = aboutCache;
-    if (!v || !v.version) throw new Error("version not loaded");
-    const text =
-      "LlamaMonitor " + v.version +
-      "\nDatabase Schema: " + (v.schema_version != null ? v.schema_version : "unknown");
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch (e) {
-      // WebView2/老浏览器回退：隐藏 textarea + execCommand
-      const ta = document.createElement("textarea");
-      ta.value = text;
-      ta.style.position = "fixed";
-      ta.style.opacity = "0";
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand("copy");
-      document.body.removeChild(ta);
-    }
-    out.className = "test-result ok";
-    out.textContent = "Copied";
-    setTimeout(() => { out.textContent = ""; }, 2000);
-  } catch (e) {
-    out.className = "test-result bad";
-    out.textContent = "Copy failed: " + e.message;
-  }
-}
-
-/* CSV 导出：浏览器与 pywebview 共用同一实现（Content-Disposition 下载） */
-function exportCsv() {
-  window.location.href = "/api/data/export/daily.csv";
-  toast("CSV exported（见下载位置）", "ok");
-}
-function exportGpuCsv() {
-  window.location.href = "/api/data/export/gpu_daily.csv";
-  toast("GPU CSV exported（见下载位置）", "ok");
-}
-
-/* ================= Application（Phase 10：托盘 / 单实例 / 自启 / 退出） ================= */
-function fmtUptime(sec) {
-  sec = Math.max(0, sec | 0);
-  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
-  if (h) return h + "h " + m + "m";
-  if (m) return m + "m " + s + "s";
-  return s + "s";
-}
-
-function kvRow(box, k, v) {
-  const row = document.createElement("div");
-  const kk = document.createElement("span");
-  kk.className = "k";
-  kk.textContent = k;
-  const vv = document.createElement("span");
-  vv.textContent = String(v);
-  row.appendChild(kk);
-  row.appendChild(vv);
-  box.appendChild(row);
-}
-
-async function loadAppIntegration() {
-  const box = $("appInfo");
-  try {
-    const d = await fetchJson("/api/app/integration");
-    box.innerHTML = "";
-    kvRow(box, "Application Mode", d.background ? "Background（托盘，不弹窗口）" : "Foreground");
-    kvRow(box, "System Tray", d.tray_supported ? "Available" : "Unavailable");
-    kvRow(box, "Single Instance", d.single_instance ? "Enabled" : "Disabled");
-    kvRow(box, "Platform", (d.platform || "unknown") + (d.frozen ? "（EXE）" : "（development）"));
-    kvRow(box, "Executable", d.executable || "—");
-    kvRow(box, "App Data", d.app_data || "—");
-    if (d.uptime_seconds != null) kvRow(box, "Uptime", fmtUptime(d.uptime_seconds));
-    renderAutostart(d.autostart || {});
-  } catch (e) {
-    box.textContent = "加载失败: " + e.message;
-  }
-}
-
-function renderAutostart(a) {
-  const cb = $("setAutostart");
-  const status = $("autostartStatus");
-  const cmdBox = $("autostartCommand");
-  const repairRow = $("autostartRepairRow");
-  if (!a.supported) {
-    cb.checked = false;
-    cb.disabled = true;
-    status.textContent = "Unavailable in development mode（需要 EXE 模式）。";
-    status.style.color = "";
-    cmdBox.lastChild.textContent = "—";
-    repairRow.style.display = "none";
-    return;
-  }
-  cb.checked = !!a.enabled;
-  cb.disabled = false;
-  if (a.stale) {
-    status.textContent = "Stale：启动项指向旧的 EXE 位置（程序被移动过）。点击 Repair 修复。";
-    status.style.color = "var(--warn, #e3b341)";
-    repairRow.style.display = "";
-  } else {
-    status.textContent = a.enabled ? "Enabled" : "Disabled";
-    status.style.color = "";
-    repairRow.style.display = "none";
-  }
-  cmdBox.lastChild.textContent = a.command || a.expected_command || "—";
-}
-
-async function putAutostart(enabled) {
-  try {
-    const res = await fetch("/api/app/autostart", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ enabled: enabled }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (res.ok && data.success) {
-      toast(enabled ? "Start with Windows enabled" : "Start with Windows disabled", "ok");
-    } else {
-      toast("设置失败: " + ((data.error && data.error.message) || ("HTTP " + res.status)), "err");
-    }
-  } catch (e) {
-    toast("设置失败: " + e.message, "err");
-  }
-  loadAppIntegration();
-}
-
-function openFolderTarget(target) {
-  fetch("/api/app/open-folder", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ target: target }),
-  })
-    .then((r) => r.json().catch(() => ({})))
-    .then((d) => {
-      if (r_ok(d)) toast("Opened: " + (d.path || target), "ok");
-      else toast("打开失败: " + ((d.error && d.error.message) || "未知错误"), "err");
-    })
-    .catch((e) => toast("打开失败: " + e.message, "err"));
-}
-function r_ok(d) { return d && d.success; }
-
-function exitApp() {
-  confirmModal(
-    "Exit LlamaMonitor",
-    "Exit LlamaMonitor?\nMonitoring will stop until the application is started again.",
-    "Exit",
-    (ok) => {
-      if (!ok) return;
-      const btn = $("btnExitApp");
-      btn.disabled = true;
-      btn.textContent = "Exiting…";
-      fetch("/api/app/exit", { method: "POST" })
-        .then((r) => r.json().catch(() => ({})))
-        .then((d) => {
-          toast("LlamaMonitor 正在退出…", "ok");
-        })
-        .catch(() => {});
-    },
-  );
-}
-
-async function backupDb() {
-  const btn = $("btnBackup");
-  btn.disabled = true;
-  btn.textContent = "Backing up...";
-  try {
-    const res = await fetch("/api/data/backup", { method: "POST" });
-    const data = await res.json().catch(() => ({}));
-    if (res.ok && data.success) {
-      toast("Backup created: " + data.file, "ok");
-      refreshDataInfo();
-    } else {
-      toast("Backup failed: " + ((data.error && data.error.message) || ("HTTP " + res.status)), "err");
-    }
-  } catch (e) {
-    toast("Backup failed: " + e.message, "err");
-  }
-  btn.disabled = false;
-  btn.textContent = "Backup Database";
-}
-
-async function doClearLive() {
-  const btn = $("btnClearLive");
-  btn.disabled = true;
-  btn.textContent = "Clearing...";
-  try {
-    const res = await fetch("/api/data/clear-live", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ confirm: true }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (res.ok && data.success) {
-      toast("Live history cleared（" + data.deleted + " 条采样）", "ok");
-      refreshDataInfo();
-      refreshLive();
-    } else {
-      toast("清理失败: " + ((data.error && data.error.message) || ("HTTP " + res.status)), "err");
-    }
-  } catch (e) {
-    toast("清理失败: " + e.message, "err");
-  }
-  btn.disabled = false;
-  btn.textContent = "Clear Live History";
-}
-
-function clearLive() {
-  confirmModal(
-    "Clear Live History",
-    "将永久删除全部实时采样（live samples）。\n每日累计统计与计数器 baseline 不受影响。",
-    "Clear",
-    (ok) => { if (ok) doClearLive(); },
-  );
-}
-
-async function doResetStats() {
-  const btn = $("btnResetStats");
-  btn.disabled = true;
-  btn.textContent = "Resetting...";
-  try {
-    const res = await fetch("/api/data/reset-statistics", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ confirm: "RESET" }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (res.ok && data.success) {
-      toast("Statistics reset。将从现在开始重新累计。", "ok");
-      refreshDataInfo();
-      refreshSummary();
-      refreshDaily();
-    } else {
-      toast("重置失败: " + ((data.error && data.error.message) || ("HTTP " + res.status)), "err");
-    }
-  } catch (e) {
-    toast("重置失败: " + e.message, "err");
-  }
-  btn.disabled = false;
-  btn.textContent = "Reset All Statistics";
-}
-
-function resetStats() {
-  confirmModal(
-    "Reset All Statistics",
-    "This will permanently delete all token usage history and live samples.\n\nConfiguration and the current llama.cpp counter baseline will be preserved.",
-    "Reset",
-    (ok) => { if (ok) doResetStats(); },
-    { inputValue: "RESET" },
-  );
-}
-
-/* ================= Updates（Settings → Updates，Phase 13） ================= */
-/*
- * 安全更新 UI：状态来自 GET /api/update/status（local-only，约 1s 轮询，无 WebSocket）。
- * 操作：Check Now / Download Update / Install Update / Cancel（POST /api/update/*）。
- * Release Notes 只用 textContent 渲染（不 innerHTML，§46）；横幅非阻塞（§44）。
- * 托盘 "Update Available: X" 通过 window.__showUpdatesSection() 跳到本页。
- */
-let updatePollTimer = null;
-let updateBannerDismissed = false;
-let lastUpdateStatus = null;
-
-function fmtBytes(n) {
-  if (n == null || isNaN(n)) return "--";
-  const units = ["B", "KB", "MB", "GB"];
-  let i = 0;
-  let v = Number(n);
-  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
-  return v.toFixed(v >= 100 || i === 0 ? 0 : 1) + " " + units[i];
-}
-
-function renderUpdateStatus(st) {
-  if (!st) return;
-  lastUpdateStatus = st;
-  $("updCurrentVersion").textContent = st.current_version || "--";
-  $("updInstallMode").textContent = st.installation_mode || "--";
-  $("updLastCheck").textContent = st.last_check || "Never";
-  $("updLatestVersion").textContent = st.available_version || "--";
-  $("updStatus").textContent = (st.state || "--") + (st.error ? " — " + st.error : "");
-  $("updStatus").style.color =
-    st.state === "ERROR" ? "var(--offline)" :
-    st.state === "UPDATE_AVAILABLE" ? "var(--accent)" : "";
-
-  const s = st.settings || {};
-  if (currentSection === "updates" && !settingsLoaded) {
-    // 配置尚未加载时不覆盖表单（loadSettings 之后由 fillForm 负责）
-  } else if (s.check_enabled !== undefined) {
-    // 页面不在编辑态时同步显示后端当前值（避免与未保存表单打架：只读区才同步）
-  }
-
-  const mode = st.installation_mode;
-  const busy = ["CHECKING", "DOWNLOADING", "VERIFYING", "INSTALLING"].includes(st.state);
-  $("btnUpdateCheck").disabled = busy;
-  $("btnUpdateDownload").disabled = busy || st.state !== "UPDATE_AVAILABLE" || mode === "development";
-  $("btnUpdateInstall").disabled = busy || st.state !== "READY_TO_INSTALL" ||
-    mode === "development" || mode === "portable";
-  $("btnUpdateCancel").hidden = st.state !== "DOWNLOADING";
-  $("btnUpdateCheck").textContent =
-    st.state === "CHECKING" ? "Checking..." :
-    st.state === "DOWNLOADING" ? "Downloading..." :
-    st.state === "VERIFYING" ? "Verifying..." : "Check for Updates";
-
-  // 下载进度
-  const showProgress = st.state === "DOWNLOADING" && st.total_bytes > 0;
-  $("updProgressWrap").hidden = !showProgress;
-  if (showProgress) {
-    $("updProgressBar").style.width = Math.min(100, st.progress_percent || 0) + "%";
-    $("updProgressText").textContent =
-      fmtBytes(st.downloaded_bytes) + " / " + fmtBytes(st.total_bytes) +
-      " — " + Math.floor(st.progress_percent || 0) + "%（SHA-256 边下载边校验）";
-  }
-
-  // Release Notes（textContent only）
-  const rel = st.release || null;
-  const notes = rel && rel.release_notes;
-  $("updReleaseNotesWrap").hidden = !notes;
-  if (notes) $("updReleaseNotes").textContent = notes;
-
-  // 已验证提示（§47 措辞：Signature verified / SHA-256 verified，不说 "100% safe"）
-  $("updSignatureNote").textContent =
-    st.state === "READY_TO_INSTALL"
-      ? "✓ Signature verified — SHA-256 verified — ready to install (a pre-update backup is created first)."
-      : (st.state === "UPDATE_AVAILABLE" && rel
-          ? "Signature verified. Download to verify the installer (SHA-256) before installing."
-          : "");
-
-  // 模式说明（§52/§53）
-  let note = "";
-  if (mode === "development") {
-    note = "Update installation is unavailable in development mode (run the EXE / Portable build to install updates).";
-  } else if (mode === "portable") {
-    note = "Portable build: LlamaMonitor downloads and verifies the ZIP, but never overwrites itself. Use the buttons below to open the download folder or the GitHub release.";
-  }
-  $("updModeNote").textContent = note;
-  $("updPortableActions").hidden = mode !== "portable";
-
-  // 顶部横幅（Dashboard；非阻塞）
-  const banner = $("updateBanner");
-  if (st.state === "UPDATE_AVAILABLE" && st.available_version && !updateBannerDismissed) {
-    $("updateBannerText").textContent =
-      "LlamaMonitor " + st.available_version + " is available. (current " + st.current_version + ")";
-    banner.hidden = false;
-  } else {
-    banner.hidden = true;
-  }
-}
-
-async function loadUpdateStatus() {
-  return onceInFlight("updateStatus", async () => {  // AUDIT-WEB-002：上一轮未返回则跳过本轮，不叠加
-    try {
-      const st = await fetchJson("/api/update/status");
-      renderUpdateStatus(st);
-      return st;
-    } catch (e) {
-      return null;
-    }
-  });
-}
-
-function startUpdatePolling() {
-  if (updatePollTimer) return;
-  // §79：每 1s GET /api/update/status（loopback，开销极小；无 WebSocket）
-  // AUDIT-WEB-007：页面隐藏时暂停 1s 轮询（loopback 开销虽小，也不该白白跑）
-  updatePollTimer = setInterval(() => {
-    if (isVisible() && currentView === "settings" && currentSection === "updates") loadUpdateStatus();
-  }, 1000);
-}
-
-async function updateAction(action, confirmText) {
-  const doIt = () => {
-    fetch("/api/update/" + action, { method: "POST" })
-      .then((r) => r.json().catch(() => ({})))
-      .then((d) => {
-        if (action === "install" && d.state === "INSTALLING") {
-          toast("Installing " + (d.available_version || "update") + " — LlamaMonitor is closing, the installer will take over...", "ok");
-        }
-        return loadUpdateStatus();
-      })
-      .catch((e) => toast("Update " + action + " failed: " + e.message, "err"));
-  };
-  if (confirmText) {
-    confirmModal("Install Update", confirmText, "Install", (ok) => { if (ok) doIt(); });
-  } else {
-    doIt();
-  }
-}
-
-window.__showUpdatesSection = function () {
-  doShowView("settings");
-  showSection("updates");
-};
-
-/* 事件绑定 */
-document.querySelectorAll("#mainNav button").forEach((b) => b.addEventListener("click", () => showView(b.dataset.view)));
-document.querySelectorAll("#settingsNav button").forEach((b) => b.addEventListener("click", () => showSection(b.dataset.section)));
-$("btnSaveSettings").addEventListener("click", saveSettings);
-$("btnResetDefaults").addEventListener("click", resetToDefaults);
-$("btnTestConn").addEventListener("click", testConnection);
-$("btnRefreshData").addEventListener("click", refreshDataInfo);
-$("btnDqDetail").addEventListener("click", toggleDqDetails);
-$("btnRunCheck").addEventListener("click", runDbCheck);
-$("btnCopyVersion").addEventListener("click", copyVersionInfo);
-$("btnExportCsv").addEventListener("click", exportCsv);
-$("btnExportGpuCsv").addEventListener("click", exportGpuCsv);
-$("btnBackup").addEventListener("click", backupDb);
-$("btnClearLive").addEventListener("click", clearLive);
-$("btnResetStats").addEventListener("click", resetStats);
-$("setAutostart").addEventListener("change", (e) => putAutostart(e.target.checked));
-$("btnAutostartRepair").addEventListener("click", () => putAutostart(true));
-$("btnOpenData").addEventListener("click", () => openFolderTarget("data"));
-$("btnOpenLogs").addEventListener("click", () => openFolderTarget("logs"));
-$("btnOpenBackups").addEventListener("click", () => openFolderTarget("backups"));
-$("btnExitApp").addEventListener("click", exitApp);
-/* Phase 13：Updates 按钮 */
-$("btnUpdateCheck").addEventListener("click", () => updateAction("check"));
-$("btnUpdateDownload").addEventListener("click", () => updateAction("download"));
-$("btnUpdateInstall").addEventListener("click", () => {
-  const st = lastUpdateStatus || {};
-  const to = st.available_version || "the new version";
-  updateAction("install",
-    "Install LlamaMonitor " + to + "?\n\n" +
-    "LlamaMonitor will create a pre-update backup (database + config), then exit gracefully " +
-    "and the installer will replace the program files. A verified update is required first.");
-});
-$("btnUpdateCancel").addEventListener("click", () => updateAction("cancel"));
-$("btnUpdateOpenFolder").addEventListener("click", () => openFolderTarget("updates"));
-$("btnUpdateOpenRelease").addEventListener("click", () => {
-  const rel = lastUpdateStatus && lastUpdateStatus.release;
-  // AUDIT-WEB-006：只放行 http(s) URL（release_url 来自 GitHub API，防御 javascript: 协议）
-  if (rel && rel.release_url && /^https?:\/\//i.test(rel.release_url)) {
-    window.open(rel.release_url, "_blank", "noopener");
-  }
-});
-$("btnBannerViewUpdate").addEventListener("click", () => {
-  updateBannerDismissed = true;
-  $("updateBanner").hidden = true;
-  window.__showUpdatesSection();
-});
-$("btnBannerDismiss").addEventListener("click", () => {
-  updateBannerDismissed = true;
-  $("updateBanner").hidden = true;
-});
-/* 表单输入 -> 未保存标记 */
-[
-  "setServerUrl", "setMetricsPath", "setTimeoutSec", "setPollInterval", "setLiveRetention",
-  "setGpuEnabled", "setGpuPoll", "setGpuRetention",
-  "setRefreshInterval", "setDefaultDays", "setTheme", "setWebHost", "setWebPort",
-  "setDbPath", "setWal", "setLogLevel", "setMaxLogSize", "setLogBackupCount",
-  "setUpdatesEnabled", "setUpdateInterval", "setUpdateAutoDownload",
-].forEach((id) => {
-  $(id).addEventListener("input", markDirty);
-  $(id).addEventListener("change", markDirty);
-});
-$("gpuDetected").addEventListener("change", markDirty);  // GPU 勾选框
-/* 主题即时预览（保存前即改变外观）；数据库路径提示即时更新 */
-$("setTheme").addEventListener("change", () => applyTheme($("setTheme").value));
-$("setDbPath").addEventListener("input", updateDbPathHint);
-
-/* ================= 启动 ================= */
-/* 页面隐藏时降低轮询频率（Phase 9）：<30s 的任务跳过本轮，
-   30s/120s 的任务不受影响（有效频率约 30s）；恢复可见时立即刷新一次 */
-function isVisible() { return !document.hidden; }
-document.addEventListener("visibilitychange", () => {
-  if (!document.hidden) {
-    refreshStatus();
-    refreshRuntime();
-    refreshGpuStatus();
-    refreshGpuLive();
-    refreshMtpDetail();
-    refreshDataQuality();
-  }
-});
-
-initCharts();
-initRangeButtons();
-initGpuRangeButtons();
-(async () => {
-  await loadConfig();
-  refreshStatus();
-  refreshSummary();
-  refreshLive();
-  refreshDaily();
-  refreshRuntime();
-  refreshGpuStatus();
-  refreshGpuLive();
-  refreshGpuDaily();
-  refreshMtpDetail();
-  refreshDataQuality();
-  every(cfgUi.refreshIntervalSeconds * 1000, () => { if (isVisible()) refreshStatus(); });
-  every(cfgUi.refreshIntervalSeconds * 1000, () => { if (isVisible()) refreshRuntime(); });
-  every(cfgUi.refreshIntervalSeconds * 1000, () => { if (isVisible()) refreshGpuStatus(); });
-  every(15000, () => { if (isVisible()) refreshGpuLive(); });
-  every(30000, refreshSummary);
-  every(30000, refreshLive);
-  every(30000, refreshDataQuality);
-  every(60000, refreshGpuDaily);
-  every(60000, refreshMtpDetail);
-  every(120000, refreshDaily);
-  /* Phase 13：Updates 状态轮询（进入 Updates 页时生效；横幅状态也由此驱动） */
-  startUpdatePolling();
-  loadUpdateStatus();
-})();
-</script>
 </body>
 </html>

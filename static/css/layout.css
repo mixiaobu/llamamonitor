@@ -1,0 +1,185 @@
+/* ============================================================
+   LlamaMonitor — Layout（Phase 15）
+   App shell：左侧 NavigationView + 右侧页面内容（spec §6/§56）。
+   Navigation 固定，Content 是唯一的垂直滚动区域。
+   ============================================================ */
+
+.app {
+  display: grid;
+  grid-template-columns: var(--nav-width, 220px) minmax(0, 1fr);
+  height: 100vh;
+}
+
+/* ============ NavigationView（spec §7/§8/§9） ============ */
+.navview {
+  background: var(--bg-layer);
+  border-right: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  padding: var(--spacing-sm) var(--spacing-sm) var(--spacing-sm) var(--spacing-sm);
+  transition: width var(--transition-normal);
+  overflow: hidden;
+  user-select: none;
+}
+
+/* 品牌区（spec §114/§115：极简，不重复大标题） */
+.nav-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md) var(--spacing-lg);
+  min-height: 40px;
+}
+.nav-brand .brand-icon {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.nav-brand .brand-icon svg {
+  width: 26px;
+  height: 26px;
+}
+.nav-brand .brand-name {
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-semibold);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.nav-items {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+.nav-items.bottom {
+  flex: none;
+  margin-top: var(--spacing-sm);
+  padding-top: var(--spacing-sm);
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* Win11 NavigationViewItem：选中 = 左侧 accent 指示条 + subtle 底色 */
+.nav-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  width: 100%;
+  padding: 8px var(--spacing-md);
+  min-height: 36px;
+  background: none;
+  border: none;
+  border-radius: var(--radius-control);
+  color: var(--text-secondary);
+  font-size: var(--font-size-body);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--transition-fast), color var(--transition-fast);
+  white-space: nowrap;
+}
+.nav-item:hover {
+  background: var(--bg-subtle-hover);
+  color: var(--text-primary);
+}
+.nav-item:active {
+  background: var(--bg-subtle-active);
+}
+.nav-item[aria-current="page"] {
+  background: var(--bg-subtle-active);
+  color: var(--text-primary);
+  font-weight: var(--font-weight-semibold);
+}
+.nav-item[aria-current="page"]::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 16px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+.nav-item .nav-icon {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.nav-item .nav-icon svg {
+  width: 18px;
+  height: 18px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.nav-item .nav-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ============ Compact 模式（spec §8/§54：窗口窄时 56-64px） ============ */
+.app.compact {
+  --nav-width: 60px;
+}
+.app.compact .navview {
+  padding: var(--spacing-sm) 6px;
+}
+.app.compact .nav-brand {
+  justify-content: center;
+  padding: var(--spacing-sm) 0 var(--spacing-lg);
+}
+.app.compact .nav-brand .brand-name,
+.app.compact .nav-item .nav-label {
+  display: none;
+}
+.app.compact .nav-item {
+  justify-content: center;
+  padding: 8px 0;
+}
+.app.compact .nav-item .nav-label {
+  /* 保留可访问性：tooltip 显示名称 */
+}
+
+/* ============ 内容区（spec §56/§58：唯一滚动区，限宽） ============ */
+.content {
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-width: 0;
+}
+.content-inner {
+  max-width: 1720px;
+  padding: var(--spacing-2xl) var(--spacing-3xl) var(--spacing-3xl);
+}
+
+/* 页面（spec §10：Title + Subtitle；100-150ms fade） */
+.page {
+  display: none;
+}
+.page.active {
+  display: block;
+  animation: page-in 120ms ease-out;
+}
+@keyframes page-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.page-header {
+  margin-bottom: var(--spacing-xl);
+}
+
+/* 页面内分区卡片组 */
+.page-section {
+  margin-bottom: var(--spacing-lg);
+}
+.page-section:last-child {
+  margin-bottom: 0;
+}

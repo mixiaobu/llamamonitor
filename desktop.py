@@ -80,7 +80,7 @@ SHUTDOWN_TIMEOUT_SECONDS = 8.0
 WINDOW_TITLE = "LlamaMonitor"
 WINDOW_WIDTH = 1400
 WINDOW_HEIGHT = 900
-WINDOW_MIN_SIZE = (960, 640)
+WINDOW_MIN_SIZE = (1000, 650)  # Phase 15 spec §53：最小合理尺寸（<1100px 触发 compact 导航）
 
 
 def _port_in_use(host: str, port: int) -> bool:
@@ -240,6 +240,21 @@ def main(argv: list[str] | None = None, loaded: LoadedConfig | None = None) -> i
                 pass
         return True
 
+    def _notify_ui_visible(w, visible: bool) -> None:
+        """Phase 15（UI-024）：把窗口真实可见性桥给前端。
+
+        WebView2 隐藏窗口（Win32 SW_HIDE）不保证触发 document.visibilitychange，
+        前端轮询需要真实的窗口级可见性来降频；失败静默（纯 UI 增强）。
+        前端在 polling.js 初始化时注册 window.__lmSetVisible。
+        """
+        try:
+            w.evaluate_js(
+                "if (window.__lmSetVisible) { window.__lmSetVisible(%s); }"
+                % ("true" if visible else "false")
+            )
+        except Exception:
+            pass
+
     def _cmd_show() -> None:
         w = ui["window"]
         if w is not None and ui["webview_ok"]:
@@ -248,6 +263,7 @@ def main(argv: list[str] | None = None, loaded: LoadedConfig | None = None) -> i
                 w.on_top = True
                 w.restore()
                 w.show()
+                _notify_ui_visible(w, True)
 
                 def _drop_topmost() -> None:
                     try:
@@ -266,6 +282,7 @@ def main(argv: list[str] | None = None, loaded: LoadedConfig | None = None) -> i
         if w is not None:
             try:
                 w.hide()
+                _notify_ui_visible(w, False)
             except Exception:
                 log.warning("隐藏窗口失败", exc_info=True)
 
@@ -288,6 +305,7 @@ def main(argv: list[str] | None = None, loaded: LoadedConfig | None = None) -> i
                         pass
 
                 threading.Timer(0.4, _drop_topmost).start()
+                _notify_ui_visible(w, True)
                 # 前端初始化时注册 window.__showUpdatesSection；页面未就绪时静默跳过
                 try:
                     w.evaluate_js("if (window.__showUpdatesSection) { window.__showUpdatesSection(); }")
@@ -569,6 +587,7 @@ def main(argv: list[str] | None = None, loaded: LoadedConfig | None = None) -> i
                     return None
                 try:
                     window.hide()
+                    _notify_ui_visible(window, False)
                 except Exception:
                     log.warning("隐藏窗口失败，按退出处理", exc_info=True)
                     return None

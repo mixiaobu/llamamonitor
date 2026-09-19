@@ -1,0 +1,252 @@
+/* ============================================================
+   LlamaMonitor — Pages（Phase 15）
+   页面级布局细节：图表容器 / GPU 卡片 / 更新区 / 备份列表等。
+   组件复用 components.css；颜色只走 tokens。
+   ============================================================ */
+
+/* ---------- 图表容器（ECharts；懒初始化，见 charts.js） ---------- */
+.chart {
+  width: 100%;
+  height: 300px;
+  min-width: 0;
+}
+.chart.tall { height: 340px; }
+@media (max-width: 1400px) {
+  .chart { height: 260px; }
+}
+.chart-empty-overlay {
+  position: absolute;
+  inset: 0;
+  display: none;
+}
+.chart-empty-overlay.show { display: block; }
+.chart-box {
+  position: relative;
+}
+.chart-box.has-empty .chart { visibility: hidden; }
+.chart-box.has-empty .chart-empty-overlay { display: block; }
+
+/* ---------- GPU 设备卡（spec §135：每 GPU 一卡；多卡网格） ---------- */
+.gpu-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: var(--spacing-md);
+}
+.gpu-device {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-medium);
+  padding: var(--spacing-md) var(--spacing-lg);
+  min-width: 0;
+}
+.gpu-device-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-sm);
+  min-width: 0;
+}
+.gpu-device-head .gpu-idx {
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-semibold);
+  flex: none;
+}
+.gpu-device-head .gpu-name {
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gpu-kv {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 3px var(--spacing-md);
+  font-size: var(--font-size-caption);
+  font-variant-numeric: tabular-nums;
+}
+.gpu-kv .k { color: var(--text-secondary); }
+.gpu-kv .v { color: var(--text-primary); word-break: break-word; }
+
+/* Settings GPU 探测列表 */
+.gpu-detected label {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  cursor: pointer;
+  flex-wrap: wrap;
+  color: var(--text-primary);
+}
+.gpu-detected input {
+  accent-color: var(--accent);
+  width: auto;
+}
+.gpu-detected .uuid {
+  color: var(--text-secondary);
+  font-size: 11px;
+  word-break: break-all;
+}
+.gpu-detected .na {
+  font-size: var(--font-size-caption);
+}
+
+/* GPU 显隐勾选（多卡时） */
+.gpu-pick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-md);
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+}
+.gpu-pick label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+.gpu-pick input {
+  accent-color: var(--accent);
+}
+
+/* ---------- 能源小表 ---------- */
+.energy-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: var(--font-size-caption);
+  font-variant-numeric: tabular-nums;
+}
+.energy-row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--spacing-lg);
+  max-width: 480px;
+}
+.energy-row .k { color: var(--text-secondary); }
+.energy-row.total {
+  font-weight: var(--font-weight-semibold);
+  border-top: 1px solid var(--border-subtle);
+  margin-top: var(--spacing-xs);
+  padding-top: var(--spacing-xs);
+}
+
+/* ---------- 备份列表 ---------- */
+.backup-list {
+  margin-top: var(--spacing-sm);
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+  max-height: 220px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+.backup-list div {
+  padding: 5px 0;
+  border-bottom: 1px solid var(--border-subtle);
+  font-variant-numeric: tabular-nums;
+  word-break: break-all;
+}
+.backup-list .verified-yes { color: var(--success); }
+.backup-list .verified-no { color: var(--error); }
+
+/* ---------- Release notes / 只读多行 ---------- */
+.release-notes {
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0 0 var(--spacing-sm);
+  padding: 10px 12px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  font-size: var(--font-size-caption);
+  line-height: 1.55;
+  color: var(--text-primary);
+  max-height: 240px;
+  overflow-y: auto;
+  font-family: inherit;
+}
+
+/* ---------- 检测结果行（Test Connection 等） ---------- */
+.inline-result {
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+}
+.inline-result.ok { color: var(--success); }
+.inline-result.bad { color: var(--error); }
+
+/* ---------- Settings 页 ---------- */
+.settings-sections {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+}
+.settings-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-large);
+  box-shadow: var(--shadow-card);
+  padding: var(--spacing-lg) var(--spacing-xl);
+}
+.settings-card > h2 {
+  font-size: var(--font-size-subtitle);
+  font-weight: var(--font-weight-semibold);
+  margin: 0 0 var(--spacing-xs);
+}
+.settings-card > .settings-desc {
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+  margin: 0 0 var(--spacing-md);
+}
+.settings-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--spacing-md);
+  margin-top: var(--spacing-lg);
+  padding: var(--spacing-md) var(--spacing-xl);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-large);
+  position: sticky;
+  bottom: var(--spacing-md);
+  box-shadow: var(--shadow-pop);
+}
+.dirty-badge {
+  color: var(--warning);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-semibold);
+}
+
+/* ---------- 更新区状态行 ---------- */
+.update-state {
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-semibold);
+}
+.update-state.error { color: var(--error); }
+.update-state.available { color: var(--accent); }
+.update-note {
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+.update-verified {
+  font-size: var(--font-size-caption);
+  color: var(--success);
+}
+.progress-label {
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+  margin-top: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 数据质量缺口表外的提示块 ---------- */
+.gap-reason-tag {
+  display: inline-block;
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--bg-subtle-hover);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+}

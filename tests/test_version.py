@@ -102,12 +102,25 @@ class ApiVersionTests(unittest.TestCase):
             self.assertEqual(r.json().get("version"), mod.__version__)
 
     def test_schema_version_not_hardcoded_in_frontend(self):
-        """§6：前端必须从 API 取 schema 版本 —— index.html 不得出现 schema 数字硬编码。"""
+        """§6：前端必须从 API 取 schema 版本 —— 前端不得出现 schema 数字硬编码。
+
+        Phase 15 起前端模块化：About 区在 settings.js 的 loadAbout() 里从
+        /api/version 取 schema，不再写死 "3"。
+        """
         root = Path(__file__).resolve().parent.parent
+        js_dir = root / "static" / "js"
+        frontend = {
+            p.name: p.read_text(encoding="utf-8")
+            for p in js_dir.glob("*.js")
+        }
         html = (root / "static" / "index.html").read_text(encoding="utf-8")
-        # About 区域从 /api/version 取 schema（见 loadAbout），不写死 "3"
-        self.assertIn("/api/version", html)
-        self.assertNotIn('aboutSchema").textContent = "3"', html)
+        # /api/version 必须在前端被调用（About 从 API 取 schema，见 settings.js loadAbout）
+        self.assertIn("/api/version", frontend.get("settings.js", ""))
+        # schema 版本不得在任何前端文件里被写死
+        blob = html + "\n" + "\n".join(frontend.values())
+        self.assertNotIn('aboutSchema").textContent = "3"', blob)
+        self.assertNotIn('aboutSchema").textContent = "4"', blob)
+        self.assertNotIn("schema_version = 3", blob)
 
 
 class VersionCliTests(unittest.TestCase):
