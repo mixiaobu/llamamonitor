@@ -1,0 +1,172 @@
+### ============================== days=7 poll=5 seed=42 ==============================
+================================================================
+SOAK SIMULATION  PASS
+================================================================
+Simulation Days        : 7  (seed=42, poll=5.0s)
+Ground Truth (prompt)  : 1814400
+Ground Truth (output)  : 604800
+Observed (prompt)      : 1747263
+Observed (output)      : 582421
+Known Lost (prompt)    : 67137
+Known Lost (output)    : 22379
+Difference (prompt)    : 0   (truth - observed - lost, 必须为 0)
+Difference (output)    : 0
+Counter Resets         : 1801  (online=1013, offline=788)
+Monitor Restarts       : 989
+Server Offline Events  : 2036  (gaps recorded=2036)
+Sampling Gaps          : 3025  (possible loss=790)
+Core Reset Events      : 3602
+DB Rows (live)         : 28547   (daily rows=8)
+DB Size                : 3010560 bytes
+Elapsed                : 1621.3s
+[stderr] 检测到 Counter 重置: llamacpp:prompt_tokens_total (90 -> 9)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (30 -> 3)
+检测到 Counter 重置: llamacpp:n_decode_total (30 -> 3)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+sample_invalid：metrics 可读但核心 Counter（prompt/output）缺失或不可解析，本轮不落盘
+检测到 Counter 重置: llamacpp:prompt_tokens_total (594 -> 6)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (198 -> 2)
+检测到 Counter 重置: llamacpp:n_decode_total (198 -> 2)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+sample_invalid：metrics 可读但核心 Counter（prompt/output）缺失或不可解析，本轮不落盘
+已知缺口结束（server_offline, 25s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (171 -> 45)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (57 -> 15)
+检测到 Counter 重置: llamacpp:n_decode_total (57 -> 15)
+检测到 Counter 重置: llamacpp:prompt_tokens_total (570 -> 6)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (190 -> 2)
+检测到 Counter 重置: llamacpp:n_decode_total (190 -> 2)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+sample_invalid：metrics 可读但核心 Counter（prompt/output）缺失或不可解析，本轮不落盘
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+sample_invalid：metrics 可读但核心 Counter（prompt/output）缺失或不可解析，本轮不落盘
+已知缺口结束（server_offline, 40s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (1776 -> 15)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (592 -> 5)
+检测到 Counter 重置: llamacpp:n_decode_total (592 -> 5)
+检测到 Counter 重置: llamacpp:prompt_tokens_total (780 -> 3)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (260 -> 1)
+检测到 Counter 重置: llamacpp:n_decode_total (260 -> 1)
+检测到 Counter 重置: llamacpp:prompt_tokens_total (633 -> 3)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (211 -> 1)
+检测到 Counter 重置: llamacpp:n_decode_total (211 -> 1)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+sample_invalid：metrics 可读但核心 Counter（prompt/output）缺失或不可解析，本轮不落盘
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+sample_invalid：metrics 可读但核心 Counter（prompt
+[exit=0]
+
+### ============================== days=30 poll=30 seed=42 ==============================
+================================================================
+SOAK SIMULATION  PASS
+================================================================
+Simulation Days        : 30  (seed=42, poll=30.0s)
+Ground Truth (prompt)  : 7776000
+Ground Truth (output)  : 2592000
+Observed (prompt)      : 7491345
+Observed (output)      : 2497115
+Known Lost (prompt)    : 284655
+Known Lost (output)    : 94885
+Difference (prompt)    : 0   (truth - observed - lost, 必须为 0)
+Difference (output)    : 0
+Counter Resets         : 1299  (online=736, offline=563)
+Monitor Restarts       : 688
+Server Offline Events  : 1435  (gaps recorded=1435)
+Sampling Gaps          : 2123  (possible loss=566)
+Core Reset Events      : 2598
+DB Rows (live)         : 4793   (daily rows=31)
+DB Size                : 1548288 bytes
+Elapsed                : 1105.3s
+[stderr] 检测到 Counter 重置: llamacpp:prompt_tokens_total (540 -> 12)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (180 -> 4)
+检测到 Counter 重置: llamacpp:n_decode_total (180 -> 4)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+sample_invalid：metrics 可读但核心 Counter（prompt/output）缺失或不可解析，本轮不落盘
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+sample_invalid：metrics 可读但核心 Counter（prompt/output）缺失或不可解析，本轮不落盘
+已知缺口结束（server_offline, 150s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (4782 -> 270)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (1594 -> 90)
+检测到 Counter 重置: llamacpp:n_decode_total (1594 -> 90)
+检测到 Counter 重置: llamacpp:prompt_tokens_total (3420 -> 9)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (1140 -> 3)
+检测到 Counter 重置: llamacpp:n_decode_total (1140 -> 3)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+sample_invalid：metrics 可读但核心 Counter（prompt/output）缺失或不可解析，本轮不落盘
+已知缺口结束（server_offline, 270s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (10089 -> 360)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (3363 -> 120)
+检测到 Counter 重置: llamacpp:n_decode_total (3363 -> 120)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+sample_invalid：metrics 可读但核心 Counter（prompt/output）缺失或不可解析，本轮不落盘
+已知缺口结束（server_offline, 390s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (1080 -> 990)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (360 -> 330)
+检测到 Counter 重置: llamacpp:n_decode_total (360 -> 330)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+sample_invalid：metrics 可读但核心 Counter（prompt/output）缺失或不可解析，本轮不落盘
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+sample_invalid：metrics 可读但核心 Counter（prompt/output）缺失或不可解析，本轮不落盘
+已知缺口结束（server_offline, 390s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (5310 -> 990)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (1770 -> 330)
+检测到 Counter 重置: llamacp
+[exit=0]
+
+### ============================== days=90 poll=60 seed=42 ==============================
+================================================================
+SOAK SIMULATION  PASS
+================================================================
+Simulation Days        : 90  (seed=42, poll=60.0s)
+Ground Truth (prompt)  : 23328000
+Ground Truth (output)  : 7776000
+Observed (prompt)      : 22471188
+Observed (output)      : 7490396
+Known Lost (prompt)    : 856812
+Known Lost (output)    : 285604
+Difference (prompt)    : 0   (truth - observed - lost, 必须为 0)
+Difference (output)    : 0
+Counter Resets         : 1937  (online=1107, offline=830)
+Monitor Restarts       : 1077
+Server Offline Events  : 2120  (gaps recorded=2120)
+Sampling Gaps          : 3197  (possible loss=836)
+Core Reset Events      : 3874
+DB Rows (live)         : 2465   (daily rows=91)
+DB Size                : 1814528 bytes
+Elapsed                : 1609.4s
+[stderr] 检测到 Counter 重置: llamacpp:prompt_tokens_total (1080 -> 24)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (360 -> 8)
+检测到 Counter 重置: llamacpp:n_decode_total (360 -> 8)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 300s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (9564 -> 540)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (3188 -> 180)
+检测到 Counter 重置: llamacpp:n_decode_total (3188 -> 180)
+检测到 Counter 重置: llamacpp:prompt_tokens_total (6840 -> 21)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (2280 -> 7)
+检测到 Counter 重置: llamacpp:n_decode_total (2280 -> 7)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 540s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (20181 -> 720)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (6727 -> 240)
+检测到 Counter 重置: llamacpp:n_decode_total (6727 -> 240)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 780s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (2160 -> 1980)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (720 -> 660)
+检测到 Counter 重置: llamacpp:n_decode_total (720 -> 660)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 780s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (10620 -> 1980)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (3540 -> 660)
+检测到 Counter 重置: llamacpp:n_decode_total (3540 -> 660)
+monitor 重启缺口 420s（2026-06-20 -> 现在）
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 540s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (20520 -> 180)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (6840 -> 60)
+检测到 Counter 重置:
+[exit=0]

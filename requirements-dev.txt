@@ -1,0 +1,3 @@
+# LlamaMonitor 开发/构建依赖（不进 Installer，运行时不需要）
+# 测试框架：标准库 unittest（python -m unittest discover -s tests）——无 pytest 依赖。
+pyinstaller==6.22.3

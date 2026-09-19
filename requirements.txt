@@ -1,0 +1,10 @@
+# LlamaMonitor 生产运行依赖（Phase 12 起精确固定版本 —— Release 可重复构建）
+# 这些版本是 1.0.0 构建/验证环境实际运行的版本；升级版本需重跑测试 + Release 流程。
+# 打包后（PyInstaller onedir）运行不需要 pip，此文件只约束构建环境。
+fastapi==0.141.1
+uvicorn==0.53.0
+httpx==0.28.1
+pywebview==6.2.1
+pystray==0.19.5
+Pillow==12.3.0
+cryptography==50.0.1  # Phase 13：Ed25519 更新签名验签（不自实现密码学）

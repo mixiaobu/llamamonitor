@@ -1,0 +1,60 @@
+# HELP llamacpp_server_load Current server load
+# TYPE llamacpp_server_load gauge
+llamacpp:server_load 0
+# HELP llamacpp_server_running Number of running servers
+# TYPE llamacpp_server_running gauge
+llamacpp:server_running 1
+# HELP llamacpp_server_deferred Number of deferred requests
+# TYPE llamacpp_server_deferred gauge
+llamacpp:server_deferred 0
+# HELP llamacpp_context_used Used context tokens
+# TYPE llamacpp_context_used gauge
+llamacpp:context_used 0
+# HELP llamacpp_context_available Available context tokens
+# TYPE llamacpp_context_available gauge
+llamacpp:context_available 4096
+# HELP llamacpp_prompt_tokens_total Total prompt tokens processed
+# TYPE llamacpp_prompt_tokens_total counter
+llamacpp:prompt_tokens_total 168507
+# HELP llamacpp_prompt_tokens_cached_total Total cached prompt tokens
+# TYPE llamacpp_prompt_tokens_cached_total counter
+llamacpp:prompt_tokens_cached_total 3314650
+# HELP llamacpp_prompt_seconds_total Total prompt processing seconds
+# TYPE llamacpp_prompt_seconds_total counter
+llamacpp:prompt_seconds_total 12.345
+# HELP llamacpp_tokens_predicted_total Total predicted tokens
+# TYPE llamacpp_tokens_predicted_total counter
+llamacpp:tokens_predicted_total 18722
+# HELP llamacpp_tokens_predicted_seconds_total Total prediction seconds
+# TYPE llamacpp_tokens_predicted_seconds_total counter
+llamacpp:tokens_predicted_seconds_total 88.12
+# HELP llamacpp_n_decode_total Total decode batches
+# TYPE llamacpp_n_decode_total counter
+llamacpp:n_decode_total 1501
+# HELP llamacpp_n_tokens_max Maximum tokens in a decode batch
+# TYPE llamacpp_n_tokens_max gauge
+llamacpp:n_tokens_max 2
+# HELP llamacpp_spec_decode_num_draft_tokens_total Total spec-decode draft tokens
+# TYPE llamacpp_spec_decode_num_draft_tokens_total counter
+llamacpp:spec_decode_num_draft_tokens_total 23912
+# HELP llamacpp_spec_decode_num_accepted_tokens_total Total spec-decode accepted tokens
+# TYPE llamacpp_spec_decode_num_accepted_tokens_total counter
+llamacpp:spec_decode_num_accepted_tokens_total 14739
+# HELP llamacpp_spec_decode_num_drafts_total Total spec-decode drafts
+# TYPE llamacpp_spec_decode_num_drafts_total counter
+llamacpp:spec_decode_num_drafts_total 5420
+# HELP llamacpp_spec_decode_num_accepted_tokens_per_pos_total Accepted tokens per position
+# TYPE llamacpp_spec_decode_num_accepted_tokens_per_pos_total counter
+llamacpp:spec_decode_num_accepted_tokens_per_pos_total{position="0"} 14039
+llamacpp:spec_decode_num_accepted_tokens_per_pos_total{position="1"} 652
+llamacpp:spec_decode_num_accepted_tokens_per_pos_total{position="2"} 44
+llamacpp:spec_decode_num_accepted_tokens_per_pos_total{position="3"} 4
+# HELP llamacpp_requests_processing Number of requests currently processing
+# TYPE llamacpp_requests_processing gauge
+llamacpp:requests_processing 1
+# HELP llamacpp_requests_deferred Number of deferred requests
+# TYPE llamacpp_requests_deferred gauge
+llamacpp:requests_deferred 0
+# HELP llamacpp_n_busy_slots_per_decode Number of busy slots per decode
+# TYPE llamacpp_n_busy_slots_per_decode gauge
+llamacpp:n_busy_slots_per_decode 1

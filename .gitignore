@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 构建 / 打包产物
+build/
+dist/
+*.spec
+
+# Release 产物（由 scripts/build_release.py 生成）
+release/
+
+# 开发模式可能在项目根生成的运行时文件
+config.json
+monitor.db
+monitor.db-wal
+monitor.db-shm
+monitor.log
+*.log
+
+# ---------------------------------------------------------------------------
+# LlamaMonitor 更新签名私钥（NEVER COMMIT THE PRIVATE KEY.）
+# 私钥默认在 %LOCALAPPDATA%\LlamaMonitor\update-keys\（项目外）；
+# 以下模式防止误把私钥放进仓库。不要仅依赖 .gitignore 保密。
+# ---------------------------------------------------------------------------
+*.update-private-key
+release_private_key*
+keys/private*
+update-keys/
+*.pem
+!assets/*.pem

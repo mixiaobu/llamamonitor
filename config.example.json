@@ -1,0 +1,45 @@
+{
+  "llama_server": {
+    "url": "http://127.0.0.1:9091",
+    "metrics_path": "/metrics",
+    "timeout_seconds": 3
+  },
+  "collector": {
+    "poll_interval_seconds": 5,
+    "live_retention_hours": 48
+  },
+  "gpu": {
+    "enabled": true,
+    "poll_interval_seconds": 5,
+    "history_retention_hours": 48,
+    "device_uuids": []
+  },
+  "web": {
+    "host": "127.0.0.1",
+    "port": 8765
+  },
+  "database": {
+    "path": "",
+    "wal": true
+  },
+  "ui": {
+    "refresh_interval_seconds": 5,
+    "daily_default_days": 30,
+    "theme": "dark"
+  },
+  "logging": {
+    "level": "INFO",
+    "max_size_mb": 10,
+    "backup_count": 5
+  },
+  "backup": {
+    "automatic": true,
+    "interval_hours": 24,
+    "keep_count": 14
+  },
+  "updates": {
+    "check_enabled": false,
+    "check_interval_hours": 24,
+    "auto_download": false
+  }
+}

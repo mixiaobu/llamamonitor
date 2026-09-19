@@ -1,0 +1,42 @@
+LlamaMonitor THIRD-PARTY NOTICES
+=
+
+基于 1.0.0 构建环境（pip freeze + importlib.metadata）生成；
+"VERIFY" 表示未能自动确认许可证文本，发布前需人工确认。
+第三方代码版权归各自作者所有。
+
+- altgraph 0.17.5 — License: MIT
+- annotated-doc 0.0.5 — License: VERIFY (project: https://github.com/fastapi/annotated-doc)
+- annotated-types 0.8.0 — License: VERIFY (project: https://github.com/annotated-types/annotated-types)
+- anyio 4.15.1 — License: VERIFY (project: https://anyio.readthedocs.io/en/latest/)
+- bottle 0.13.4 — License: MIT
+- certifi 2026.7.22 — License: MPL-2.0
+- cffi 2.1.1 — License: VERIFY (project: https://cffi.readthedocs.io/)
+- click 8.5.0 — License: VERIFY (project: https://click.palletsprojects.com/page/changes/)
+- clr_loader 0.3.1 — License: VERIFY (project: https://github.com/pythonnet/clr-loader)
+- fastapi 0.141.1 — License: VERIFY (project: https://github.com/fastapi/fastapi)
+- h11 0.16.0 — License: MIT
+- httpcore 1.0.9 — License: VERIFY (project: https://www.encode.io/httpcore)
+- httpx 0.28.1 — License: BSD-3-Clause
+- idna 3.19 — License: VERIFY (project: https://github.com/kjd/idna/blob/master/HISTORY.md)
+- packaging 26.3 — License: VERIFY (project: https://packaging.pypa.io/)
+- pefile 2024.8.26 — License: MIT
+- pillow 12.3.0 — License: VERIFY (project: https://pillow.readthedocs.io/en/stable/releasenotes/index.html)
+- proxy_tools 0.1.0 — License: MIT
+- pycparser 3.0 — License: VERIFY (project: https://github.com/eliben/pycparser)
+- pydantic 2.13.5 — License: VERIFY (project: https://github.com/pydantic/pydantic)
+- pydantic_core 2.46.5 — License: VERIFY (project: https://github.com/pydantic/pydantic)
+- pyinstaller 6.22.3 — License: GPLv2-or-later with a special exception which allows to use PyInstaller to build and distribute non-free programs (in...
+- pyinstaller-hooks-contrib 2026.7 — License: VERIFY (project: https://github.com/pyinstaller/pyinstaller-hooks-contrib)
+- pystray 0.19.5 — License: LGPLv3
+- pythonnet 3.1.0 — License: VERIFY (project: https://pythonnet.github.io/)
+- pywebview 6.2.1 — License: BSD 3-Clause License Copyright (c) 2014-2017, Roman Sirokov All rights reserved. Redistribution and use in source and...
+- pywin32-ctypes 0.2.3 — License: BSD-3-Clause
+- setuptools 84.0.0 — License: VERIFY (project: https://github.com/pypa/setuptools)
+- six 1.17.0 — License: MIT
+- starlette 1.6.0 — License: VERIFY (project: https://github.com/Kludex/starlette)
+- typing-inspection 0.4.4 — License: VERIFY (project: https://github.com/pydantic/typing-inspection)
+- typing_extensions 4.16.0 — License: VERIFY (project: https://github.com/python/typing_extensions/issues)
+- uvicorn 0.53.0 — License: VERIFY (project: https://uvicorn.dev/release-notes)
+- xlrd 2.0.2 — License: BSD
+- Apache ECharts (static/echarts.min.js, bundled) — License: Apache-2.0
