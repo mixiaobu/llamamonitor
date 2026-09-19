@@ -55,9 +55,13 @@ Test-Path "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"   # 应为 True
    （顶层唯一 `LlamaMonitor/`，过滤用户数据文件）。
 8. **安装器**：`ISCC /DAppVersion=<ver> installer\LlamaMonitor.iss`
    → `release/LlamaMonitor-Setup-<ver>-win-x64.exe`。
-9. **校验和 + 清单**：`SHA256SUMS.txt`（hashlib，sha256sum 兼容）+
-   `release-manifest.json`（无 `download_url`）。
-10. **validate_release**：校验文件齐全、哈希一致、ZIP 结构、PE 元数据、`--version` CLI。
+9. **校验和 + 清单 + 签名**（Phase 13）：`SHA256SUMS.txt`（hashlib，sha256sum 兼容）+
+   `release-manifest.json`（schema 1 canonical bytes，写盘字节 == 被签名字节）+
+   `release-manifest.sig`（Ed25519，见 [`UPDATE_SECURITY.md`](UPDATE_SECURITY.md)）。
+   正式构建**必须**提供签名私钥（`LLAMAMONITOR_UPDATE_PRIVATE_KEY_FILE` 环境变量；
+   缺失则构建失败；开发构建用 `--unsigned-development-build` 跳过 .sig）。
+10. **validate_release**：校验文件齐全（含 `.sig`）、**先验签名**、manifest 规范化
+    格式、哈希一致、ZIP 结构、PE 元数据、`--version` CLI。
 
 ### 选项
 
@@ -79,8 +83,10 @@ python scripts\validate_release.py            # 校验默认 release/ 目录 + v
 python scripts\validate_release.py --release-dir release --version 1.0.0
 ```
 
-检查项：4 个发布文件存在、`SHA256SUMS.txt` 哈希一致、`release-manifest.json`
-版本/哈希一致、ZIP 可解压且顶层唯一 `LlamaMonitor/` 且含 `LlamaMonitor/LlamaMonitor.exe`
+检查项：**5 个发布文件存在**（含 `release-manifest.sig`）、`release-manifest.sig`
+**Ed25519 验签通过**（内置公钥表）、manifest 为 canonical 格式（重新序列化 == 磁盘
+字节）、`SHA256SUMS.txt` 哈希一致、manifest 版本/哈希与实际文件一致、
+ZIP 可解压且顶层唯一 `LlamaMonitor/` 且含 `LlamaMonitor/LlamaMonitor.exe`
 且不含用户数据文件、安装器非空、PE 字符串/数值版本正确、`--version` CLI 输出正确。
 
 ## 4. 发布检查清单（人工）
@@ -95,6 +101,7 @@ python scripts\validate_release.py --release-dir release --version 1.0.0
       FileVersion=`<ver>.0`，Company=`LlamaMonitor Project`（右键 EXE → 属性 → 详细信息）。
 - [ ] 安装后 Add/Remove Programs 显示 `<ver>`。
 - [ ] 发布文件名、`SHA256SUMS.txt`、`release-manifest.json`、本 CHANGELOG 标题的 `<ver>` 一致。
+- [ ] `release-manifest.sig` 存在且 `validate_release.py` 验签通过（key_id 在内置公钥表）。
 
 ### 构建与测试
 - [ ] `build_release.py` 全绿（含完整测试套件）。
@@ -115,15 +122,20 @@ python scripts\validate_release.py --release-dir release --version 1.0.0
 ### 文档与元数据
 - [ ] `CHANGELOG.md` 已更新到本版本（含日期、变更点）。
 - [ ] `THIRD_PARTY_NOTICES.txt` 与当前锁定依赖一致（VERIFY 条目已人工确认）。
-- [ ] `release/` 下 4 个文件齐全，`SHA256SUMS.txt` 可独立复算。
+- [ ] `release/` 下 5 个文件齐全（含 `release-manifest.sig`），`SHA256SUMS.txt` 可独立复算。
 
 ## 5. 不在本发布范围内的（明确不做）
 
-- 应用内自动更新 / 在线版本检查
 - Windows 服务 / MSIX / MSI / NSIS / WiX（仅 Inno Setup 6）
 - winget manifest / 代码签名自动化 / 遥测
+- Authenticode 安装器代码签名（更新用 Ed25519 签名 manifest，见
+  [`UPDATE_SECURITY.md`](UPDATE_SECURITY.md)；SmartScreen 提示由 Authenticode 决定）
 - 安装 Python / NVIDIA 驱动 / llama.cpp（安装器只装 LlamaMonitor 本体）
 - 防火墙规则 / 文件关联
+
+> 应用内更新（Check / Download / Install）**已在 Phase 13 纳入**：安装版从
+> GitHub Release 拉取签名 manifest + 安装器，验签后静默升级。流程与信任模型见
+> [`UPDATE_SECURITY.md`](UPDATE_SECURITY.md) 与 README 的"安全更新"章节。
 
 ## 6. 发布产物
 
@@ -132,5 +144,6 @@ release/
 ├── LlamaMonitor-<ver>-win-x64.zip        # 便携版（解压即用，顶层 LlamaMonitor/）
 ├── LlamaMonitor-Setup-<ver>-win-x64.exe  # Inno Setup 安装器（per-user，无 UAC）
 ├── SHA256SUMS.txt                        # sha256sum 兼容
-└── release-manifest.json                 # 名称/版本/平台/架构/制品哈希（无下载 URL）
+├── release-manifest.json                 # 名称/版本/平台/架构/制品哈希（无下载 URL，schema 1）
+└── release-manifest.sig                  # Ed25519 签名（对 manifest canonical bytes 签名）
 ```

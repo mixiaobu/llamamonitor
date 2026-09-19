@@ -525,7 +525,9 @@ class UpdateService:
             if hasattr(client, "__aenter__"):
                 return client
             return _BareAsyncContext(client)
-        return httpx.AsyncClient(follow_redirects=True)
+        # trust_env=True：读取系统/环境变量代理（Windows 下读注册表 ProxyServer，
+        # 国内网络常见需要代理访问 GitHub；无代理时行为不变）。
+        return httpx.AsyncClient(follow_redirects=True, trust_env=True)
 
     async def _download_bytes(self, client, url: str) -> bytes:
         try:
@@ -892,6 +894,44 @@ class _BareAsyncContext:
 # 新版启动时的 update 成功检测（desktop.py 调用；§63）
 # ---------------------------------------------------------------------------
 
+def _record_update_event(db, event_type: str, severity: str, details: dict, ts: int) -> bool:
+    """
+    用**短命新连接**写一条 monitor_events（WAL 模式支持并发连接）。
+
+    为什么不用 db.record_event：本函数在 desktop 主线程执行，而 Database 的
+    长连接由 uvicorn 线程的 lifespan 首次 _connect() 创建（Python sqlite3 默认
+    check_same_thread=True）——跨线程使用会抛 ProgrammingError，事件丢失
+    （2026-09-19 实测：update_success 事件因此未落库）。新连接 + busy_timeout
+    在 WAL 下与主连接并发安全；事件保留清理由后续常规 record_event 顺带执行。
+    """
+    try:
+        # Database 惰性建表：先触发 schema 初始化（已初始化时为廉价 no-op；
+        # 生产环境中此时 uvicorn 线程已连接，这里直接返回既有连接，不改变
+        # 线程归属）。短命连接只负责 INSERT。
+        db._connect()
+        conn = sqlite3.connect(db.path, timeout=5.0)
+    except (sqlite3.Error, AttributeError, TypeError):
+        return False
+    try:
+        conn.execute("PRAGMA busy_timeout = 5000;")
+        try:
+            details_json = json.dumps(details, ensure_ascii=False, separators=(",", ":"))
+        except (TypeError, ValueError):
+            details_json = "{}"
+        with conn:
+            conn.execute(
+                "INSERT INTO monitor_events(timestamp, event_type, severity, source, details_json) "
+                "VALUES(?, ?, ?, ?, ?)",
+                (ts, event_type, severity, "update", details_json),
+            )
+        return True
+    except sqlite3.Error:
+        logger.warning("记录 %s 事件失败", event_type, exc_info=True)
+        return False
+    finally:
+        conn.close()
+
+
 def check_pending_update(db, current_version: str, data_dir: str | Path, now: float | None = None) -> str | None:
     """
     新版启动：读 updates/pending_update.json。
@@ -910,19 +950,13 @@ def check_pending_update(db, current_version: str, data_dir: str | Path, now: fl
             return None
         ts = int(now if now is not None else time.time())
         if str(marker.get("to_version")) == current_version:
-            try:
-                db.record_event("update_success", "info", "update", marker, now=ts)
-            except Exception:
-                logger.warning("记录 update_success 事件失败", exc_info=True)
+            _record_update_event(db, "update_success", "info", marker, ts)
             result = "success"
         else:
-            try:
-                db.record_event(
-                    "update_failed_mismatch", "warning", "update",
-                    {**marker, "current_version": current_version}, now=ts,
-                )
-            except Exception:
-                logger.warning("记录 update_failed_mismatch 事件失败", exc_info=True)
+            _record_update_event(
+                db, "update_failed_mismatch", "warning",
+                {**marker, "current_version": current_version}, ts,
+            )
             result = "mismatch"
         try:
             marker_path.unlink(missing_ok=True)

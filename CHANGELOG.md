@@ -3,6 +3,52 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 版本号由 `version.py` 的 `__version__` 单一来源给出（SemVer，无 `v` 前缀）。
 
+> 版本序列说明：Phase 13 采用 **0.13.x** 里程碑系列（安全更新）。0.13.x 与 1.0.0
+> 互相视为"不同系列"：安装器降级保护按数值比较（1.0.0 > 0.13.x），从 1.0.0 安装
+> 0.13.x 会被识别为降级并拒绝（实测行为，非缺陷）。
+
+## [0.13.1] - 2026-09-19
+
+安全更新（Phase 13）部署修复版：
+
+### 修复
+- **安装器静默阻塞**：`[Code]` 取参改用 `GetCmdTail` 函数——实测 Inno Setup 6.7.3
+  中 `{cmdline}`/`{cmdtail}` **不是**有效的 `ExpandConstant` 常量（运行时抛
+  "Unknown constant"），导致静默安装卡死/报错对话框。
+- **安装模式对话框阻塞静默安装**：移除 `PrivilegesRequiredOverridesAllowed=dialog`
+  ——实测 6.7.3 在 `/SILENT` 下仍弹 "Select Setup Install Mode" 模态框并无限阻塞；
+  应用设计即 per-user（固定 `%LOCALAPPDATA%` 数据目录、不写 HKLM），强制 per-user。
+- **`update_success` 事件丢失**：`check_pending_update` 在 desktop 线程执行，但
+  `Database` 长连接由 uvicorn 线程创建（`check_same_thread=True`）→ 跨线程写事件
+  抛 ProgrammingError、marker 已删而事件未落库。改为**短命新连接**写事件
+  （WAL 下与主连接并发安全）。
+
+## [0.13.0] - 2026-09-19
+
+### 新增
+- **安全更新系统（Phase 13）**：安装版从 GitHub Release 应用内更新
+  - **Ed25519 签名 manifest**：`release-manifest.json`（schema 1，canonical bytes）
+    + `release-manifest.sig`（JSON sidecar：algorithm/key_id/signature）；
+    公钥内置于 `update_keys.py`（多 key 表支持轮换）；验签**先于** JSON 解析。
+  - **更新状态机**：IDLE/CHECKING/UPDATE_AVAILABLE/UP_TO_DATE/DOWNLOADING/
+    VERIFYING/READY_TO_INSTALL/INSTALLING/ERROR；单 asyncio 工作流 + Lock 串行。
+  - **流式下载**：只写 `updates/{version}/*.part`（1MB 分块边下边算 SHA-256），
+    2GiB 上限 + 500MB 磁盘余量预检，取消/失败自动清理，完成 `os.replace` 转正。
+  - **安装交接**：pre-update backup（SQLite Backup API + quick_check + config 复制）
+    → `pending_update.json` 标记 → `Popen` 安装器 `/SILENT /NORESTART
+    /APPUPDATE[_BG]`（列表参数、无 shell）→ 应用优雅退出 → Inno 替换文件并自动
+    启动新版（后台更新带 `--background`）→ 新版启动核对标记记 `update_success`。
+  - **设置页 Updates 分区** + loopback-only API（`/api/update/status|check|
+    download|install|cancel`；409 UPDATE_BUSY/NOT_DOWNLOADING）。
+  - **构建链**：`build_release.py` 正式构建必须提供签名私钥（环境变量注入，
+    私钥不落项目）；`validate_release.py` 先验签再校验；`tools/tamper_test.py`
+    篡改回归测试。
+  - 测试：`tests/test_update_version.py` / `test_update_signature.py` /
+    `test_update_check_download.py` / `test_update_install_modes.py` /
+    `test_update_api.py`（共 90+ 例，含 FakeGithub MockTransport 全链路）。
+  - 文档：`docs/UPDATE_SECURITY.md`（信任模型/密钥管理/轮换/泄漏响应）、
+    README 安全更新章节。
+
 ## [1.0.0] - 2026-07-11
 
 首个正式版本。汇总 Phase 1–12 的全部功能。

@@ -282,8 +282,11 @@ def write_checksums_and_manifest(
     for item in items:
         log(f"  {item['sha256']}  {item['file']}")
 
-    installer_path = next((a for a in artifacts if a.name.endswith("-Setup-")), None)
-    portable_path = next((a for a in artifacts if a.name.endswith(".zip")), None)
+    # 精确匹配本版本预期文件名（避免 release/ 里旧版本产物混入）
+    installer_path = next(
+        (a for a in artifacts if a.name == f"LlamaMonitor-Setup-{version}-win-x64.exe"), None)
+    portable_path = next(
+        (a for a in artifacts if a.name == f"LlamaMonitor-{version}-win-x64.zip"), None)
 
     private_key, key_id = load_env_private_key()
     manifest = build_update_manifest(

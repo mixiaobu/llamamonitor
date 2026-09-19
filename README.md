@@ -25,7 +25,9 @@ llama.cpp 的纯旁路（sidecar）监控程序，Windows 11 桌面应用。
 - Windows 集成：系统托盘（关闭窗口=隐藏到托盘，监控继续）、单实例（Named Mutex +
   第二实例唤醒第一实例）、开机自启（HKCU Run，当前用户登录时进托盘）、优雅关闭
 - 设置页：Server / Collector / GPU / Interface / Web / Storage / Logging / Data /
-  Application 九个分区，Test Connection、保存（校验 + 原子写入）、Reset to Defaults
+  Application / Updates 十个分区 + About，Test Connection、保存（校验 + 原子写入）、
+  Reset to Defaults；Updates 分区提供应用内安全更新（Check / Download / Install /
+  Cancel，见"安全更新"章节）
 - 数据管理：CSV 导出（Excel 直接打开，含 GPU 每日 CSV）、SQLite Backup API 备份
   （手动 + 自动 + 验证 + 轮转）、数据库健康检查与 protective mode、清实时历史、重置统计
 - 版本管理（Phase 12）：`version.py` 单一版本号来源、`GET /api/version`、设置页 About
@@ -74,6 +76,72 @@ python scripts\validate_release.py  # 独立校验 release/ 产物
 CLI：`LlamaMonitor.exe --version`（打印版本并退出）、
 `LlamaMonitor.exe --shutdown-existing`（请求运行中实例优雅退出，供安装器调用）。
 
+## 安全更新（Secure Updates，Phase 13）
+
+**安装版**（installer）支持检查、验签、下载并静默执行官方安装器完成升级，
+完成后新版本自动启动。**便携版**：可检查/下载，但只提示"Open Download Folder"
+手动更新（**从不自我覆盖**）。**开发模式**：Check 可用，下载/安装禁用。
+
+更新流程：
+
+1. **Check**（Settings → Updates 或托盘菜单"Check for Updates"）：查询 GitHub
+   （`mixiaobu/llamamonitor`）最新 **stable** Release（draft/prerelease 一律忽略），
+   下载 `release-manifest.json` + `release-manifest.sig`，**先用内置 Ed25519 公钥验签，
+   再解析 manifest**——签名有效才信任版本/文件名/大小/SHA-256 等字段；
+   remote ≤ 当前版本视为 "Up to date"（**绝不自动降级**）。
+2. **Download**：流式写入 `%LOCALAPPDATA%\LlamaMonitor\updates\<version>\<file>.part`
+   （1MB 分块；下载前检查磁盘空间（预留 500MB）与 2 GiB 上限）；
+   完成后 **size + SHA-256 双校验**，双过才原子转正（`.part` 失败即删）；
+   可取消（cancel event，不强杀线程）。
+3. **Install**：先 Pre-Update Backup（数据库用 SQLite Online Backup API + quick_check，
+   config.json 整体安全复制，存 `%LOCALAPPDATA%\LlamaMonitor\backups\pre_update_*`）；
+   **DB 本身 corrupt 时拒绝安装**并提示；备份失败不启动安装器。随后写
+   `updates\pending_update.json`，启动**已验证的固定路径**安装器
+   （`/SILENT /NORESTART /APPUPDATE[_BG]`，列表参数、无 shell），应用优雅退出
+   （Mutex 释放 → 安装器替换文件）。
+4. **新版启动**：Inno 的 `/APPUPDATE` [Run] 条目自动启动新版本（后台模式带
+   `--background`）；新版本启动时读 marker：`to_version` == 当前版本 → 记
+   `update_success` 事件并删 marker；不匹配 → `update_failed_mismatch` 警告。
+   **没有自动回滚**——出问题用 Pre-Update Backup 手动恢复。
+
+安全模型（详见 [`docs/UPDATE_SECURITY.md`](docs/UPDATE_SECURITY.md)）：
+
+- 信任链：内置 Ed25519 公钥（`update_keys.py`，`key-2026-09`）验 manifest 签名
+  → manifest 声明安装器 SHA-256 → 下载内容双重校验。
+  `SHA256SUMS.txt` 只是辅助文件，**不在信任链上**（没有 manifest 签名时不用于放行）。
+- 验签先于解析：公钥不匹配/签名无效 → 整个 Release 拒绝（不显示版本、不显示 notes）。
+- 私钥不在代码仓库：CI 构建从 GitHub secret 解码，本地构建用环境变量
+  （`LLAMAMONITOR_UPDATE_PRIVATE_KEY_FILE` / `_PRIVATE_KEY`）。
+- Ed25519 ≠ Authenticode 代码签名：更新通道保证"你下载的就是官方发布的那份"；
+  首次启动 SmartScreen 的"未知发布者"提示由 Authenticode 决定（我们不做代码签名）。
+- 全部 5 个 `/api/update/*` 端点 **loopback-only**（远程 403）。
+
+设置（Settings → Updates，保存后重启生效）：
+
+- `updates.check_enabled`（默认**关**，启动时不自动检查）、
+  `updates.check_interval_hours`（默认 24h）、`updates.auto_download`（默认关）。
+  开启后，启动时若距上次检查超过 interval 会自动 Check 一次（一次性任务，非常驻轮询）；
+  auto_download 只自动**下载**（已验签），不自动安装。
+- 状态区：当前版本 / 安装模式（installed|portable|development）/ 可用版本 /
+  下载进度条 / 上次检查时间 / 错误信息；release notes 纯文本渲染（textContent，无 HTML 注入）。
+- 有可用更新时：Dashboard 顶部显示可关闭的更新横幅；托盘菜单出现
+  "Update Available: x.y.z"（点击打开 Updates 分区）。
+
+构建与发布：
+
+```powershell
+# 本地正式构建（需要签名私钥，否则构建失败）：
+$env:LLAMAMONITOR_UPDATE_PRIVATE_KEY_FILE = "<path>\private_key_key-2026-09.pem"
+python scripts\build_release.py        # 产物含 release-manifest.json + release-manifest.sig
+python scripts\validate_release.py     # 独立校验（含签名验证 + 规范化格式检查）
+python scripts\generate_update_key.py --key-id key-YYYY-MM   # 轮换/新增签名密钥
+```
+
+GitHub Actions（`.github/workflows/release.yml`）：tag `v*` 推送触发；
+从 secret `LLAMAMONITOR_UPDATE_PRIVATE_KEY_B64`（Base64 PEM）解码到 runner 临时目录签名，
+key id 用 repo variable `LLAMAMONITOR_UPDATE_KEY_ID`（缺省 `key-2026-09`），
+自动创建 GitHub Release（安装器 / 便携 ZIP / manifest / .sig / SHA256SUMS 共 5 个资产）。
+
 ## 配置
 
 **运行时真正读取的配置文件**（首次启动自动生成默认值）：
@@ -117,7 +185,8 @@ CLI：`LlamaMonitor.exe --version`（打印版本并退出）、
 
 ## 设置页（Settings）
 
-Dashboard 顶部导航切换 **Dashboard / Settings**。设置页分八个分区：
+Dashboard 顶部导航切换 **Dashboard / Settings**。设置页分区：Server / Collector /
+GPU / Interface / Web / Storage / Logging / Data / Application / Updates（+ About 页）。
 
 - **Server**：llama-server 基础地址（http/https）、metrics 路径、连接超时；
   **Test Connection** 由后端只 GET `<url><metrics_path>`（不触碰任何控制接口），
@@ -130,6 +199,11 @@ Dashboard 顶部导航切换 **Dashboard / Settings**。设置页分八个分区
 - **Storage**：数据库路径（留空 = 默认路径）、WAL 开关。
 - **Logging**：日志级别、滚动大小、备份份数。
 - **Data**：数据管理（见下节）。
+- **Application**（Phase 12）：开机自启开关（HKCU Run，仅当前用户）、退出应用、
+  集成信息（frozen/background/单实例/托盘/数据目录/uptime）。
+- **Updates**（Phase 13）：安装版应用内安全更新——Check for Update / Download /
+  Install / Cancel，状态区显示当前版本与可用版本、release notes（纯文本渲染）、
+  签名 key_id；详见"安全更新（Secure Updates）"章节。
 
 行为约定：
 

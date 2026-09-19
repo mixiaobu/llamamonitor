@@ -56,7 +56,10 @@ DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
 ; per-user 安装：不请求管理员（应用不装驱动/服务、不写 HKLM）
 PrivilegesRequired=lowest
-PrivilegesRequiredOverridesAllowed=dialog
+; 注意：不设 PrivilegesRequiredOverridesAllowed=dialog —— 实测 Inno 6.7.3 在
+; /SILENT 模式下**仍会弹出** "Select Setup Install Mode" 模态对话框并无限阻塞
+; （会卡死更新器的静默安装）。应用设计就是 per-user（固定 %LOCALAPPDATA% 数据
+; 目录、不写 HKLM），强制 per-user 是正确行为，无需让用户选 all-users。
 ; 只发布 Windows x64
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
@@ -118,14 +121,17 @@ const
 
 // Phase 13：更新器触发的升级自动启动判定（读安装器命令行 /APPUPDATE 参数）。
 // update_service.install() 以 [exe, "/SILENT", "/NORESTART", "/APPUPDATE"]（前台）或
-// "/APPUPDATE_BG"（后台 -> 新实例带 --background）启动本安装器；
-// Inno 核心解析器忽略未知开关，完整参数由 {cmdtail} 保留。
+// "/APPUPDATE_BG"（后台 -> 新实例带 --background）启动本安装器。
+// 取参用 **GetCmdTail 函数**（Inno 6.3+ 内置；实测 6.7.3 的 {cmdline}/{cmdtail}
+// ExpandConstant 常量均抛 "Unknown constant" 运行时异常，绝不能用）。
+// 注意：GetCmdTail 的返回内容包含 Inno 内部自举参数 /SL5="..." —— 匹配时用
+// Pos() 子串搜索即可，/SL5 不会与 /APPUPDATE、/SILENT 等产生误匹配。
 // [Run] 的 Check 只在安装向导求值（卸载器不执行 [Run]）。
 function IsAppUpdateBg: Boolean;
 var
   C: String;
 begin
-  C := ExpandConstant('{cmdtail}');
+  C := GetCmdTail;
   Result := Pos('/APPUPDATE_BG', C) > 0;
 end;
 
@@ -133,7 +139,7 @@ function IsAppUpdateInstall: Boolean;
 var
   C: String;
 begin
-  C := ExpandConstant('{cmdtail}');
+  C := GetCmdTail;
   Result := (Pos('/APPUPDATE', C) > 0) and (Pos('/APPUPDATE_BG', C) = 0);
 end;
 
@@ -251,12 +257,13 @@ begin
 end;
 
 // 静默检测（Inno [Code] 无 SilentMode 全局）：命令行含 /VERYSILENT 或 /SILENT。
+// 用 GetCmdTail 函数（{cmdtail} 常量在 Inno 6.7.3 不可用，见 IsAppUpdateBg 注释）。
 // 必须在 InitializeSetup 之前定义（Inno [Code] 单遍编译：先用后定义会报 Unknown identifier）。
 function IsSilentInstall: Boolean;
 var
   C: String;
 begin
-  C := ExpandConstant('{cmdtail}');
+  C := GetCmdTail;
   Result := (Pos('/VERYSILENT', C) > 0) or (Pos('/SILENT', C) > 0);
 end;
 
