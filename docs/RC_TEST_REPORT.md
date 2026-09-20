@@ -187,10 +187,10 @@
 
 | # | 项 | 状态 | 证据/备注 |
 |---|---|---|---|
-| 77 | Dashboard 24h：RAM/CPU/WebView/Timers/Charts | IN PROGRESS | burn-in 进行中；1h 采样 RSS 205.9MB 稳定（24h 终值 burn-in 结束时记录） |
-| 78 | Tray 24h：RAM/CPU/Threads/Handles | IN PROGRESS | burn-in 进行中；1h 采样 Handles 823 / Threads 26（startup 205MB/2392/22 → 见 79/80） |
-| 79 | Memory Leak：Startup/1h/4h/8h/24h RSS，近似线性增长则调查 | IN PROGRESS | 采样点：startup 205MB → 1h 205.9MB（+0.9MB/1h，含窗口 100 次 show/hide 后的 +0.5），**无近似线性增长**；4h/8h/24h 点 burn-in 期间续采（$env:TEMP\lm_burnin_samples.txt） |
-| 80 | Handle Leak：Handle Count Startup/1h/4h/8h 不线性增长 | IN PROGRESS | 采样点：startup 2392 → 1h 823（降，进程内部 GC 正常释放）；4h/8h 点续采 |
+| 77 | Dashboard 24h：RAM/CPU/WebView/Timers/Charts | IN PROGRESS | burn-in 11h 采样 RSS 187.6~203.8MB 波动无趋势（205.9→192.7→199→200.7→199.8→202.1→203.8），WebView 持续加载 /api/* 无泄漏迹象（24h 终值 burn-in 收尾记录） |
+| 78 | Tray 24h：RAM/CPU/Threads/Handles | IN PROGRESS | 11h 采样：Threads 恒 22（安装切换点瞬时 26/34 后回落），Handles 823→794→780→782→783 稳定，CPU idle 0.8% 单核（item 83）；24h 终值待收尾 |
+| 79 | Memory Leak：Startup/1h/4h/8h/24h RSS，近似线性增长则调查 | IN PROGRESS | 11 点采样（1h~11h）：205.9→192.7→199→199.7→200.6→200.7→199.8→202.1→203.8MB，**无近似线性增长**（11h 净增 +2.7MB < 2% 且非单调，波动带内）；24h/48h/72h 点 burn-in 收尾时补记 |
+| 80 | Handle Leak：Handle Count Startup/1h/4h/8h 不线性增长 | IN PROGRESS | 采样：startup 2392 → 1h 823 → 3h 794 → 4h 780 → 5h 782 → 7h 781 → 11h 783（首轮高峰后稳定在 780±3，**无增长**）；24h 点收尾补记 |
 | 81 | Thread Leak：Thread Count，offline/recover 不多线程 | PASS | 实测 offline/recover 完整周期：threads 25→25(offline)→22(recover)→22(stable+60s)，**无单调增长**（offline/recover 不泄漏线程；100 次窗口 hide/show 期间 threads 也恒 23） |
 | 82 | nvidia-smi Leak：无长期残留 nvidia-smi.exe | PASS | burn-in 19:20 采样：nvidia-smi 进程 0 个（每次调用超时 kill，单测 test_timeout_kills + test_default_runner_cancel_kills_child 覆盖） |
 | 83 | CPU Idle：Tray 后台不持续占一个核 | PASS | burn-in 采样：monitor 20s CPU delta 0.16s = 0.8% 单核（tray 后台空闲，5s 轮询 + GPU 采样为主） |
@@ -246,8 +246,9 @@
 | # | 项 | 状态 | 证据/备注 |
 |---|---|---|---|
 | 115 | pytest ×10 连续全过（async/thread flaky 重点） | IN PROGRESS | 0.16.2：unittest discover（400 tests，含 RC-002/RC-003 回归）×10 连续 10/10 OK（268~291s，无 flaky；首轮版本 bump 时序 3 个 test_version 差异非 flaky）。**0.16.3：单轮 403 tests OK（276s，含 RC-004 三项 + 死代理修复）**；×10 在 0.16.3 构建后补做（46min，burn-in 期间机器空闲时跑） |
-| 116 | Accelerated Soak：7/30/90 天 FakeClock，无 unrecoverable gap，Observed==Ground Truth | IN PROGRESS | **7d PASS**（seed=42，1235s 实跑）：Ground Truth 1,814,400/604,800；Observed 1,747,263/582,421；Known Lost 67,137/22,379；**Difference = 0/0（恒等式精确闭合）**；1801 counter resets（online 1013/offline 788）全被检测，2036 离线事件=2036 缺口 1:1，3025 采样缺口（790 possible_loss）；3602 核心 reset 事件。30d/90d 顺序实跑中。**观察（非产品缺陷）**：soak 与测试套件/构建并行时会在同一确定性点 0-CPU 卡死（测试工具自身在 CPU 争用下的问题）；单独顺序运行正常（7d solo 1235s 完成、30d/90d solo 推进中）。产品 collector 的故障恢复可靠性由 items 18-33/111-112 独立验证 |
+| 116 | Accelerated Soak：7/30/90 天 FakeClock，无 unrecoverable gap，Observed==Ground Truth | IN PROGRESS | **7d PASS**（seed=42，1235s 实跑）：Ground Truth 1,814,400/604,800；Observed 1,747,263/582,421；Known Lost 67,137/22,379；**Difference = 0/0（恒等式精确闭合）**；1801 counter resets（online 1013/offline 788）全被检测，2036 离线事件=2036 缺口 1:1，3025 采样缺口（790 possible_loss）；3602 核心 reset 事件。**90d PASS**（seed=1，18806s 实跑）：GT 23,328,000/7,776,000；Observed 22,485,342/7,495,114；Known Lost 842,658/280,886；**Difference 0/0（恒等式精确闭合）**；22454 counter resets（online 12624/offline 9830）；12703 monitor restarts；25693 offline 事件=25693 缺口 1:1；38396 采样缺口（9917 possible loss）；28530 核心 reset 事件。**观察（非产品缺陷）**：soak 与测试套件/构建并行时会在同一确定性点 0-CPU 卡死（测试工具自身在 CPU 争用下的问题）；单独顺序运行正常（7d/90d solo 均完成，30d 重跑中）。产品 collector 的故障恢复可靠性由 items 18-33/111-112 独立验证 |
 | 117 | Migration Matrix 全过 | PASS | test_migration（v0 legacy→v4 数据完整 / v2→v4 / v3→v4 / fresh / 中断回滚重试）+ test_newer_schema_guard（Pre-Migration Backup 验证、轮换排除、新版 schema 只读守卫）13 tests OK |
+| 116.1 | （观察）安装器升级 MoveFile code 5 | 观察（非产品缺陷，已定位） | 0.16.2→0.16.3 安装过程中多次**中途杀掉安装器**，标准目录残留 `is-*.tmp` + 半解包主 exe（Inno 先解 tmp 再 MoveFile rename）；后续无 `/DIR` 升级命中该脏目录 → 主 exe `MoveFile: in use (5)` 重试后 A/R/I 弹窗（静默下卡住）。**对照实验**：装全新目录（C:\LMtest / LlamaMonitor2）均 exit 0；显式 `/DIR=<标准目录>`（清脏后）exit 0 且 EXE OK。根因 = 半安装脏状态 + 升级复用旧 InstallLocation，非安装器本体缺陷。正常升级路径（item 62：0.16.0→0.16.1→0.16.2 顺序升级）历史 PASS。处置：清目录 + 显式 /DIR 完成 0.16.3 安装，自启值恢复，0.16.3 实机在线。若要在产品层面加固（升级前先探测并清理残留 is-*.tmp / 半解包文件）列为 1.0.0 打磨 |
 | 118 | Release Security Validation：Signature/Hash/Size/Version PASS | PASS | 0.16.2 与 0.16.3 双版本均过：validate_release.py 输出 "RELEASE VALIDATION OK (version 0.16.2 / 0.16.3)"（Ed25519 签名 key-2026-09 + SHA256 + size + version 全验证）；GitHub v0.16.2、v0.16.3 各发布 5 assets（installer/zip/manifest/sig/SHA256SUMS），asset digest 与本地 SHA256SUMS 一致 |
 
 ## Release Gate（item 124）
