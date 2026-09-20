@@ -246,3 +246,49 @@ uncaught/console.error 均为 0）+ 397 pytest 全绿 + 截图（docs/screenshot
   测试连接/dirty/主题切换/自动启动/危险操作/更新等全部事件）从未被调用。
   Fix：app.js `init()` 中 `if (LM.settings && LM.settings.init) LM.settings.init();`。
   证据：harness change-probe——修复前 setTheme 派发 change 后 data-theme 不变；修复后 light/dark 均跟随。
+
+---
+
+## Phase 15.1 附录（用户反馈细化，非新 sweep）
+
+用户四项反馈 → 三项 UI 改动 + 一项运行时 bug：
+
+### 1. 运行时终端闪烁（bug，归 AUDIT-WIN-004）
+- Repro：GPU 监控开启时运行程序，每 5s（GPU 轮询）"终端框闪一下"。
+- Root cause：`gpu_collector._default_runner` 用 `asyncio.create_subprocess_exec`
+  调 nvidia-smi（console 程序）未传 `creationflags`；GUI 无控制台父进程每次调用
+  新建可见控制台窗口（Win11 默认终端为 WindowsTerminal.exe）。
+- Fix：`creationflags=_NO_WINDOW`（`subprocess.CREATE_NO_WINDOW`，仅 win32）。
+- 验证：A/B 实机（pythonw windowless 父进程 + EnumWindows 统计运行期新出现的可见
+  终端窗口）——旧行为 6 次调用 → 12 个新窗口；修复后 → 0 个（两次一致）。
+  详见 AUDIT_REPORT.md §AUDIT-WIN-004。
+
+### 2. 布局/配色对齐 Windows 11（Overview 重做）
+- 反馈"不是 Win11 风格，注意布局和配色" → Overview 重做为 Win11 仪表板布局：
+  细状态条（llama.cpp 在线 + 最后更新相对时间）+ **今日大数字卡**（逻辑/计算 Token
+  两个 hero 大数字 + 分隔线 + 提示/缓存/输出小行）+ **性能双卡**（解码 TPS/请求 |
+  提示 TPS/MTP）+ GPU 行 + 数据质量。tokens.css 已为 Fluent 2 真值（accent
+  #60cdff/#005fb8、Mica 透底），本次新增 `.status-strip`/`.today-card`/`.today-hero`
+  /`.perf-grid`/`.perf-card`/`.section-label` 等组件 + `--font-size-hero:36px`。
+- 证据：DOM dump 实时数据正确填充（在线 / 最后更新于 N 秒前 / GPU 0&1 真实利用率
+  显存温度功耗 / 覆盖率）；截图 docs/screenshots/010_overview_new_dark.png、
+  011_overview_new_light.png。
+
+### 3. 界面中文化（i18n）
+- 反馈"很多英文改成中文，专有名词保留" → 全 UI 中文化：
+  - index.html `lang="zh-CN"`；导航/页标题/卡片/设置 10 分区/关于 全中文；
+    专有名词保留（llama.cpp、GPU、MTP、TPS、Token、KV 缓存、nvidia-smi、
+    SQLite WAL、Ed25519、SHA-256、Release、CSV、UUID、PCIe、SM 时钟…）。
+  - JS 动态文案中文化（formatters `formatAgo` 中文相对时间；components 状态词
+    在线/离线/警告/错误/更新中/已暂停 + modal 确认/取消/确定；charts 空态/图例/
+    坐标轴；app 离线 InfoBar/数据质量/缺口/GPU kv/能耗/范围标签；settings 全部
+    toast/kv/危险操作 modal/更新状态）。
+- 验证：7 页 + 主题切换 harness `uncaught=[] consoleErrors=[]`；node --check 9 个
+  JS 全过；DOM dump 各元素中文 + 实时值正确。
+
+### 状态
+| 项 | 状态 | 落地/证据 |
+|---|---|---|
+| 终端闪烁 | ✅ 已修复 | gpu_collector `_NO_WINDOW`；AUDIT-WIN-004；A/B 验证 0 窗口 |
+| Win11 Overview | ✅ 已重做 | index.html + pages.css 新组件；DOM dump + 截图 010/011 |
+| 界面中文化 | ✅ 已完成 | index.html + 5 个 JS 文件；7 页 0 console error |

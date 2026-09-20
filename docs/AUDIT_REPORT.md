@@ -111,6 +111,23 @@ loop 关闭）时子进程可能遗留（nvidia-smi 孤儿，句柄/线程不回
 **回归**：`test_gpu_collector.py::AuditRegressionTests::
 test_default_runner_cancel_kills_child`（cancel → kill 恰 1 次 + wait 完成）。
 
+### AUDIT-WIN-004 nvidia-smi 每轮轮询弹控制台窗口（运行时终端闪烁）
+
+`gpu_collector._default_runner` 用 `asyncio.create_subprocess_exec` 调
+nvidia-smi（console 程序）时未传 `creationflags`。GUI/无控制台的父进程
+每次调用都会新建一个**可见**控制台窗口（Win11 默认终端为 WindowsTerminal.exe，
+表现为"终端框闪一下"）。GPU 轮询默认每 5s 一次 → 程序运行时反复闪烁
+（用户 Phase 15.1 反馈）。
+**修复**：模块级 `_NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform
+=="win32" else 0`；`create_subprocess_exec(..., creationflags=_NO_WINDOW)`。
+非 Windows 传 0 无副作用（asyncio 忽略）。
+**验证**：A/B 实机——pythonw.exe（windowless 父进程，对应用户 GUI 场景）
+调 nvidia-smi，`EnumWindows` 统计每次调用**运行期新出现**的可见终端窗口
+（宿主进程集 `{WindowsTerminal, OpenConsole, conhost}`，Win11 默认终端为
+WindowsTerminal 而非 conhost）：旧行为（无 flag）6 次调用 → 12 个新终端窗口；
+修复后（CREATE_NO_WINDOW）→ **0 个**。两次重复结果一致。
+nvidia-smi 调用点仅 `_default_runner`（update_service 的 Popen 已自带 flag）。
+
 ### AUDIT-DATA-001 下载验证与 Popen 之间的 TOCTOU
 
 `READY_TO_INSTALL → Popen` 窗口内，本地进程可替换

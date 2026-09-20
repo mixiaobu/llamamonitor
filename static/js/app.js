@@ -112,9 +112,9 @@
     if (offlineBar) { offlineBar.close(); offlineBar = null; }
     offlineBar = ui.createInfoBar({
       type: "error",
-      title: "llama.cpp is currently unreachable",
-      message: "Last successful update: " + (lastTs ? F.formatTime(lastTs) : "unknown") +
-        ". Live values show --; history is preserved.",
+      title: "llama.cpp 当前无法连接",
+      message: "最近一次成功更新：" + (lastTs ? F.formatTime(lastTs) : "unknown") +
+        "。实时值显示 --；历史数据已保留。",
       dismissible: false,
     });
     offlineBar.el.id = "offlineInfoBar";
@@ -138,9 +138,9 @@
       updateBar = ui.createInfoBar({
         type: "info",
         title: text,
-        message: "You can download and verify the update in Settings \u2192 Updates.",
+        message: "可在 设置 \u2192 更新 中下载并验证更新。",
         actions: [{
-          label: "View Update",
+          label: "查看更新",
           onClick: function () {
             updateBannerVisible = false;
             if (updateBar) { updateBar.close(); updateBar = null; }
@@ -175,7 +175,7 @@
     // 全局状态徽章（Overview 顶部 + 页面内 server 卡）
     ui.setStatusBadge($("ovServerState"),
       state.online === true ? "online" : state.online === false ? "offline" : "paused",
-      state.online === null ? "Starting" : undefined);
+      state.online === null ? "启动中" : undefined);
 
     // Offline InfoBar（spec §39：明确 offline，保留历史）
     if (state.online === false) {
@@ -194,7 +194,7 @@
       } else {
         var age = Math.max(0, Date.now() / 1000 - lu);
         var stale = state.online === true && age > cfgUi.refreshIntervalSeconds * 2;
-        elLast.textContent = F.formatTime(lu) + " (" + F.formatAgo(age) + ")" + (stale ? " - stale" : "");
+        elLast.textContent = "最后更新于 " + F.formatAgo(age) + (stale ? " - 已过期" : "");
         elLast.className = "stat-hint" + (stale ? " warn" : "");
       }
     }
@@ -211,10 +211,10 @@
     if (elCfg) {
       var cc = data.config;
       if (cc) {
-        var label = cc.has_errors ? "Error" : (cc.using_defaults ? "Default" : "OK");
-        elCfg.textContent = "Config: " + label;
+        var label = cc.has_errors ? "错误" : (cc.using_defaults ? "默认" : "正常");
+        elCfg.textContent = "配置：" + label;
         elCfg.className = "stat-hint " + (label === "Error" ? "bad" : label === "Default" ? "warn" : "ok");
-        elCfg.title = (cc.path || "") + " (restart to apply changes)";
+        elCfg.title = (cc.path || "") + "（重启后生效）";
       } else {
         elCfg.textContent = "";
       }
@@ -222,8 +222,8 @@
 
     // 当前速率（offline 或字段缺失 -> --）
     var on = state.online === true;
-    setStatValue("ovPromptTps", on ? F.formatTps(data.prompt_tps) : F.NA);
-    setStatValue("ovDecodeTps", on ? F.formatTps(data.decode_tps) : F.NA);
+    setStatValue("ovPromptTps", on && data.prompt_tps != null ? F.formatTokenCount(data.prompt_tps) + " t/s" : F.NA);
+    setStatValue("ovDecodeTps", on && data.decode_tps != null ? F.formatTokenCount(data.decode_tps) + " t/s" : F.NA);
     setStatValue("ovContext", on ? F.formatTokenCount(data.context_max) : F.NA);
     setStatValue("ovRequests", on ? F.formatInt(data.requests_processing) : F.NA);
     setStatValue("ovQueued", on ? F.formatInt(data.requests_deferred) : F.NA);
@@ -324,7 +324,7 @@
       var hint = $("dqDbHint");
       if (hint) {
         hint.textContent = (h.journal_mode ? h.journal_mode.toUpperCase() + " \u00B7 " : "") + (h.database_detail || "");
-        if (h.application === "degraded") hint.textContent += " \u00B7 PROTECTIVE MODE (read-only)";
+        if (h.application === "degraded") hint.textContent += " \u00B7 保护模式（只读）";
       }
     }
     if (q) {
@@ -343,15 +343,15 @@
       }
       var lossEl = $("dqLossToday");
       if (lossEl) {
-        lossEl.textContent = t.possible_token_loss ? "Possible token loss in gaps" : "No token-loss gaps";
+        lossEl.textContent = t.possible_token_loss ? "缺口可能存在 Token 丢失" : "无 Token 丢失缺口";
         lossEl.className = "stat-hint " + (t.possible_token_loss ? "bad" : "");
       }
       var lastEl = $("dqLastSample");
       if (lastEl) lastEl.textContent = F.formatAgo(t.last_valid_sample_seconds_ago);
 
-      var openText = q.open_gap ? "Open gap since " + F.formatDateTime(q.open_gap.start) +
-        (q.open_gap.reason ? " (" + (GAP_REASON_LABELS[q.open_gap.reason] || q.open_gap.reason) + ")" : "") +
-        " - in progress" : "";
+      var openText = q.open_gap ? "持续缺口，始于 " + F.formatDateTime(q.open_gap.start) +
+        (q.open_gap.reason ? "（" + (GAP_REASON_LABELS[q.open_gap.reason] || q.open_gap.reason) + "）" : "") +
+        "，进行中" : "";
       [["dqOpenGap"], ["hqOpenGap"]].forEach(function (pair) {
         var el = $(pair[0]);
         if (el) {
@@ -363,24 +363,24 @@
       if ($("hqDb")) $("hqDb").textContent = (h && h.database) || "--";
       if ($("hqDbHint")) $("hqDbHint").textContent =
         (h && h.journal_mode ? h.journal_mode.toUpperCase() + " \u00B7 " : "") + (h && h.database_detail || "") +
-        (h && h.application === "degraded" ? " \u00B7 PROTECTIVE MODE (read-only)" : "");
+        (h && h.application === "degraded" ? " \u00B7 保护模式（只读）" : "");
       if ($("hqCoverage")) $("hqCoverage").textContent = t.monitoring_coverage_percent == null ? F.NA : F.formatPercent(t.monitoring_coverage_percent);
       if ($("hqGaps")) $("hqGaps").textContent = (t.gap_count || 0) + " / " + ((q.total && q.total.gap_count) || 0);
       if ($("hqLoss")) $("hqLoss").textContent = (q.total && q.total.possible_token_loss)
-        ? "Possible token loss exists in history" : "No token-loss gaps";
+        ? "历史中存在 Token 丢失缺口" : "无 Token 丢失缺口";
       if ($("hqLastSample")) $("hqLastSample").textContent = F.formatAgo(t.last_valid_sample_seconds_ago);
       renderGapsTable();
     }
   }
 
   var GAP_REASON_LABELS = {
-    server_offline: "Server Offline",
-    monitor_restart: "Monitor Restart",
-    system_pause_or_sleep: "System Sleep / Pause",
-    invalid_metrics: "Invalid Metrics",
-    unknown: "Unknown",
+    server_offline: "服务器离线",
+    monitor_restart: "监控重启",
+    system_pause_or_sleep: "系统睡眠/暂停",
+    invalid_metrics: "无效指标",
+    unknown: "未知",
   };
-  var GAP_SOURCE_LABELS = { llama: "LLM", application: "App", gpu: "GPU" };
+  var GAP_SOURCE_LABELS = { llama: "LLM", application: "应用", gpu: "GPU" };
 
   function renderGapsTable() {
     var tbody = $("gapsTbody");
@@ -388,17 +388,17 @@
     var gaps = (state.quality && state.quality.recent_gaps) || [];
     var wrap = $("gapsTableWrap");
     if (!gaps.length) {
-      tbody.innerHTML = "<tr><td colspan='6' class='na'>No gaps recorded.</td></tr>";
+      tbody.innerHTML = "<tr><td colspan='6' class='na'>无缺口记录。</td></tr>";
       if (wrap) wrap.style.display = "";
       return;
     }
     tbody.innerHTML = gaps.map(function (g) {
       var start = F.formatDateTime(g.start);
-      var end = g.end ? F.formatDateTime(g.end) : "in progress";
+      var end = g.end ? F.formatDateTime(g.end) : "进行中";
       var dur = F.formatDuration(g.duration_seconds == null ? 0 : g.duration_seconds);
       var src = GAP_SOURCE_LABELS[g.source] || g.source || "--";
-      var reason = GAP_REASON_LABELS[g.reason] || g.reason || "Unknown";
-      var loss = g.possible_token_loss ? "<td class='cell-bad'>Yes</td>" : "<td>No</td>";
+      var reason = GAP_REASON_LABELS[g.reason] || g.reason || "未知";
+      var loss = g.possible_token_loss ? "<td class='cell-bad'>是</td>" : "<td>否</td>";
       return "<tr><td>" + start + "</td><td>" + end + "</td><td>" + dur + "</td>" +
         "<td>" + src + "</td><td>" + reason + "</td>" + loss + "</tr>";
     }).join("");
@@ -413,10 +413,10 @@
     var stateEl = $("gpuPageState");
     if (stateEl) {
       ui.setStatusBadge(stateEl, d.available ? "online" : "offline",
-        d.available ? undefined : "Unavailable");
+        d.available ? undefined : "不可用");
       var reasonEl = $("gpuUnavailReason");
       if (reasonEl) {
-        reasonEl.textContent = d.available ? "" : (d.reason || "nvidia-smi unavailable");
+        reasonEl.textContent = d.available ? "" : (d.reason || "nvidia-smi 不可用");
         reasonEl.style.display = d.available ? "none" : "";
       }
     }
@@ -431,10 +431,10 @@
       ic.innerHTML = LM.icons.get("emptyGauge");
       var tt = document.createElement("div");
       tt.className = "empty-title";
-      tt.textContent = "No GPUs";
+      tt.textContent = "无 GPU";
       var dd = document.createElement("div");
       dd.className = "empty-desc";
-      dd.textContent = d.available ? "No GPU samples collected yet." : (d.reason || "GPU monitoring is unavailable.");
+      dd.textContent = d.available ? "尚未采集到 GPU 样本。" : (d.reason || "GPU 监控不可用。");
       empty.appendChild(ic);
       empty.appendChild(tt);
       empty.appendChild(dd);
@@ -463,13 +463,13 @@
         (g.memory_used_mb / 1024).toFixed(1) + " / " + (g.memory_total_mb / 1024).toFixed(1) + " GiB" +
         (g.memory_usage_percent != null ? " (" + Math.round(g.memory_usage_percent) + "%)" : "");
       [
-        ["Utilization", g.utilization_percent == null ? F.NA : F.formatPercent(g.utilization_percent, 0)],
-        ["VRAM", vram],
-        ["Temperature", F.formatTemp(g.temperature_c)],
-        ["Power", F.formatPower(g.power_draw_w)],
-        ["Fan", g.fan_percent == null ? F.NA : F.formatPercent(g.fan_percent, 0)],
-        ["SM Clock", g.sm_clock_mhz == null ? F.NA : g.sm_clock_mhz + " MHz"],
-        ["Memory Clock", g.memory_clock_mhz == null ? F.NA : g.memory_clock_mhz + " MHz"],
+        ["利用率", g.utilization_percent == null ? F.NA : F.formatPercent(g.utilization_percent, 0)],
+        ["显存", vram],
+        ["温度", F.formatTemp(g.temperature_c)],
+        ["功耗", F.formatPower(g.power_draw_w)],
+        ["风扇", g.fan_percent == null ? F.NA : F.formatPercent(g.fan_percent, 0)],
+        ["SM 时钟", g.sm_clock_mhz == null ? F.NA : g.sm_clock_mhz + " MHz"],
+        ["显存时钟", g.memory_clock_mhz == null ? F.NA : g.memory_clock_mhz + " MHz"],
         ["PCIe", (g.pcie_generation == null || g.pcie_width == null) ? F.NA : "Gen" + g.pcie_generation + " x" + g.pcie_width],
       ].forEach(function (r) {
         var k = document.createElement("span");
@@ -494,14 +494,14 @@
     var lineEl = $("ovGpuLine");
     if (!stateEl || !lineEl) return;
     if (!d.available) {
-      ui.setStatusBadge(stateEl, "offline", "Unavailable");
-      lineEl.textContent = d.reason || "nvidia-smi unavailable";
+      ui.setStatusBadge(stateEl, "offline", "不可用");
+      lineEl.textContent = d.reason || "nvidia-smi 不可用";
       return;
     }
     var gpus = d.gpus || [];
     ui.setStatusBadge(stateEl, "online", gpus.length + " GPU" + (gpus.length === 1 ? "" : "s"));
     if (!gpus.length) {
-      lineEl.textContent = "Available, no samples yet.";
+      lineEl.textContent = "可用，暂无样本。";
       return;
     }
     lineEl.textContent = gpus.map(function (g) {
@@ -510,7 +510,7 @@
       var p = g.power_draw_w == null ? F.NA : F.formatPower(g.power_draw_w);
       var v = (g.memory_used_mb == null || g.memory_total_mb == null) ? F.NA :
         (g.memory_used_mb / 1024).toFixed(1) + " / " + (g.memory_total_mb / 1024).toFixed(1) + " GiB";
-      return "GPU " + (g.index == null ? "?" : g.index) + ": " + u + " util, " + v + " VRAM, " + t + ", " + p;
+      return "GPU " + (g.index == null ? "?" : g.index) + "：利用率 " + u + "，显存 " + v + "，" + t + "，" + p;
     }).join("  \u00B7  ");
   }
 
@@ -573,7 +573,7 @@
       row.className = "energy-row";
       var k = document.createElement("span");
       k.className = "k";
-      k.textContent = "GPU " + (g.name ? g.name : "") + " - Energy Today (estimated)";
+      k.textContent = "GPU " + (g.name ? g.name : "") + " - 今日能耗（估算）";
       var v = document.createElement("span");
       v.className = "v";
       v.textContent = F.formatEnergy(day.energy_wh);
@@ -589,10 +589,10 @@
       ic.innerHTML = LM.icons.get("emptyGauge");
       var tt = document.createElement("div");
       tt.className = "empty-title";
-      tt.textContent = "No energy data";
+      tt.textContent = "无能耗数据";
       var dd = document.createElement("div");
       dd.className = "empty-desc";
-      dd.textContent = "Energy is estimated from sampled power draw; it appears after the first samples.";
+      dd.textContent = "能耗由采样功耗估算；首个样本采集后出现。";
       empty.appendChild(ic);
       empty.appendChild(tt);
       empty.appendChild(dd);
@@ -608,6 +608,7 @@
     setStatValue("mtpDraft", F.formatTokenCount(d.draft_tokens));
     setStatValue("mtpAccepted", F.formatTokenCount(d.accepted_tokens));
     setStatValue("mtpSeqs", F.formatInt(d.num_drafts));
+    setStatValue("ovMtpRate", F.formatPercent(d.accept_rate));
     charts.renderMtpPosChart("chartMtpPosBox", "chartMtpPos", state.mtpPositions);
   }
 
@@ -617,7 +618,7 @@
     if (!tbody) return;
     var rows = state.dailyData;
     if (!rows.length) {
-      tbody.innerHTML = "<tr><td colspan='8' class='na'>No data yet.</td></tr>";
+      tbody.innerHTML = "<tr><td colspan='8' class='na'>暂无数据。</td></tr>";
       return;
     }
     tbody.innerHTML = rows.map(function (r) {
@@ -670,7 +671,7 @@
         console.warn("status failed:", e.message || e);
         var el = $("ovLastUpdate");
         if (el) {
-          el.textContent = "Backend unreachable (" + (e.message || "network") + ")";
+          el.textContent = "后端不可达（" + (e.message || "网络") + "）";
           el.className = "stat-hint bad";
         }
       });
@@ -722,17 +723,17 @@
         cfgUi.theme = c.ui.theme || "system";
       }
       lastConfigUrl = (c.llama_server && c.llama_server.url) || "";
-      if (lastConfigUrl) $("ovServerUrl").textContent = lastConfigUrl.replace(/^https?:\/\//, "");
+      var _su = $("ovServerUrl"); if (lastConfigUrl && _su) _su.textContent = lastConfigUrl.replace(/^https?:\/\//, "");
       setThemeMode(cfgUi.theme);
       state.dailyRange = cfgUi.dailyDefaultDays;
       // Usage 页 range 控件初始值（1/7/30/365 档位；配置值映射到最近档位）
       var rangeEl = $("usageRange");
       if (rangeEl && LM.nav) {
         var options = [
-          { value: 1, label: "Today" },
-          { value: 7, label: "7 Days" },
-          { value: 30, label: "30 Days" },
-          { value: 365, label: "All" },
+          { value: 1, label: "今日" },
+          { value: 7, label: "7 天" },
+          { value: 30, label: "30 天" },
+          { value: 365, label: "全部" },
         ];
         var nearest = options.reduce(function (a, b) {
           return Math.abs(b.value - state.dailyRange) < Math.abs(a.value - state.dailyRange) ? b : a;
@@ -745,10 +746,10 @@
       var gpuRangeEl = $("gpuRange");
       if (gpuRangeEl) {
         ui.segmented(gpuRangeEl, [
-          { value: 15, label: "15 min" },
-          { value: 60, label: "1 hour" },
-          { value: 360, label: "6 hours" },
-          { value: 1440, label: "24 hours" },
+          { value: 15, label: "15 分钟" },
+          { value: 60, label: "1 小时" },
+          { value: 360, label: "6 小时" },
+          { value: 1440, label: "24 小时" },
         ], state.gpuRangeMinutes, function (v) {
           state.gpuRangeMinutes = v;
           refreshGpuLive();

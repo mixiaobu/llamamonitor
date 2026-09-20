@@ -88,14 +88,14 @@ class DashboardApiTests(unittest.TestCase):
             self.assertEqual(r.status_code, 200)
             self.assertIn("text/html", r.headers.get("content-type", ""))
             body = r.text
-            # 关键结构都在（Phase 15：英文统一文案 + 模块化 JS；status/range 等由 JS 渲染，
+            # 关键结构都在（Phase 15.1：中文文案 + 模块化 JS；status/range 等由 JS 渲染，
             # 故只断言静态骨架里稳定存在的元素）
             for marker in (
                 "LlamaMonitor",
-                "Logical Tokens",
-                "Cache Ratio",
-                "Prompt TPS",
-                "Acceptance Rate",
+                "逻辑 Token",
+                "缓存率",
+                "Token 吞吐",
+                "接受率",
                 'id="usageRange"',
                 "/static/echarts.min.js",
                 "/static/js/app.js",

@@ -149,7 +149,7 @@
       settingsLoaded = true;
       updateSettingsFooter();
     } catch (e) {
-      ui.toast("Failed to load settings: " + (e.message || e), "err");
+      ui.toast("加载设置失败：" + (e.message || e), "err");
     }
   }
 
@@ -157,20 +157,20 @@
     var btn = $("btnSaveSettings");
     btn.disabled = true;
     var oldLabel = btn.textContent;
-    btn.textContent = "Saving...";
+    btn.textContent = "保存中...";
     try {
       var data = await api.put("/api/config", readForm());
       if (data && data.success) {
         initialConfig = readForm();
         settingsDirty = false;
         ui.toast(data.restart_required
-          ? "Settings saved. Restart LlamaMonitor to apply changes."
-          : "Settings saved.", "ok");
+          ? "设置已保存。请重启 LlamaMonitor 以应用更改。"
+          : "设置已保存。", "ok");
       } else {
-        ui.toast("Configuration invalid: " + ((data && data.error && data.error.message) || "unknown"), "err");
+        ui.toast("配置无效：" + ((data && data.error && data.error.message) || "未知"), "err");
       }
     } catch (e) {
-      ui.toast("Save failed: " + (e.message || e), "err");
+      ui.toast("保存失败：" + (e.message || e), "err");
     }
     btn.textContent = oldLabel;
     updateSettingsFooter();
@@ -182,9 +182,9 @@
       fillForm(d);
       if (window.LM && LM.app && LM.app.applyTheme) LM.app.applyTheme(d.ui.theme); // 主题即时预览
       markDirty();
-      ui.toast("Form reset to defaults. Click Save to write config.json.", "warn");
+      ui.toast("表单已恢复默认值。点击“保存”写入 config.json。", "warn");
     } catch (e) {
-      ui.toast("Failed to load defaults: " + (e.message || e), "err");
+      ui.toast("加载默认值失败：" + (e.message || e), "err");
     }
   }
 
@@ -193,7 +193,7 @@
     var out = $("testConnResult");
     btn.disabled = true;
     var oldLabel = btn.textContent;
-    btn.textContent = "Testing...";
+    btn.textContent = "测试中...";
     out.className = "inline-result";
     out.textContent = "";
     try {
@@ -204,17 +204,17 @@
       }, 15000);
       if (data.success) {
         out.className = "inline-result ok";
-        out.textContent = "Success - " + data.latency_ms + " ms" + (data.metrics_detected ? "" : " (no llamacpp metrics detected)");
-        ui.toast("Connection successful: " + data.latency_ms + " ms", "ok");
+        out.textContent = "成功 - " + data.latency_ms + " ms" + (data.metrics_detected ? "" : "（未检测到 llamacpp 指标）");
+        ui.toast("连接成功：" + data.latency_ms + " ms", "ok");
       } else {
         out.className = "inline-result bad";
-        out.textContent = "Failed: " + data.error;
-        ui.toast("Connection failed: " + data.error, "err");
+        out.textContent = "失败：" + data.error;
+        ui.toast("连接失败：" + data.error, "err");
       }
     } catch (e) {
       out.className = "inline-result bad";
-      out.textContent = "Failed: " + (e.message || e);
-      ui.toast("Connection failed: " + (e.message || e), "err");
+      out.textContent = "失败：" + (e.message || e);
+      ui.toast("连接失败：" + (e.message || e), "err");
     }
     btn.textContent = oldLabel;
     btn.disabled = false;
@@ -247,14 +247,14 @@
     if (!available) {
       var note = document.createElement("span");
       note.className = "na";
-      note.textContent = "No GPUs detected (nvidia-smi unavailable).";
+      note.textContent = "未检测到 GPU（nvidia-smi 不可用）。";
       box.appendChild(note);
       return;
     }
     if (!detected || !detected.length) {
       var none = document.createElement("span");
       none.className = "na";
-      none.textContent = "No GPUs detected.";
+      none.textContent = "未检测到 GPU。";
       box.appendChild(none);
       return;
     }
@@ -275,7 +275,7 @@
     });
     var hint = document.createElement("div");
     hint.className = "caption";
-    hint.textContent = "No boxes checked = monitor all detected GPUs.";
+    hint.textContent = "不勾选 = 监控所有检测到的 GPU。";
     box.appendChild(hint);
   }
 
@@ -297,24 +297,19 @@
     box.innerHTML = "";
     try {
       var d = await api.get("/api/data/info");
-      ["Database", "Database Size", "First Recorded Date", "Last Recorded Date",
-       "Total Recorded Days", "Live Samples Count", "GPU Samples Count", "Backup Count"]
-        .forEach(function (k) {
-          var field = {
-            "Database": d.database_path,
-            "Database Size": F.formatBytes(d.database_size_bytes),
-            "First Recorded Date": d.first_recorded_date || "N/A",
-            "Last Recorded Date": d.last_recorded_date || "N/A",
-            "Total Recorded Days": d.recorded_days,
-            "Live Samples Count": F.formatNumber(d.live_samples),
-            "GPU Samples Count": F.formatNumber(d.gpu_samples),
-            "Backup Count": d.backup_count,
-          }[k];
-          kvRow(box, k, field);
-        });
+      [
+        ["数据库", d.database_path],
+        ["数据库大小", F.formatBytes(d.database_size_bytes)],
+        ["首次记录日期", d.first_recorded_date || "无"],
+        ["最近记录日期", d.last_recorded_date || "无"],
+        ["累计记录天数", d.recorded_days],
+        ["实时样本数", F.formatNumber(d.live_samples)],
+        ["GPU 样本数", F.formatNumber(d.gpu_samples)],
+        ["备份数量", d.backup_count],
+      ].forEach(function (r) { kvRow(box, r[0], r[1]); });
       loadBackups();
     } catch (e) {
-      kvRow(box, "Status", "Failed to load: " + (e.message || e));
+      kvRow(box, "状态", "加载失败：" + (e.message || e));
     }
   }
 
@@ -325,7 +320,7 @@
     try {
       var list = await api.get("/api/data/backups");
       if (!list.length) {
-        box.textContent = "No backups yet.";
+        box.textContent = "暂无备份。";
         return;
       }
       list.forEach(function (b) {
@@ -337,18 +332,18 @@
         if (b.verified === true) {
           var v = document.createElement("span");
           v.className = "verified-yes";
-          v.textContent = "  \u00B7  \u2713 verified";
+          v.textContent = "  ·  ✓ 已验证";
           div.appendChild(v);
         } else if (b.verified === false) {
           var v2 = document.createElement("span");
           v2.className = "verified-no";
-          v2.textContent = "  \u00B7  \u2717 NOT verified";
+          v2.textContent = "  ·  ✗ 未验证";
           div.appendChild(v2);
         }
         box.appendChild(div);
       });
     } catch (e) {
-      box.textContent = "Failed to load backups.";
+      box.textContent = "加载备份失败。";
     }
   }
 
@@ -356,17 +351,17 @@
     var btn = $("btnBackup");
     btn.disabled = true;
     var old = btn.textContent;
-    btn.textContent = "Backing up...";
+    btn.textContent = "备份中...";
     try {
       var data = await api.post("/api/data/backup");
       if (data.success) {
-        ui.toast("Backup created: " + data.file, "ok");
+        ui.toast("备份已创建：" + data.file, "ok");
         refreshDataInfo();
       } else {
-        ui.toast("Backup failed: " + ((data.error && data.error.message) || "unknown"), "err");
+        ui.toast("备份失败：" + ((data.error && data.error.message) || "未知"), "err");
       }
     } catch (e) {
-      ui.toast("Backup failed: " + (e.message || e), "err");
+      ui.toast("备份失败：" + (e.message || e), "err");
     }
     btn.textContent = old;
     btn.disabled = false;
@@ -376,18 +371,18 @@
     var btn = $("btnClearLive");
     btn.disabled = true;
     var old = btn.textContent;
-    btn.textContent = "Clearing...";
+    btn.textContent = "清空中...";
     try {
       var data = await api.post("/api/data/clear-live", { confirm: true });
       if (data.success) {
-        ui.toast("Live history cleared (" + data.deleted + " samples).", "ok");
+        ui.toast("实时历史已清空（" + data.deleted + " 条样本）。", "ok");
         refreshDataInfo();
         if (LM.app) LM.app.refreshLiveNow();
       } else {
-        ui.toast("Clear failed: " + ((data.error && data.error.message) || "unknown"), "err");
+        ui.toast("清空失败：" + ((data.error && data.error.message) || "未知"), "err");
       }
     } catch (e) {
-      ui.toast("Clear failed: " + (e.message || e), "err");
+      ui.toast("清空失败：" + (e.message || e), "err");
     }
     btn.textContent = old;
     btn.disabled = false;
@@ -395,9 +390,9 @@
 
   function clearLive() {
     ui.modal({
-      title: "Clear Live History",
-      text: "This permanently deletes all live samples.\nDaily totals and the current counter baseline are preserved.",
-      okLabel: "Clear",
+      title: "清空实时历史",
+      text: "这将永久删除所有实时样本。\n每日汇总与当前计数器基线会保留。",
+      okLabel: "清空",
       danger: true,
       onDone: function (ok) { if (ok) doClearLive(); },
     });
@@ -407,18 +402,18 @@
     var btn = $("btnResetStats");
     btn.disabled = true;
     var old = btn.textContent;
-    btn.textContent = "Resetting...";
+    btn.textContent = "重置中...";
     try {
       var data = await api.post("/api/data/reset-statistics", { confirm: "RESET" });
       if (data.success) {
-        ui.toast("Statistics reset. Counting starts from now.", "ok");
+        ui.toast("统计已重置。计数从现在开始。", "ok");
         refreshDataInfo();
         if (LM.app) LM.app.refreshSummaryNow();
       } else {
-        ui.toast("Reset failed: " + ((data.error && data.error.message) || "unknown"), "err");
+        ui.toast("重置失败：" + ((data.error && data.error.message) || "未知"), "err");
       }
     } catch (e) {
-      ui.toast("Reset failed: " + (e.message || e), "err");
+      ui.toast("重置失败：" + (e.message || e), "err");
     }
     btn.textContent = old;
     btn.disabled = false;
@@ -426,9 +421,9 @@
 
   function resetStats() {
     ui.modal({
-      title: "Reset All Statistics",
-      text: "This permanently deletes all token usage history and live samples.\n\nConfiguration and the current llama.cpp counter baseline are preserved.",
-      okLabel: "Reset",
+      title: "重置所有统计",
+      text: "这将永久删除所有 Token 用量历史与实时样本。\n\n配置与当前 llama.cpp 计数器基线会保留。",
+      okLabel: "重置",
       danger: true,
       needsInput: true,
       inputValue: "RESET",
@@ -441,7 +436,7 @@
     var btn = $("btnRunCheck");
     btn.disabled = true;
     var old = btn.textContent;
-    btn.textContent = "Checking...";
+    btn.textContent = "检查中...";
     out.className = "inline-result";
     out.textContent = "";
     try {
@@ -454,11 +449,11 @@
         ui.toast(out.textContent, db === "healthy" ? "ok" : "err");
       } else {
         out.className = "inline-result bad";
-        out.textContent = "Check failed: " + ((data.error && data.error.message) || "unknown");
+        out.textContent = "检查失败：" + ((data.error && data.error.message) || "未知");
       }
     } catch (e) {
       out.className = "inline-result bad";
-      out.textContent = "Check failed: " + (e.message || e);
+      out.textContent = "检查失败：" + (e.message || e);
     }
     btn.textContent = old;
     btn.disabled = false;
@@ -466,11 +461,11 @@
 
   function exportCsv() {
     window.location.href = "/api/data/export/daily.csv";
-    ui.toast("CSV exported (see download location).", "ok");
+    ui.toast("CSV 已导出（见下载目录）。", "ok");
   }
   function exportGpuCsv() {
     window.location.href = "/api/data/export/gpu_daily.csv";
-    ui.toast("GPU CSV exported (see download location).", "ok");
+    ui.toast("GPU CSV 已导出（见下载目录）。", "ok");
   }
 
   /* ================= Application（Phase 10 集成） ================= */
@@ -488,16 +483,16 @@
     box.innerHTML = "";
     try {
       var d = await api.get("/api/app/integration");
-      kvRow(box, "Application Mode", d.background ? "Background (tray)" : "Foreground");
-      kvRow(box, "System Tray", d.tray_supported ? "Available" : "Unavailable");
-      kvRow(box, "Single Instance", d.single_instance ? "Enabled" : "Disabled");
-      kvRow(box, "Platform", (d.platform || "unknown") + (d.frozen ? " (EXE)" : " (development)"));
-      kvRow(box, "Executable", d.executable || "\u2014");
-      kvRow(box, "App Data", d.app_data || "\u2014");
-      if (d.uptime_seconds != null) kvRow(box, "Uptime", fmtUptime(d.uptime_seconds));
+      kvRow(box, "应用模式", d.background ? "后台（托盘）" : "前台");
+      kvRow(box, "系统托盘", d.tray_supported ? "可用" : "不可用");
+      kvRow(box, "单实例", d.single_instance ? "启用" : "禁用");
+      kvRow(box, "平台", (d.platform || "未知") + (d.frozen ? "（EXE）" : "（开发）"));
+      kvRow(box, "可执行文件", d.executable || "\u2014");
+      kvRow(box, "应用数据", d.app_data || "\u2014");
+      if (d.uptime_seconds != null) kvRow(box, "运行时长", fmtUptime(d.uptime_seconds));
       renderAutostart(d.autostart || {});
     } catch (e) {
-      kvRow(box, "Status", "Failed to load: " + (e.message || e));
+      kvRow(box, "状态", "加载失败：" + (e.message || e));
     }
   }
 
@@ -509,7 +504,7 @@
     if (!a.supported) {
       cb.checked = false;
       cb.disabled = true;
-      status.textContent = "Unavailable in development mode (requires EXE).";
+      status.textContent = "开发模式不可用（需要 EXE）。";
       status.style.color = "";
       cmdBox.textContent = "\u2014";
       repairRow.style.display = "none";
@@ -518,7 +513,7 @@
     cb.checked = !!a.enabled;
     cb.disabled = false;
     if (a.stale) {
-      status.textContent = "Stale: the startup entry points to an old EXE location. Click Repair.";
+      status.textContent = "已失效：启动项指向旧的 EXE 位置。点击修复。";
       status.style.color = "var(--warning)";
       repairRow.style.display = "";
     } else {
@@ -533,12 +528,12 @@
     try {
       var data = await api.put("/api/app/autostart", { enabled: enabled });
       if (data.success) {
-        ui.toast(enabled ? "Start with Windows enabled" : "Start with Windows disabled", "ok");
+        ui.toast(enabled ? "已启用随 Windows 启动" : "已禁用随 Windows 启动", "ok");
       } else {
-        ui.toast("Failed: " + ((data.error && data.error.message) || "unknown"), "err");
+        ui.toast("失败：" + ((data.error && data.error.message) || "未知"), "err");
       }
     } catch (e) {
-      ui.toast("Failed: " + (e.message || e), "err");
+      ui.toast("失败：" + (e.message || e), "err");
     }
     loadAppIntegration();
   }
@@ -546,24 +541,24 @@
   function openFolderTarget(target) {
     api.post("/api/app/open-folder", { target: target })
       .then(function (d) {
-        if (d && d.success) ui.toast("Opened: " + (d.path || target), "ok");
-        else ui.toast("Failed to open: " + ((d && d.error && d.error.message) || "unknown"), "err");
+        if (d && d.success) ui.toast("已打开：" + (d.path || target), "ok");
+        else ui.toast("打开失败：" + ((d && d.error && d.error.message) || "未知"), "err");
       })
-      .catch(function (e) { ui.toast("Failed to open: " + (e.message || e), "err"); });
+      .catch(function (e) { ui.toast("打开失败：" + (e.message || e), "err"); });
   }
 
   function exitApp() {
     ui.modal({
-      title: "Exit LlamaMonitor",
-      text: "Exit LlamaMonitor?\nMonitoring stops until the application is started again.",
-      okLabel: "Exit",
+      title: "退出 LlamaMonitor",
+      text: "退出 LlamaMonitor？\n监控将停止，直到再次启动应用。",
+      okLabel: "退出",
       onDone: function (ok) {
         if (!ok) return;
         var btn = $("btnExitApp");
         btn.disabled = true;
-        btn.textContent = "Exiting\u2026";
+        btn.textContent = "正在退出\u2026";
         api.post("/api/app/exit").then(function () {
-          ui.toast("LlamaMonitor is exiting...", "ok");
+          ui.toast("LlamaMonitor 正在退出...", "ok");
         }).catch(function () { /* 应用正在退出 */ });
       },
     });
@@ -576,10 +571,11 @@
     updateStatus = st;
     $("updCurrentVersion").textContent = st.current_version || "--";
     $("updInstallMode").textContent = st.installation_mode || "--";
-    $("updLastCheck").textContent = st.last_check || "Never";
+    $("updLastCheck").textContent = st.last_check || "从未";
     $("updLatestVersion").textContent = st.available_version || "--";
     var stEl = $("updStatus");
-    stEl.textContent = (st.state || "--") + (st.error ? " - " + st.error : "");
+    var _stMap = { "UP_TO_DATE": "已是最新", "UPDATE_AVAILABLE": "有可用更新", "CHECKING": "检查中", "DOWNLOADING": "下载中", "VERIFYING": "校验中", "READY_TO_INSTALL": "可安装", "INSTALLING": "安装中", "ERROR": "错误", "IDLE": "空闲" };
+    stEl.textContent = (_stMap[st.state] || st.state || "--") + (st.error ? " - " + st.error : "");
     stEl.className = "update-state" +
       (st.state === "ERROR" ? " error" : st.state === "UPDATE_AVAILABLE" ? " available" : "");
 
@@ -591,9 +587,9 @@
       mode === "development" || mode === "portable";
     $("btnUpdateCancel").hidden = st.state !== "DOWNLOADING";
     $("btnUpdateCheck").textContent =
-      st.state === "CHECKING" ? "Checking..." :
-      st.state === "DOWNLOADING" ? "Downloading..." :
-      st.state === "VERIFYING" ? "Verifying..." : "Check for Updates";
+      st.state === "CHECKING" ? "检查中..." :
+      st.state === "DOWNLOADING" ? "下载中..." :
+      st.state === "VERIFYING" ? "校验中..." : "检查更新";
 
     var showProgress = st.state === "DOWNLOADING" && st.total_bytes > 0;
     $("updProgressWrap").hidden = !showProgress;
@@ -601,7 +597,7 @@
       $("updProgressBar").style.width = Math.min(100, st.progress_percent || 0) + "%";
       $("updProgressText").textContent =
         F.formatBytes(st.downloaded_bytes) + " / " + F.formatBytes(st.total_bytes) +
-        " - " + Math.floor(st.progress_percent || 0) + "% (SHA-256 verified while downloading)";
+        " - " + Math.floor(st.progress_percent || 0) + "%（下载时已做 SHA-256 校验）";
     }
 
     var rel = st.release || null;
@@ -611,16 +607,16 @@
 
     $("updSignatureNote").textContent =
       st.state === "READY_TO_INSTALL"
-        ? "\u2713 Signature verified - SHA-256 verified - ready to install (a pre-update backup is created first)."
+        ? "✓ 签名已验证 - SHA-256 已验证 - 可安装（会先创建更新前备份）。"
         : (st.state === "UPDATE_AVAILABLE" && rel
-            ? "Signature verified. Download to verify the installer (SHA-256) before installing."
+            ? "签名已验证。下载后、安装前将再次校验安装包（SHA-256）。"
             : "");
 
     var note = "";
     if (mode === "development") {
-      note = "Update installation is unavailable in development mode (run the EXE / Portable build to install updates).";
+      note = "开发模式下无法安装更新（请运行 EXE / 便携版构建来安装更新）。";
     } else if (mode === "portable") {
-      note = "Portable build: LlamaMonitor downloads and verifies the ZIP, but never overwrites itself. Use the buttons below to open the download folder or the GitHub release.";
+      note = "便携版：LlamaMonitor 会下载并校验 ZIP，但绝不覆盖自身。用下方按钮打开下载文件夹或 GitHub Release。";
     }
     $("updModeNote").textContent = note;
     $("updPortableActions").hidden = mode !== "portable";
@@ -649,17 +645,17 @@
       api.post("/api/update/" + action)
         .then(function (d) {
           if (action === "install" && d && d.state === "INSTALLING") {
-            ui.toast("Installing " + (d.available_version || "update") + " - LlamaMonitor is closing, the installer will take over...", "ok");
+            ui.toast("正在安装 " + (d.available_version || "更新") + " - LlamaMonitor 即将关闭，安装程序将接管...", "ok");
           }
           return loadUpdateStatus();
         })
-        .catch(function (e) { ui.toast("Update " + action + " failed: " + (e.message || e), "err"); });
+        .catch(function (e) { ui.toast("更新 " + action + " 失败：" + (e.message || e), "err"); });
     }
     if (confirmText) {
       ui.modal({
-        title: "Install Update",
+        title: "安装更新",
         text: confirmText,
-        okLabel: "Install",
+        okLabel: "安装",
         onDone: function (ok) { if (ok) doIt(); },
       });
     } else {
@@ -704,11 +700,11 @@
           document.body.removeChild(ta);
         }
         out.className = "inline-result ok";
-        out.textContent = "Copied";
+        out.textContent = "已复制";
         setTimeout(function () { out.textContent = ""; }, 2000);
       } catch (e) {
         out.className = "inline-result bad";
-        out.textContent = "Copy failed: " + (e.message || e);
+        out.textContent = "复制失败：" + (e.message || e);
       }
     })();
   }

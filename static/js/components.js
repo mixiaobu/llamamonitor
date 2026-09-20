@@ -14,12 +14,12 @@
      state: online | offline | warning | error | updating | paused
      文案统一（UI-003）：Online / Offline / Warning / Error / Updating / Paused */
   var STATE_TEXT = {
-    online: "Online",
-    offline: "Offline",
-    warning: "Warning",
-    error: "Error",
-    updating: "Updating",
-    paused: "Paused",
+    online: "在线",
+    offline: "离线",
+    warning: "警告",
+    error: "错误",
+    updating: "更新中",
+    paused: "已暂停",
   };
 
   function setStatusBadge(el, state, textOverride) {
@@ -37,7 +37,7 @@
       label.className = "status-text";
       el.appendChild(label);
     }
-    label.textContent = textOverride || STATE_TEXT[state] || "Unknown";
+    label.textContent = textOverride || STATE_TEXT[state] || "未知";
     el.setAttribute("role", "status");
   }
 
@@ -94,7 +94,7 @@
     if (opts.dismissible !== false) {
       var x = document.createElement("button");
       x.className = "infobar-close";
-      x.setAttribute("aria-label", "Dismiss notification");
+      x.setAttribute("aria-label", "关闭通知");
       x.textContent = "\u00D7";
       x.addEventListener("click", close);
       el.appendChild(x);
@@ -184,15 +184,15 @@
     var okBtn = overlay.querySelector(".modal-ok");
     var cancelBtn = overlay.querySelector(".modal-cancel");
 
-    titleEl.textContent = opts.title || "Confirm";
+    titleEl.textContent = opts.title || "确认";
     textEl.textContent = opts.text || "";
 
     var need = opts.needsInput ? opts.inputValue : null;
     inputEl.value = "";
     inputEl.hidden = !need;
-    inputEl.placeholder = need ? "Type " + need + " to confirm" : "";
+    inputEl.placeholder = need ? "输入 " + need + " 以确认" : "";
 
-    okBtn.textContent = opts.okLabel || "OK";
+    okBtn.textContent = opts.okLabel || "确定";
     okBtn.className = "btn " + (opts.danger ? "danger" : "primary");
     okBtn.disabled = !!need;
 
@@ -268,7 +268,7 @@
     ic.innerHTML = LM.icons.get(opts.icon || "emptyChart");
     var t = document.createElement("div");
     t.className = "empty-title";
-    t.textContent = opts.title || "No data yet";
+    t.textContent = opts.title || "暂无数据";
     var d = document.createElement("div");
     d.className = "empty-desc";
     d.textContent = opts.desc || "";
@@ -294,7 +294,7 @@
     btn.type = "button";
     btn.className = "tip-btn";
     btn.textContent = "?";
-    btn.setAttribute("aria-label", "Definition");
+    btn.setAttribute("aria-label", "定义");
     btn.setAttribute("aria-describedby", "");
     var tip = document.createElement("span");
     tip.className = "tip-text";

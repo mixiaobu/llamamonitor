@@ -126,3 +126,42 @@ CPU 降至 1.51%/core，验证了 UI-024 隐藏降频。
 - 离线/在线实机（停/起 llama-server）：逻辑已覆盖；如需真实网络抖动截图，在 Settings 临时改
   Server URL 指向无效端口 → 重启 dev 实例 → 观察 InfoBar → 改回。
 - Sleep/Wake：逻辑由可见性桥覆盖（隐藏=降频，唤醒=刷新）；真实挂起/恢复建议手动复现一次。
+
+## 13. Phase 15.1（用户反馈细化）
+
+环境同上（Win11 24H2、DPI 100%、96 核、NVIDIA 双卡、llama-server 127.0.0.1:9091 在线）。
+验证方式：dev 实例（`python desktop.py`）+ 同源 iframe harness（7 页 + 主题）+ DOM dump +
+终端窗口 A/B 探测 + 397 unittest。
+
+### 13.1 终端闪烁修复（AUDIT-WIN-004）
+
+| 项 | 结果 | 证据 |
+|---|---|---|
+| 旧行为复现 | ✅ 确认 | pythonw windowless 父进程调 nvidia-smi（无 flag），EnumWindows 捕获每次调用运行期**新出现**的可见终端窗口：6 次 → 12 个（WindowsTerminal + OpenConsole） |
+| 修复后 | ✅ 0 窗口 | 同法 + `CREATE_NO_WINDOW`：6 次 → **0 个**（两次重复一致） |
+| 终端宿主识别 | ✅ | Win11 默认终端为 WindowsTerminal.exe（非 conhost）——探测宿主集 `{WindowsTerminal, OpenConsole, conhost}` |
+| 调用点覆盖 | ✅ | nvidia-smi 仅 `_default_runner` 重复调用（已修）；update_service Popen 已自带 flag |
+
+### 13.2 页面 × 主题（中文化 + 新 Overview 后回归）
+
+| 页面 | Dark | Light | 结果 |
+|---|---|---|---|
+| Overview（新布局） | ✅ | ✅ | 状态条/今日大数字/性能双卡/GPU/数据质量，实时数据正确填充（截图 010/011） |
+| Usage | ✅ | ✅ | 全中文标签 + 图表 |
+| Performance | ✅ | — | 全中文 |
+| GPU | ✅ | — | 全中文 kv + 3 图 + 能量 |
+| History | ✅ | — | 数据质量 + 缺口 + 导出 |
+| Settings | ✅ | ✅ | 10 分区全中文 |
+| About | ✅ | — | 全中文 |
+
+- 7 页 + 主题切换 harness：`uncaught=[]`、`consoleErrors=[]`（0 错误）。
+- `node --check` 9 个 JS 模块全过。
+- 后端 397 unittest 全绿（`test_index_page_served` 断言标记随中文化更新为
+  "逻辑 Token / 缓存率 / Token 吞吐 / 接受率"）。
+
+### 13.3 中文化范围
+
+- 专有名词保留：llama.cpp、GPU、MTP、TPS、Token、KV 缓存、nvidia-smi、SQLite WAL、
+  Ed25519、SHA-256、Release、CSV、UUID、PCIe、SM 时钟、GitHub、Windows、LlamaMonitor。
+- 动态文案来源：formatters（相对时间）/ components（状态词 + modal）/ charts（空态 + 图例）/
+  app（离线 InfoBar + 数据质量 + 缺口 + GPU kv + 能耗 + 范围）/ settings（toast + kv + modal）。

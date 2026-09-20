@@ -130,7 +130,7 @@
       var overlay = box.querySelector(".chart-empty-overlay");
       if (overlay) {
         overlay.innerHTML = "";
-        LM.ui.showEmpty(overlay, { icon: "emptyChart", title: title || "No data yet", desc: desc || "" });
+        LM.ui.showEmpty(overlay, { icon: "emptyChart", title: title || "暂无数据", desc: desc || "" });
       }
     } else {
       box.classList.remove("has-empty");
@@ -166,8 +166,8 @@
     if (!c) return;
     var p = pal(), col = colors();
     var hasData = rows && rows.length > 0;
-    setEmpty(containerId, !hasData, "No history yet",
-      "LlamaMonitor will begin building usage history as metrics are collected.");
+    setEmpty(containerId, !hasData, "暂无历史",
+      "LlamaMonitor 将在采集指标时开始建立用量历史。");
     if (!hasData) return;
     c.setOption({
       animation: false,
@@ -188,13 +188,13 @@
           var logicalTotal = day ? (day.logical_tokens != null ? day.logical_tokens :
             (day.prompt_tokens || 0) + (day.cached_tokens || 0) + (day.output_tokens || 0)) : null;
           lines += "<div style='display:flex;justify-content:space-between;gap:16px;border-top:1px solid " + p.split +
-            ";margin-top:4px;padding-top:4px'><span>Logical Total</span><span style='font-variant-numeric:tabular-nums'>" +
+            ";margin-top:4px;padding-top:4px'><span>逻辑合计</span><span style='font-variant-numeric:tabular-nums'>" +
             F.formatTokenCount(logicalTotal) + "</span></div>";
           return lines;
         },
       }),
       legend: {
-        data: ["Prompt", "Cached", "Output"],
+        data: ["提示", "缓存", "输出"],
         textStyle: { color: p.axis, fontSize: 12 },
         top: 0, right: 0, icon: "rect", itemWidth: 10, itemHeight: 10, itemGap: 14,
       },
@@ -213,19 +213,19 @@
       },
       series: [
         {
-          name: "Prompt", type: "bar", stack: "tok", barMaxWidth: 28,
+          name: "提示", type: "bar", stack: "tok", barMaxWidth: 28,
           itemStyle: { color: col.prompt, borderRadius: [0, 0, 0, 0] },
           emphasis: { focus: "series" },
           data: rows.map(function (r) { return r.prompt_tokens; }),
         },
         {
-          name: "Cached", type: "bar", stack: "tok", barMaxWidth: 28,
+          name: "缓存", type: "bar", stack: "tok", barMaxWidth: 28,
           itemStyle: { color: col.cached },
           emphasis: { focus: "series" },
           data: rows.map(function (r) { return r.cached_tokens; }),
         },
         {
-          name: "Output", type: "bar", stack: "tok", barMaxWidth: 28,
+          name: "输出", type: "bar", stack: "tok", barMaxWidth: 28,
           itemStyle: { color: col.output, borderRadius: [3, 3, 0, 0] },
           emphasis: { focus: "series" },
           data: rows.map(function (r) { return r.output_tokens; }),
@@ -244,8 +244,8 @@
     if (!c) return;
     var p = pal(), col = colors();
     var pts = samples || [];
-    setEmpty(containerId, pts.length === 0, "Waiting for data",
-      "TPS charts appear as soon as the server reports inference activity.");
+    setEmpty(containerId, pts.length === 0, "等待数据",
+      "服务器报告推理活动后即显示 TPS 曲线。");
     if (!pts.length) return;
     function series(name, field, color) {
       return {
@@ -268,7 +268,7 @@
         valueFormatter: function (v) { return v == null ? "--" : F.formatTps(v) + " tok/s"; },
       }),
       legend: {
-        data: ["Prompt TPS", "Decode TPS"],
+        data: ["提示 TPS", "解码 TPS"],
         textStyle: { color: p.axis, fontSize: 12 }, top: 0, right: 0,
         icon: "rect", itemWidth: 10, itemHeight: 10, itemGap: 14,
       },
@@ -286,8 +286,8 @@
         splitLine: { lineStyle: { color: p.split } },
       },
       series: [
-        series("Prompt TPS", "prompt_tps", col.tpsPrompt),
-        series("Decode TPS", "decode_tps", col.tpsDecode),
+        series("提示 TPS", "prompt_tps", col.tpsPrompt),
+        series("解码 TPS", "decode_tps", col.tpsDecode),
       ],
     }, true);
   }
@@ -303,8 +303,8 @@
     var data = (rows || []).map(function (r) {
       return [r.date, r.mtp_accept_rate == null ? null : Number(r.mtp_accept_rate)];
     }).filter(function (d) { return d[1] != null; });
-    setEmpty(containerId, data.length === 0, "No MTP data",
-      "Acceptance rates appear when the server reports spec-decode (MTP) metrics.");
+    setEmpty(containerId, data.length === 0, "无 MTP 数据",
+      "服务器报告投机解码（MTP）指标后显示接受率。");
     if (!data.length) return;
     c.setOption({
       animation: false,
@@ -327,7 +327,7 @@
         splitLine: { lineStyle: { color: p.split } },
       },
       series: [{
-        name: "Acceptance Rate", type: "line",
+        name: "接受率", type: "line",
         showSymbol: false, symbol: "circle", symbolSize: 5,
         lineStyle: { width: 2, color: col.mtp },
         itemStyle: { color: col.mtp },
@@ -347,8 +347,8 @@
     if (!c) return;
     var p = pal(), col = colors();
     var pos = positions || [];
-    setEmpty(containerId, pos.length === 0, "No position data",
-      "The server has not reported per-position acceptance data for today.");
+    setEmpty(containerId, pos.length === 0, "无位置数据",
+      "服务器今日尚未报告按位置的接受数据。");
     if (!pos.length) return;
     var base = pos[0] && pos[0].accepted_tokens ? pos[0].accepted_tokens : 0;
     c.setOption({
@@ -360,14 +360,14 @@
           var it = params[0];
           var rel = base > 0 && it.value != null ? (it.value / base * 100).toFixed(1) + "%" : "--";
           return "<div style='font-weight:600;margin-bottom:4px'>" + it.name + "</div>" +
-            "Accepted Tokens: <b>" + F.formatTokenCount(it.value) + "</b><br/>" +
-            "Relative to position 0: " + rel;
+            "已接受 Token：<b>" + F.formatTokenCount(it.value) + "</b><br/>" +
+            "相对位置 0：" + rel;
         },
       }),
       grid: { left: 8, right: 8, top: 24, bottom: 4, containLabel: true },
       xAxis: {
         type: "category",
-        data: pos.map(function (x) { return "Position " + x.position; }),
+        data: pos.map(function (x) { return "位置 " + x.position; }),
         axisLabel: baseAxisLabel(p),
         axisLine: { lineStyle: { color: p.split } },
         axisTick: { show: false },
@@ -378,7 +378,7 @@
         splitLine: { lineStyle: { color: p.split } },
       },
       series: [{
-        name: "Accepted Tokens", type: "bar", barMaxWidth: 28,
+        name: "已接受 Token", type: "bar", barMaxWidth: 28,
         itemStyle: { color: col.mtp, borderRadius: [3, 3, 0, 0] },
         data: pos.map(function (x) { return x.accepted_tokens; }),
       }],
@@ -433,13 +433,13 @@
     if (!c) return;
     var p = pal(), col = colors();
     var gpus = (data && data.gpus || []).filter(function (g) { return !visible || visible[g.uuid] !== false; });
-    setEmpty(containerId, !_hasGpuPoints({ gpus: gpus }), "No GPU samples",
-      "GPU utilization and VRAM history appear once GPU monitoring has collected samples.");
+    setEmpty(containerId, !_hasGpuPoints({ gpus: gpus }), "无 GPU 样本",
+      "GPU 监控采集到样本后显示利用率与显存历史。");
     if (!gpus.length) return;
     var series = [];
     gpus.forEach(function (g) {
-      series.push(_gpuSeries(g, "utilization_percent", col, { suffix: "Util" }));
-      series.push(_gpuSeries(g, "memory_usage_percent", col, { suffix: "VRAM", dashed: true }));
+      series.push(_gpuSeries(g, "utilization_percent", col, { suffix: "利用率" }));
+      series.push(_gpuSeries(g, "memory_usage_percent", col, { suffix: "显存", dashed: true }));
     });
     c.setOption({
       animation: false,
@@ -464,8 +464,8 @@
     if (!c) return;
     var p = pal(), col = colors();
     var gpus = (data && data.gpus || []).filter(function (g) { return !visible || visible[g.uuid] !== false; });
-    setEmpty(containerId, !_hasGpuPoints({ gpus: gpus }), "No power data",
-      "Power draw history appears once the GPU reports power sensors.");
+    setEmpty(containerId, !_hasGpuPoints({ gpus: gpus }), "无功耗数据",
+      "GPU 报告功耗传感器后显示功耗历史。");
     if (!gpus.length) return;
     var series = gpus.map(function (g) {
       return _gpuSeries(g, "power_draw_w", col, {});
@@ -493,8 +493,8 @@
     if (!c) return;
     var p = pal(), col = colors();
     var gpus = (data && data.gpus || []).filter(function (g) { return !visible || visible[g.uuid] !== false; });
-    setEmpty(containerId, !_hasGpuPoints({ gpus: gpus }), "No temperature data",
-      "Temperature history appears once the GPU reports temperature sensors.");
+    setEmpty(containerId, !_hasGpuPoints({ gpus: gpus }), "无温度数据",
+      "GPU 报告温度传感器后显示温度历史。");
     if (!gpus.length) return;
     var series = gpus.map(function (g) {
       return _gpuSeries(g, "temperature_c", col, {});

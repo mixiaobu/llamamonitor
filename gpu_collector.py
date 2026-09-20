@@ -34,6 +34,8 @@ import csv as _csv
 import io
 import logging
 import shutil
+import subprocess
+import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -48,6 +50,11 @@ logger = logging.getLogger("llamamonitor.gpu")
 # Phase 11：monotonic 间隔 >= 该秒数时，GPU 缺口原因记 system_pause_or_sleep（睡眠/暂停），
 # 否则 unknown（短断档无法区分原因）
 SLEEP_HINT_SECONDS = 300.0
+
+# Windows：启动 nvidia-smi 等 console 子进程时加 CREATE_NO_WINDOW，避免每轮（默认 5s）
+# 弹一个控制台窗口闪一下（UI 层可见的"终端框闪烁"）。非 Windows 平台该 flag 不存在，
+# 传 0 即无副作用（asyncio 在非 Windows 上忽略 creationflags）。
+_NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
 
 # 固定的 nvidia-smi 查询参数（顺序与 NVSMI_COLUMNS 一一对应）
 NVSMI_QUERY = [
@@ -391,11 +398,15 @@ class GpuCollector:
 
 
 async def _default_runner(args: list[str], timeout: float) -> tuple[int, str]:
-    """默认 runner：asyncio.create_subprocess_exec + 超时 kill（不用 shell）。"""
+    """默认 runner：asyncio.create_subprocess_exec + 超时 kill（不用 shell）。
+
+    creationflags=_NO_WINDOW：Windows 下不弹控制台窗口（nvidia-smi 是 console 程序，
+    GPU 轮询每 5s 一次，不隐藏就会闪一下）。"""
     proc = await asyncio.create_subprocess_exec(
         *args,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
+        creationflags=_NO_WINDOW,
     )
     try:
         stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)

@@ -110,14 +110,14 @@
     return Math.floor(sec / 86400) + "d " + Math.floor((sec % 86400) / 3600) + "h";
   }
 
-  /** 相对时间（"2m ago"） */
+  /** 相对时间（中文，如 "2 分钟前"） */
   function formatAgo(sec) {
-    if (isBad(sec)) return "no data yet";
+    if (isBad(sec)) return "暂无数据";
     sec = Number(sec);
-    if (sec < 60) return Math.round(sec) + "s ago";
-    if (sec < 3600) return Math.round(sec / 60) + "m ago";
-    if (sec < 86400) return (sec / 3600).toFixed(1) + "h ago";
-    return (sec / 86400).toFixed(1) + "d ago";
+    if (sec < 60) return Math.round(sec) + " 秒前";
+    if (sec < 3600) return Math.round(sec / 60) + " 分钟前";
+    if (sec < 86400) return (sec / 3600).toFixed(1) + " 小时前";
+    return (sec / 86400).toFixed(1) + " 天前";
   }
 
   function pad2(n) {
