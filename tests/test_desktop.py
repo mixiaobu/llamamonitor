@@ -217,11 +217,16 @@ class DesktopTests(unittest.TestCase):
         return port
 
     def _wait_http(self, url: str, timeout: float = 15.0) -> None:
-        """轮询任意 URL 直到 200（用于没有 /api/status 的假 metrics 服务）。"""
+        """轮询任意 URL 直到 200（用于没有 /api/status 的假 metrics 服务）。
+
+        trust_env=False：轮询的是本机回环的假服务，绝不应走开发机的系统代理
+        （RC-004：死系统代理会让这里 15s 全超时，误报"服务未就绪"——与生产
+        同一根因，测试基础设施也要代理鲁棒）。
+        """
         deadline = time.time() + timeout
         while time.time() < deadline:
             try:
-                if httpx.get(url, timeout=1.0).status_code == 200:
+                if httpx.get(url, timeout=1.0, trust_env=False).status_code == 200:
                     return
             except Exception:
                 pass
@@ -251,6 +256,13 @@ class DesktopTests(unittest.TestCase):
         t0 = time.time()
         self.assertFalse(desktop.wait_for_ready(f"http://127.0.0.1:{port}", timeout=1.0, poll=0.1))
         self.assertLess(time.time() - t0, 3.0)
+
+    def test_ready_timeout_accommodates_post_reboot_load(self):
+        # RC-002：系统重启后负载高（开机自启任务、GPU 驱动重新初始化）会拖慢
+        # uvicorn 事件循环，/api/status 可能 30s 内不返回 200，导致 autostart
+        # 实例误判"API 未就绪"而退出（用户需手动重启）。就绪超时必须足够大
+        # （>= 60s）容纳重启后负载。
+        self.assertGreaterEqual(desktop.READY_TIMEOUT_SECONDS, 60.0)
 
     def test_no_leftover_uvicorn_threads(self):
         db, collector, app = self._make_app(name="threads.db")

@@ -10,8 +10,12 @@ DB 写失败 / 日志去重。
 """
 
 import asyncio
+import http.server
+import os
+import socket
 import sqlite3
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 
@@ -19,6 +23,7 @@ from clock import FakeClock
 from collector import MetricsCollector
 from db import Database
 from metrics_parser import parse_metrics
+from config import trust_env_for
 from configutil import make_config
 
 # 固定的 wall 起点：2026-09-15 12:00:00（本地时间无关紧要，测试只用日期一致性）
@@ -60,8 +65,9 @@ def metrics_text(
 class Driver:
     """collector + db + FakeClock 的测试驱动器。"""
 
-    def __init__(self, tmp: str, poll: float = 5.0, db_path: str = "t.db"):
-        self.cfg = make_config(poll_interval=poll)
+    def __init__(self, tmp: str, poll: float = 5.0, db_path: str = "t.db",
+                 url: str | None = None):
+        self.cfg = make_config(url=url or "http://127.0.0.1:9", poll_interval=poll)
         self.clock = FakeClock(start_wall=BASE)
         self.db = Database(Path(tmp) / db_path, wal=False, retention_seconds=48 * 3600)
         self.collector = MetricsCollector(self.cfg, self.db, clock=self.clock)
@@ -111,8 +117,9 @@ class TestBase(unittest.TestCase):
     def tearDown(self):
         self._tmp.cleanup()
 
-    def make_driver(self, poll: float = 5.0, db_path: str = "t.db") -> Driver:
-        return Driver(self._tmp.name, poll=poll, db_path=db_path)
+    def make_driver(self, poll: float = 5.0, db_path: str = "t.db",
+                    url: str | None = None) -> Driver:
+        return Driver(self._tmp.name, poll=poll, db_path=db_path, url=url)
 
 
 # ---------------------------------------------------------------------------
@@ -614,6 +621,150 @@ class AuditCollectorRegressionTests(TestBase):
             asyncio.run(scenario())
         finally:
             d.close()
+
+
+# ---------------------------------------------------------------------------
+# RC-004：死系统代理不得阻断本地/内网 metrics 抓取
+# ---------------------------------------------------------------------------
+
+
+class Rc004DeadProxyTests(TestBase):
+    """
+    burn-in 0.16.2 实测回归：Windows 注册表残留 ProxyEnable=1 + 未运行的本地
+    代理客户端（VPN 工具崩溃退出）时，httpx 默认 trust_env=True 会把指向
+    环回地址的请求也发给死代理——collector 每轮超时（数据中断 + 误报离线），
+    桌面端 wait_for_ready 120s 拿不到 200（自启实例误判未就绪退出）。
+    """
+
+    def test_trust_env_for_local_and_private_addresses(self):
+        # 本地/环回：不走代理
+        self.assertFalse(trust_env_for("http://127.0.0.1:9091/metrics"))
+        self.assertFalse(trust_env_for("http://localhost:9091/metrics"))
+        self.assertFalse(trust_env_for("http://[::1]:9091/metrics"))
+        # RFC1918 私有网段：不走代理
+        self.assertFalse(trust_env_for("http://10.0.0.5:9091/metrics"))
+        self.assertFalse(trust_env_for("http://172.16.1.2:9091/metrics"))
+        self.assertFalse(trust_env_for("http://172.31.255.255:9091/metrics"))
+        self.assertFalse(trust_env_for("http://192.168.1.10:9091/metrics"))
+        # 公网地址：保留代理（VPN 用户远端 llama-server 场景）
+        self.assertTrue(trust_env_for("http://203.0.113.7:9091/metrics"))
+        self.assertTrue(trust_env_for("http://8.8.8.8:9091/metrics"))
+        self.assertTrue(trust_env_for("http://llama.example.com:9091/metrics"))
+        # 边界：172.15/172.32 不属于 172.16/12
+        self.assertTrue(trust_env_for("http://172.15.1.1:9091/metrics"))
+        self.assertTrue(trust_env_for("http://172.32.1.1:9091/metrics"))
+        # 带路径的 metrics URL（collector 实际传入的是 url + metrics_path）
+        self.assertFalse(trust_env_for("http://127.0.0.1:9091/metrics"))
+        # 异常 URL（无 scheme）：保守起见仍信任环境
+        self.assertTrue(trust_env_for("not a url at all"))
+
+    @staticmethod
+    def _dead_proxy_port() -> int:
+        """返回一个无人监听的 127.0.0.1 端口（死代理地址）。"""
+        with socket.socket() as s:
+            s.bind(("127.0.0.1", 0))
+            return s.getsockname()[1]
+
+    @staticmethod
+    def _find_trust_env(obj, _depth=0):
+        """在 httpx 客户端/transport 结构里找 trust_env 属性（版本差异防御）。"""
+        if _depth > 4:
+            return None
+        val = getattr(obj, "trust_env", None)
+        if val is not None:
+            return val
+        for name in ("_transport", "transport", "_pool", "_http_config", "_mounts"):
+            child = getattr(obj, name, None)
+            if child is None:
+                continue
+            if isinstance(child, dict):
+                for v in child.values():
+                    found = Rc004DeadProxyTests._find_trust_env(v, _depth + 1)
+                    if found is not None:
+                        return found
+            else:
+                found = Rc004DeadProxyTests._find_trust_env(child, _depth + 1)
+                if found is not None:
+                    return found
+        return None
+
+    def test_collector_client_trust_env_follows_metrics_url(self):
+        """collector 的 AsyncClient：本地/内网地址 trust_env=False，远端 True。"""
+        d = self.make_driver(poll=3600.0)
+        try:
+            async def check(url, expect):
+                d.cfg.llama_server.url = url
+                d.collector.metrics_url = d.cfg.metrics_url
+                d.collector._http = None
+                client = d.collector._get_client()
+                try:
+                    got = self._find_trust_env(client)
+                    self.assertIsNotNone(got, "无法在 httpx 客户端结构中找到 trust_env")
+                    self.assertIs(got, expect, f"{url} 期望 trust_env={expect}，实际 {got}")
+                finally:
+                    await client.aclose()
+                    d.collector._http = None
+
+            async def scenario():
+                await check("http://127.0.0.1:9091", False)
+                await check("http://10.1.2.3:9091", False)
+                await check("http://203.0.113.7:9091", True)
+
+            asyncio.run(scenario())
+        finally:
+            d.close()
+
+    def test_collector_survives_dead_system_proxy_for_loopback_url(self):
+        """
+        端到端：HTTP_PROXY 指向死代理（无人监听）时，collector 抓 127.0.0.1
+        的 metrics 仍然成功。同时验证同一死代理下 trust_env=True 的请求
+        确实失败（证明根因，防止修复失效时测试假绿）。
+        修复前此测试失败：collect_once 返回 offline。
+        """
+        import httpx
+
+        srv = http.server.HTTPServer(("127.0.0.1", 0), _StaticMetricsHandler)
+        srv.metrics_text = "llamacpp:prompt_tokens_total 5\nllamacpp:tokens_predicted_total 7\n"
+        port = srv.server_address[1]
+        t = threading.Thread(target=srv.serve_forever, daemon=True)
+        t.start()
+
+        dead = f"http://127.0.0.1:{self._dead_proxy_port()}"
+        old_proxy = os.environ.get("HTTP_PROXY")
+        os.environ["HTTP_PROXY"] = dead
+        try:
+            # 根因证明：trust_env=True 时环回请求走死代理 -> 失败
+            with self.assertRaises(httpx.HTTPError):
+                httpx.get(f"http://127.0.0.1:{port}/", timeout=2.0)
+            # trust_env=False 时直连 -> 成功
+            self.assertEqual(
+                httpx.get(f"http://127.0.0.1:{port}/", timeout=2.0, trust_env=False).status_code, 200)
+
+            # collector 走真实 HTTP 路径（不注入 _fetch_parsed）
+            d = self.make_driver(url=f"http://127.0.0.1:{port}", poll=3600.0)
+            try:
+                snap = asyncio.run(d.collector.collect_once())
+                self.assertTrue(snap["online"], "死系统代理不得让本地 metrics 抓取离线")
+            finally:
+                d.close()
+        finally:
+            if old_proxy is None:
+                os.environ.pop("HTTP_PROXY", None)
+            else:
+                os.environ["HTTP_PROXY"] = old_proxy
+            srv.shutdown()
+
+
+class _StaticMetricsHandler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):  # noqa: N802
+        body = self.server.metrics_text.encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *args):  # 静默
+        pass
 
 
 if __name__ == "__main__":

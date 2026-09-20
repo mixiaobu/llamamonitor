@@ -56,6 +56,7 @@ from config import (
     is_frozen,
     load_config,
     setup_logging,
+    trust_env_for,
 )
 from db import Database
 from server import build_app, build_collector
@@ -71,8 +72,12 @@ from windows_integration import (
     request_shutdown,
 )
 
-# 等待 API ready 的预算：lifespan 首次采集最坏情况是一次抓取超时 + 余量
-READY_TIMEOUT_SECONDS = 30.0
+# 等待 API ready 的预算：lifespan 首次采集最坏情况是一次抓取超时 + 余量。
+# RC-002：30s 在冷启动/系统重启后不够——重启后系统负载高（开机自启任务、
+# GPU 驱动重新初始化）会拖慢整个 uvicorn 事件循环，/api/status 可能 30s 内
+# 不返回 200，导致 autostart 的实例误判"API 未就绪"而退出（用户需手动重启）。
+# 增到 120s 容纳重启后负载；真失败（端口占用/DB 损坏）只是错误提示延迟，无副作用。
+READY_TIMEOUT_SECONDS = 120.0
 READY_POLL_SECONDS = 0.2
 # 优雅关闭每阶段等待预算（总计约 8~12s；超时记 WARNING 后继续，不无限等待）
 SHUTDOWN_TIMEOUT_SECONDS = 8.0
@@ -92,7 +97,9 @@ def _port_in_use(host: str, port: int) -> bool:
 def _port_is_llamamonitor(host: str, port: int) -> bool:
     """端口上的服务是否响应 /api/status（判断为已运行的 LlamaMonitor）。"""
     try:
-        r = httpx.get(f"http://{host}:{port}/api/status", timeout=2.0)
+        # RC-004：同 wait_for_ready——本机端口探测不走系统代理
+        r = httpx.get(f"http://{host}:{port}/api/status", timeout=2.0,
+                      trust_env=trust_env_for(f"http://{host}:{port}"))
         return r.status_code == 200
     except Exception:
         return False
@@ -109,7 +116,10 @@ def wait_for_ready(
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:
-            if httpx.get(base_url + "/api/status", timeout=1.0).status_code == 200:
+            # RC-004：trust_env 跟随目标地址——本机 API 不走系统代理（死代理
+            # 会让本函数 120s 全部超时，自启动实例误判未就绪而退出）。
+            if httpx.get(base_url + "/api/status", timeout=1.0,
+                         trust_env=trust_env_for(base_url)).status_code == 200:
                 return True
         except Exception:
             pass
@@ -334,7 +344,8 @@ def main(argv: list[str] | None = None, loaded: LoadedConfig | None = None) -> i
     # AUDIT-ASYNC-006：托盘状态用**持久** httpx.Client（keep-alive）——原实现每 30s
     # httpx.get 新建 TCP 连接（TIME_WAIT 累积 + 每轮握手开销）。httpx.Client 线程安全，
     # 托盘刷新线程复用同一个 client；shutdown 时关闭。
-    tray_http = httpx.Client(timeout=2.0)
+    # RC-004：本机 API 不走系统代理（死代理会让托盘 30s 刷新永远失败）
+    tray_http = httpx.Client(timeout=2.0, trust_env=trust_env_for(base_url))
 
     def _tray_status() -> dict:
         # 复用 server 每轮采集刷新的 app_state.runtime（托盘不额外高频查库）
@@ -514,7 +525,8 @@ def main(argv: list[str] | None = None, loaded: LoadedConfig | None = None) -> i
         # UI 的 Data Quality 区域与 Settings->Data 同时展示健康状态。
         try:
             import httpx as _httpx
-            health = _httpx.get(base_url + "/api/health", timeout=5.0).json()
+            health = _httpx.get(base_url + "/api/health", timeout=5.0,
+                                trust_env=trust_env_for(base_url)).json()
             if health.get("database") == "corrupt":
                 log.error("[LlamaMonitor] 数据库完整性检查失败（protective mode，只读）。")
                 _message_box(

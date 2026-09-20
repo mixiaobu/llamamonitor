@@ -60,7 +60,7 @@ from pathlib import Path
 import httpx
 
 from clock import Clock, default_clock
-from config import AppConfig, apply_overrides, load_config, setup_logging
+from config import AppConfig, apply_overrides, load_config, setup_logging, trust_env_for
 from db import Database, local_date
 from metrics_parser import get_metric_by_label, get_metric_value, parse_metrics
 from stats import TRACKED_COUNTERS, COUNTER_SHORT_NAMES, compute_deltas, counter_delta, mtp_accept_rate, tps
@@ -339,6 +339,10 @@ class MetricsCollector:
             self._http = httpx.AsyncClient(
                 timeout=self.timeout,
                 limits=httpx.Limits(keepalive_expiry=keepalive),
+                # RC-004：指向本地/内网地址的 metrics 端点不走系统代理——
+                # 死代理（注册表 ProxyEnable=1 但客户端未运行）会把环回请求
+                # 全发到一个无人监听的 127.0.0.1:port，采集永远离线。
+                trust_env=trust_env_for(self.metrics_url),
             )
             self._http_loop = loop
         return self._http

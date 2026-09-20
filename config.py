@@ -29,8 +29,60 @@ import logging
 import logging.handlers
 import os
 import sys
+import urllib.parse
 from dataclasses import dataclass, field
 from pathlib import Path
+
+
+# ---------------------------------------------------------------------------
+# HTTP 代理策略（RC-004）
+# ---------------------------------------------------------------------------
+
+def trust_env_for(url: str) -> bool:
+    """
+    返回该 URL 的 httpx 客户端是否应该 trust_env（读取环境变量 / Windows
+    注册表代理）。
+
+    背景（RC-004，burn-in 0.16.2 实测）：Windows 系统代理指向一个**未运行**的
+    本地代理客户端（如 VPN 工具崩溃退出后注册表残留 ProxyEnable=1）时，httpx
+    默认 trust_env=True 会把**指向环回地址**的请求也发给死代理（httpx 不像
+    WinINET 那样自动应用 ProxyOverride 的 <local> 绕过），导致：
+    - collector 抓 127.0.0.1:9091/metrics 每轮超时 → 数据流中断 + 误报离线；
+    - 桌面端 wait_for_ready 轮询本机 8765 120s 拿不到 200 → 自启动实例
+      误判 "API 未就绪" 退出（用户开机后看不到应用）。
+
+    策略：http(s) 指向**本地/内网地址**（127.*/localhost/10.*/172.16-31.*/
+    192.168.* 及回环 IPv6）时不走代理——这些端点（llama-server 默认绑定、
+    本应用自身 API）在环回/局域网内，代理对它们只可能有害；其余地址保留
+    trust_env，代理仍然有效（如 llama-server 部署在远端且需要代理出网）。
+    """
+    try:
+        parsed = urllib.parse.urlparse(url)
+        # 非 http(s) 地址（或无 scheme 的畸形串）：保守起见仍信任环境，
+        # 由 httpx 按自身规则处理（本判定只用于"本地/内网直连"优化）
+        if parsed.scheme not in ("http", "https"):
+            return True
+        host = parsed.hostname or ""
+    except ValueError:
+        return True
+    h = host.lower().rstrip(".")
+    if h in ("localhost", ""):
+        return False
+    if h.startswith("127."):
+        return False
+    if h == "::1":
+        return False
+    # 私有网段（RFC1918）：10.0.0.0/8、172.16.0.0/12、192.168.0.0/16
+    parts = h.split(".")
+    if len(parts) == 4 and all(p.isdigit() for p in parts):
+        if parts[0] == "10":
+            return False
+        if parts[0] == "172" and 16 <= int(parts[1]) <= 31:
+            return False
+        if parts[0] == "192" and parts[1] == "168":
+            return False
+    return True
+
 
 # ---------------------------------------------------------------------------
 # 配置结构（dataclass）

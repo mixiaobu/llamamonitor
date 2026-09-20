@@ -60,6 +60,7 @@ from config import (
     load_config,
     read_raw_config,
     setup_logging,
+    trust_env_for,
     validate_updates,
 )
 from db import CURRENT_SCHEMA_VERSION, Database, local_date
@@ -639,7 +640,9 @@ def build_app(
         metrics_url = build_metrics_url(url, path)
         t0 = time.perf_counter()
         try:
-            async with httpx.AsyncClient(timeout=float(timeout), follow_redirects=True) as client:
+            # RC-004：本地/内网测试目标不走系统代理（死代理会让本机端点测试假超时）
+            async with httpx.AsyncClient(timeout=float(timeout), follow_redirects=True,
+                                         trust_env=trust_env_for(metrics_url)) as client:
                 r = await client.get(metrics_url)
             latency_ms = (time.perf_counter() - t0) * 1000
             if r.status_code == 200:
