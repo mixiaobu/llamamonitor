@@ -56,7 +56,7 @@
 | 7d 模拟 PASS | PASS | Difference 0/0（1,814,400 GT 基） |
 | 30d 模拟 PASS | PASS | Difference 0/0（7,776,000 GT 基，5917s） |
 | 90d 模拟 PASS | PASS | Difference 0/0（23,328,000 GT 基，18806s） |
-| 365d 模拟 PASS | （跑完填） | soak_test.py --days 365（自动 60s poll）+ 时钟边缘（午夜/月底/年份/DST/wall 前跳后跳）负 daily 0 |
+| 365d 模拟 PASS | PASS | soak 365d（自动 60s poll，7483s 实跑）Difference 0/0（GT 94,608,000/31,536,000；7618 reset / 4422 restart / 8635 offline / 13057 gap 全闭合；366 daily 行无负值）+ 时钟边缘（午夜/月底/年份/DST/wall 前跳后跳）负 daily 0 |
 | 100000 collector cycles PASS | PASS | item 121：100k 轮恒等式 0/0（74 reset + 42 restart + 83 gap 注入）+ RSS 后段斜率 2.35（一次性爬升后平台化）/Thread 4→2/Handle 149→155 |
 | 50000+ HTTP polling PASS | PASS | item 123：60000 请求 → 1 复用连接（60000×），0 失败，Thread/Handle 稳定 |
 | GPU fake stress PASS | PASS | item 122：100k 样本全场景，energy 48386Wh 无负值，RSS/Thread/Handle 受控 |
@@ -65,7 +65,7 @@
 | 无持续线性 RAM 增长 | （J 判定填） | item 79/121/122：加速段后段斜率 + 14h 真实采样带内非单调 + 4h burn-in T=0/1h/2h/4h |
 | 无 thread 泄漏 | PASS | item 81/121/122：恒 16~22，加速 100k 轮 4→2 / 2→2，offline/restart 周期不增 |
 | 无 handle 泄漏 | （J 判定填） | item 80/121/125：前段 780±10 / 当前实例 484~524 带内；lifecycle 570 注入净 +5 |
-| 无 subprocess 泄漏 | （F 2h 跑完填） | item 82/126：mock 100k 全场景吸收；真实 nvidia-smi 5s×120min 无残留 |
+| 无 subprocess 泄漏 | PASS | item 82/126：mock 100k 全场景吸收（ok 49934/timeout 15003/error 15060/invalid 20003）；真实 nvidia-smi 5s×120min（1373 轮）before 0 → after 0 无残留 |
 | Token spot-check PASS | PASS | 实机推理 delta 63 exact + 09-21 09:04 复测 exact（integer exact）；burn-in 每日复测 |
 | SQLite quick_check PASS | PASS | burn-in 期间每日 ok（含 5MB 生产库 + soak 14MB 库） |
 | Clean install PASS | PASS | 独立环境首装 + 首次启动 baseline |

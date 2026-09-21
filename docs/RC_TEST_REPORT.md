@@ -266,8 +266,8 @@
 | 123 | C：HTTP poll 60000 请求（真实 httpx keep-alive 客户端→进程内假 llama server，生产 `_get_client` 参数）：连接复用、Thread/Handle/Socket 稳定 | PASS | 60000 请求 **唯一连接数 = 1（复用比 60000×）**——keep-alive 连接全程复用；fetch 失败 0/60000；RSS 后段斜率 -1.63MB/1000（无增长）；Thread 5→3；Handle 179→178；dead-system-proxy 下 trust_env_for(环回)=False 路径同时被验证（RC-004 同源配置） |
 | 124 | D：UI 生命周期（Playwright/Chromium 加载真实运行 UI）：Dashboard hide/show ×500、页面循环 ×500、主题 ×100、resize ×200：无重复 Timer/ECharts 实例、无线性内存增长 | PASS | hide/show 500 + 页面循环 500（overview/usage/performance/gpu/settings）+ 主题 dark/light/system 100 + 视口 800↔1400 resize 200；ECharts 实例恒 7（懒初始化 6→7 后不再增）；canvas 6→7 后恒定（1:1 无泄漏）；polling 任务恒 12（无重复注册，inFlight 结束采样归 0）；JS 堆 9.5→9.5MB 斜率 0.00（performance.memory，裁 15% 预热） |
 | 125 | E：lifecycle stress（临时库）：offline/recover ×200、counter reset ×200、monitor restart ×50、backup ×50、quick_check ×20、reset ×20：无死锁/重复/线程/句柄增长 | PASS | 570 次故障注入全部完成：Thread 2→2、Handle 174→179（净 +5，波动带内）；50 次 backup 均 >0 字节；20 次 quick_check 全 ok；reset_statistics 20 次后采集正常继续；无死锁/异常 |
-| 126 | F：nvidia-smi 子进程：mock runner 100000 轮（正常/timeout/error/invalid 随机）+ 真实 nvidia-smi 5s ≥2h 无残留 | （mock PASS / 真实 2h 跑完填） | mock 100k 轮：ok 49934/timeout 15003/error 15060/invalid 20003 全被状态机吸收无未捕获异常；真实 nvidia-smi 5s 间隔 120min 进程数 before==after（无 nvidia-smi.exe 残留） |
-| 127 | G：FakeClock 365 天（午夜/月底/年份/DST/wall 前跳后跳/sleep gap/monitor restart）：无负 daily、日期分桶单调 | （365d soak 跑完填） | 快速时钟边缘段 PASS：235 天 daily 分桶 2026-06-09→2027-01-29 单调无串桶、负 daily 0 行、wall +1h/-30min 跳变无负 delta；完整 365d 恒等式由 soak_test.py --days 365（自动 60s poll）承担 |
+| 126 | F：nvidia-smi 子进程：mock runner 100000 轮（正常/timeout/error/invalid 随机）+ 真实 nvidia-smi 5s ≥2h 无残留 | PASS | mock 100k 轮：ok 49934/timeout 15003/error 15060/invalid 20003 全被状态机吸收无未捕获异常；**真实 nvidia-smi 5s 间隔 120min（1373 轮，7205s）：smi_procs before 0 → after 0，无 nvidia-smi.exe 残留** |
+| 127 | G：FakeClock 365 天（午夜/月底/年份/DST/wall 前跳后跳/sleep gap/monitor restart）：无负 daily、日期分桶单调 | PASS | **365d soak（自动 60s poll，7483s 实跑）Difference 0/0（GT 94,608,000/31,536,000）**：7618 counter reset（online 4291 + offline 3327）、4422 monitor restart、8635 offline 事件（8635 缺口全记录）、13057 sampling gap（3367 possible loss）、366 daily 行（365 天 + 1，无负 daily）、DB 6.7MB；快速时钟边缘段（午夜/月底/年份/DST/wall +1h/-30min 跳变）负 daily 0、日期单调无串桶 |
 | 128 | H：真实 Windows burn-in ≥4h（推荐 8h）：真实推理、llama-server 重启 ×3、monitor 重启 ×3、tray hide/show ×20、Sleep/Wake ×2、backup、CSV、Settings 查看、GPU 负载变化 | IN PROGRESS | 0.16.3 EXE 真实环境（Qwen3.8-27B 推理中）：T0=09-21 11:50 起 4h 序列自动执行（tools/burnin_ops.py）——monitor 重启 ×3 / llama 重启 ×3 / tray 窗口 hide-show ×20 / SetSuspendState 短睡 ×2（各 ~2min，上次 105s 短睡 monitor 存活 + system_pause_or_sleep gap 正确，item 37）/ backup / CSV / GPU 负载 completion / Settings 查看；T=1h/2h/4h checkpoint（spec I 全指标含 WAL/collector/GPU 状态） |
 
 > 泄漏判定判据（J）实现：`runtime_stress_test.py` 对每段 ~100 采样点做
@@ -290,14 +290,14 @@
 | 50000+ HTTP polling PASS | PASS | item 123：60000 请求 → 1 复用连接（60000×），0 失败，Thread/Handle 稳定 |
 | GPU fake stress PASS | PASS | item 122：100k 样本全场景（N-A/offline/recovery/reorder/long gap），energy 48386Wh 无负值，RSS/Thread/Handle 受控 |
 | UI lifecycle stress PASS | PASS | item 124：hide/show 500 + 页面 500 + 主题 100 + resize 200，ECharts 恒 7、poll 任务恒 12、JS 堆斜率 0 |
-| 7-30-90-365d simulation PASS | （365d 跑完填） | items 116/127：7/30/90 已 PASS（0/0）；365d soak + 时钟边缘（午夜/月底/年份/DST/wall 跳变）负 daily 0 |
+| 7-30-90-365d simulation PASS | PASS | items 116/127：7d/30d/90d/365d 全部 Difference 0/0（365d GT 94,608,000/31,536,000，7618 reset + 4422 restart + 8635 offline 全闭合）+ 时钟边缘（午夜/月底/年份/DST/wall 跳变）负 daily 0 |
 | 4~8h real Windows burn-in PASS | IN PROGRESS | item 128：0.16.3 EXE 真实环境 4h 序列（llama ×3 / monitor ×3 / tray ×20 / sleep ×2 / backup / CSV / GPU 负载）；已有 14h+ 三段版本前段数据 |
 | Token spot-check PASS | PASS | item 109/14：实机推理 delta 63 exact（integer exact）；burn-in 每日复测 |
 | SQLite quick_check PASS | PASS | item 110：burn-in 期间每日 ok（含 soak 14MB 库） |
 | No linear RAM growth | （J 判定后填） | items 79/121/122：加速段后段斜率 + 14h 真实采样（153~205MB 带内非单调）+ 4h burn-in T=0/1h/2h/4h |
 | No thread leak | PASS | item 81/121/122：恒 16~22（tray 模式 16），加速 100k 轮 Thread 4→2/2→2，offline/restart 周期不增 |
 | No handle leak | （J 判定后填） | items 80/121/125：前段 780±10 / 当前实例 484~524 波动带内；lifecycle 570 次注入净 +5 |
-| No subprocess leak | （F 真实 2h 跑完填） | items 82/126：mock 100k 轮状态机吸收全场景；真实 nvidia-smi 5s×120min before==after 无残留 |
+| No subprocess leak | PASS | items 82/126：mock 100k 轮状态机吸收全场景（ok 49934/timeout 15003/error 15060/invalid 20003）；**真实 nvidia-smi 5s×120min（1373 轮）before 0 → after 0 无残留** |
 | Clean install PASS | PASS | item 5-7：独立环境首装 + 首次启动 baseline |
 | Upgrade PASS | PASS | item 65：0.16.1 覆盖安装 exit 0 数据完整；item 62 更新链 0.16.0→0.16.1 真实升级 |
 | Uninstall/Reinstall PASS | PASS | item 66-68：卸载保留数据/重删数据/重装均验证 |
