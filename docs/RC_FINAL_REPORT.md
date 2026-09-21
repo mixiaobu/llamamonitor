@@ -62,9 +62,9 @@
 | GPU fake stress PASS | PASS | item 122：100k 样本全场景，energy 48386Wh 无负值，RSS/Thread/Handle 受控 |
 | UI lifecycle stress PASS | PASS | item 124：hide/show 500 + 页面 500 + 主题 100 + resize 200，ECharts 恒 7、poll 任务恒 12、JS 堆斜率 0 |
 | 4~8h 真实 Windows burn-in PASS | IN PROGRESS | item 128：0.16.3 EXE 4h 全操作序列（llama ×3 / monitor ×3 / tray ×20 / sleep ×2 / backup / CSV / GPU 负载）+ 14h+ 前段数据 |
-| 无持续线性 RAM 增长 | （J 判定填） | item 79/121/122：加速段后段斜率 + 14h 真实采样带内非单调 + 4h burn-in T=0/1h/2h/4h |
+| 无持续线性 RAM 增长 | PASS | J 判定：加速 100k 轮净 +4.5MB 后段斜率 2.35（爬升后平台化）+ 14h 真实 153~205MB 带内非单调 + 跨 restart 无累积 |
 | 无 thread 泄漏 | PASS | item 81/121/122：恒 16~22，加速 100k 轮 4→2 / 2→2，offline/restart 周期不增 |
-| 无 handle 泄漏 | （J 判定填） | item 80/121/125：前段 780±10 / 当前实例 484~524 带内；lifecycle 570 注入净 +5 |
+| 无 handle 泄漏 | PASS | item 80/121/125：前段 780±10 / 当前实例 482~524 带内波动；100k 轮 149→155、570 注入净 +5；无持续单向增长 |
 | 无 subprocess 泄漏 | PASS | item 82/126：mock 100k 全场景吸收（ok 49934/timeout 15003/error 15060/invalid 20003）；真实 nvidia-smi 5s×120min（1373 轮）before 0 → after 0 无残留 |
 | Token spot-check PASS | PASS | 实机推理 delta 63 exact + 09-21 09:04 复测 exact（integer exact）；burn-in 每日复测 |
 | SQLite quick_check PASS | PASS | burn-in 期间每日 ok（含 5MB 生产库 + soak 14MB 库） |

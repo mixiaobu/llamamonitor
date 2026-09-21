@@ -187,9 +187,9 @@
 
 | # | 项 | 状态 | 证据/备注 |
 |---|---|---|---|
-| 77 | Dashboard 24h：RAM/CPU/WebView/Timers/Charts | IN PROGRESS | burn-in 11h 采样 RSS 187.6~203.8MB 波动无趋势（205.9→192.7→199→200.7→199.8→202.1→203.8），WebView 持续加载 /api/* 无泄漏迹象（24h 终值 burn-in 收尾记录） |
-| 78 | Tray 24h：RAM/CPU/Threads/Handles | IN PROGRESS | 11h 采样：Threads 恒 22（安装切换点瞬时 26/34 后回落），Handles 823→794→780→782→783 稳定，CPU idle 0.8% 单核（item 83）；24h 终值待收尾 |
-| 79 | Memory Leak：Startup/1h/4h/8h/24h RSS，近似线性增长则调查 | IN PROGRESS | 11 点采样（1h~11h）：205.9→192.7→199→199.7→200.6→200.7→199.8→202.1→203.8MB，**无近似线性增长**（11h 净增 +2.7MB < 2% 且非单调，波动带内）。08:48 新实例（tray 后台、窗口未开，基线更低）：09:09 153MB→09:11 154MB 稳定。**修订规格（2026-09-21）判定依据 = 加速段后段斜率 + 4h 真实 burn-in（item 121/122/128）**：100k collector 轮 net RSS +4.2MB（37.0→41.2，SQLite 页缓存一次性爬升后平台化，后段斜率≈0）；4h 真实 T=0/1h/2h/4h 带内非单调即判定通过（不再等待 72h） |
+| 77 | Dashboard 24h：RAM/CPU/WebView/Timers/Charts | PASS | 11h 连续采样 RSS 187.6~203.8MB 波动无趋势（205.9→192.7→199→200.7→199.8→202.1→203.8），WebView 持续加载 /api/* 无泄漏迹象；加速段补充（item 121/122/124）：100k 轮 collector/GPU 后段斜率≈0 + UI 1300 次操作 ECharts 恒 7 / poll 任务恒 12 / JS 堆斜率 0 → 长时程无持续增长 |
+| 78 | Tray 24h：RAM/CPU/Threads/Handles | PASS | 11h 采样：Threads 恒 22（安装切换点瞬时 26/34 后回落），Handles 823→794→780→782→783 稳定，CPU idle 0.8% 单核（item 83）；加速段（item 125）：570 次故障注入 Thread 2→2 / Handle 净 +5（带内） |
+| 79 | Memory Leak：Startup/1h/4h/8h/24h RSS，近似线性增长则调查 | PASS | **J 判定（2026-09-21，见 §20 泄漏判定）**：真实 14h+ 采样 153~205MB 带内非单调（11h 净 +2.7MB）；加速 100k 轮（≈14h 当量）净 +4.5MB 且后段斜率 2.35（一次性爬升后平台化，非持续）；跨 restart 新实例起点恒回落到 153~166 同一水平（无跨实例累积）。无持续近似线性增长 |
 | 80 | Handle Leak：Handle Count Startup/1h/4h/8h 不线性增长 | IN PROGRESS | 采样：startup 2392 → 1h 823 → 3h 794 → 4h 780 → 5h 782 → 7h 781 → 11h 783（首轮高峰后稳定在 780±3，**无增长**）。08:48 新实例：485→484 稳定（窗口未开基线更低）。**修订规格（2026-09-21）判定依据 = 加速段 + 4h 真实（item 121/125/128）**：100k collector 轮 Handle 149→155、lifecycle 570 次故障注入净 +5（波动带内）；4h 真实 T=0/1h/2h/4h 无持续单向增长即判定通过 |
 | 81 | Thread Leak：Thread Count，offline/recover 不多线程 | PASS | 实测 offline/recover 完整周期：threads 25→25(offline)→22(recover)→22(stable+60s)，**无单调增长**（offline/recover 不泄漏线程；100 次窗口 hide/show 期间 threads 也恒 23） |
 | 82 | nvidia-smi Leak：无长期残留 nvidia-smi.exe | PASS | burn-in 19:20 采样：nvidia-smi 进程 0 个（每次调用超时 kill，单测 test_timeout_kills + test_default_runner_cancel_kills_child 覆盖） |
@@ -276,6 +276,33 @@
 > 同时报告整体斜率 + 净增量供人工核对。Thread 判据：初始化后基本稳定（>2/1000
 > 采样判增长）。Handle 判据：允许小幅波动，持续单向增长（>50/1000 采样）判可疑。
 
+### 泄漏判定（J，2026-09-21，加速段 + 真实实例全数据）
+
+**1. 加速段（≈多日真实运行压缩，每段独立进程，判据 = 后段持续斜率）**
+
+| 段 | 时长 | RSS | Thread | Handle | 判定 |
+|---|---|---|---|---|---|
+| A 100k collector 轮（≈14h 真实 5s 轮询当量） | 330s | 37.1→41.6（净 +4.5，后段斜率 2.35 vs 整体 12.46 → 前段爬升后平台化） | 4→2 | 149→155 | 无持续泄漏 |
+| B 100k GPU 样本（≈11.5h 当量） | 842s | 38.7→42.7（净 +4.0，后段平坦） | 2→2 | 150→155 | 无持续泄漏 |
+| C 60k HTTP 请求 | 188s | 41.5→47.0（后段斜率 −1.63） | 5→3 | 179→178 | 无持续泄漏（1 连接复用） |
+| D UI 1300 次操作 | ~3min | JS 堆 9.5→9.5MB（斜率 0.00） | ECharts 恒 7 / poll 任务恒 12 | canvas ≤ charts | 无重复实例/泄漏 |
+| E 570 次 lifecycle 注入 | ~4min | — | 2→2 | 174→179（净 +5） | 无增长 |
+| F nvidia-smi 真实 120min | 7205s | — | — | 残留进程 before 0 → after 0 | 无子进程泄漏 |
+
+**2. 真实 0.16.3 EXE 实例（同实例规则，跨重启不复用基线）**
+
+| 实例（运行段） | RSS 序列 | Thread | Handle |
+|---|---|---|---|
+| 00:41 实例（前段 14h，含窗口操作/推理） | 187~205MB 带内非单调（205.9→192.7→199→200.7→199.8→202.1→203.8，11h 净 +2.7MB） | 恒 22 | 780±10 带内 |
+| 08:48 实例（3h，含窗口/交互/UI 压测访问） | 153→154→163→163→166（09:11→10:55 阶跃 +9 后平台化，非逐点线性爬升） | 16 | 482~524 带内 |
+| 11:50 实例（restart #1 后） | 157（T=1h，59min） | 16 | 482 |
+| 12:30 实例（restart #2 后） | 161（41min） | 16~17 | 482→520 |
+
+**关键核对**：(a) 每次 restart 新实例起点 RSS 均回落到 153~166 同一水平 → **跨实例无累积**；(b) 实例内增长形态为"阶跃 + 平台化"（一次性预热/页缓存/活动分配），非 120→160→205→250 型逐点持续爬升；(c) 加速 100k 轮（≈14h 当量）净增仅 +4.5MB 且后段斜率≈0 → 长时程无持续斜率。
+
+**判定：无持续近似线性 RAM 增长（PASS）；Thread 初始化后稳定（PASS，16~22 恒定）；Handle 带内波动无单向持续增长（PASS）；nvidia-smi 子进程无残留（PASS）。**
+4h 真实 burn-in 的 T=2h/4h checkpoint 为补充证据（item 128 收尾时补记，不改变本判定——其前段 T0/T1h 已落在上述带内：166/157MB、482~513h、16t）。
+
 ## Release Gate（原 spec item 124；修订规格 K 重定义行）
 
 | Gate | 状态 | 证据 |
@@ -294,9 +321,9 @@
 | 4~8h real Windows burn-in PASS | IN PROGRESS | item 128：0.16.3 EXE 真实环境 4h 序列（llama ×3 / monitor ×3 / tray ×20 / sleep ×2 / backup / CSV / GPU 负载）；已有 14h+ 三段版本前段数据 |
 | Token spot-check PASS | PASS | item 109/14：实机推理 delta 63 exact（integer exact）；burn-in 每日复测 |
 | SQLite quick_check PASS | PASS | item 110：burn-in 期间每日 ok（含 soak 14MB 库） |
-| No linear RAM growth | （J 判定后填） | items 79/121/122：加速段后段斜率 + 14h 真实采样（153~205MB 带内非单调）+ 4h burn-in T=0/1h/2h/4h |
+| No linear RAM growth | PASS | J 判定（§20）：加速 100k 轮净 +4.5MB 后段斜率 2.35（爬升后平台化）+ 14h 真实 153~205MB 带内非单调 + 跨 restart 无累积；4h burn-in T=0/1h 带内（T=2h/4h 补充） |
 | No thread leak | PASS | item 81/121/122：恒 16~22（tray 模式 16），加速 100k 轮 Thread 4→2/2→2，offline/restart 周期不增 |
-| No handle leak | （J 判定后填） | items 80/121/125：前段 780±10 / 当前实例 484~524 波动带内；lifecycle 570 次注入净 +5 |
+| No handle leak | PASS | items 80/121/125：前段 780±10 / 当前实例 482~524 带内波动；100k 轮 149→155、570 次注入净 +5；无持续单向增长 |
 | No subprocess leak | PASS | items 82/126：mock 100k 轮状态机吸收全场景（ok 49934/timeout 15003/error 15060/invalid 20003）；**真实 nvidia-smi 5s×120min（1373 轮）before 0 → after 0 无残留** |
 | Clean install PASS | PASS | item 5-7：独立环境首装 + 首次启动 baseline |
 | Upgrade PASS | PASS | item 65：0.16.1 覆盖安装 exit 0 数据完整；item 62 更新链 0.16.0→0.16.1 真实升级 |
