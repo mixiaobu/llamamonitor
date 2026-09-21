@@ -92,7 +92,7 @@ class SignatureVerificationTests(unittest.TestCase):
         with t1, t2:
             ok, _k, err = verify_manifest_signature(bytes(tampered), sig)
         self.assertFalse(ok)
-        self.assertIn("signature verification failed", err)
+        self.assertIn("签名校验失败", err)
 
     def test_tampered_field_fails(self):
         """篡改 1 个字段（version 0.13.1 -> 0.13.2）-> 验签失败。"""
@@ -106,7 +106,7 @@ class SignatureVerificationTests(unittest.TestCase):
         with t1, t2:
             ok, _k, err = verify_manifest_signature(tampered, sig)
         self.assertFalse(ok)
-        self.assertIn("signature verification failed", err)
+        self.assertIn("签名校验失败", err)
 
     def test_wrong_key_fails(self):
         """用**另一对**密钥签名 -> 验签失败（不是 unknown key，是签名不匹配）。"""
@@ -119,7 +119,7 @@ class SignatureVerificationTests(unittest.TestCase):
         with t1, t2:
             ok, _k, err = verify_manifest_signature(raw, sig)
         self.assertFalse(ok)
-        self.assertIn("signature verification failed", err)
+        self.assertIn("签名校验失败", err)
 
     def test_unknown_key_id_rejected(self):
         """key_id 不在内置公钥表 -> 'unknown signing key'。"""
@@ -130,7 +130,7 @@ class SignatureVerificationTests(unittest.TestCase):
         ok, key_id, err = verify_manifest_signature(raw, sig)
         self.assertFalse(ok)
         self.assertEqual(key_id, "unknown-key-xyz")
-        self.assertIn("unknown signing key", err)
+        self.assertIn("未知的签名密钥", err)
 
     def test_invalid_base64_signature(self):
         private, public = generate_keypair()
@@ -145,7 +145,7 @@ class SignatureVerificationTests(unittest.TestCase):
         with t1, t2:
             ok, _k, err = verify_manifest_signature(raw, sig)
         self.assertFalse(ok)
-        self.assertIn("signature verification failed", err)
+        self.assertIn("签名校验失败", err)
 
     def test_wrong_algorithm_rejected(self):
         """algorithm != Ed25519 -> 拒绝（不允许 RSA 等回退）。"""
@@ -160,17 +160,17 @@ class SignatureVerificationTests(unittest.TestCase):
         }).encode("ascii")
         ok, _k, err = verify_manifest_signature(raw, sig)
         self.assertFalse(ok)
-        self.assertIn("unsupported signature algorithm", err)
+        self.assertIn("不支持的签名算法", err)
 
     def test_sig_not_json(self):
         ok, _k, err = verify_manifest_signature(b"hello", b"this is not json")
         self.assertFalse(ok)
-        self.assertIn("not valid JSON", err)
+        self.assertIn("签名文件不是有效的 JSON", err)
 
     def test_sig_missing_fields(self):
         ok, _k, err = verify_manifest_signature(b"hello", b'{"algorithm":"Ed25519"}')
         self.assertFalse(ok)
-        self.assertIn("unknown signing key", err)  # key_id 缺失
+        self.assertIn("未知的签名密钥", err)  # key_id 缺失
 
 
 class ManifestFieldValidationTests(unittest.TestCase):
@@ -208,20 +208,20 @@ class ManifestFieldValidationTests(unittest.TestCase):
         m = _base_manifest()
         m["version"] = "v0.13.1"
         _sel, errors = validate_manifest_fields(m)
-        self.assertTrue(any("invalid version" in e for e in errors))
+        self.assertTrue(any("无效的版本号" in e for e in errors))
 
     def test_filename_must_match_version(self):
         """§24：filename 必须与 version 一致（LlamaMonitor-Setup-{version}-win-x64.exe）。"""
         m = _base_manifest()
         m["installer"]["filename"] = "LlamaMonitor-Setup-9.9.9-win-x64.exe"
         _sel, errors = validate_manifest_fields(m)
-        self.assertTrue(any("filename" in e and "must match version" in e for e in errors))
+        self.assertTrue(any("filename" in e and "须与版本匹配" in e for e in errors))
 
     def test_filename_path_traversal(self):
         m = _base_manifest()
         m["portable"]["filename"] = "../../evil.zip"
         _sel, errors = validate_manifest_fields(m)
-        self.assertTrue(any("safe basename" in e for e in errors))
+        self.assertTrue(any("不是安全文件名" in e for e in errors))
 
     def test_bad_size(self):
         m = _base_manifest()

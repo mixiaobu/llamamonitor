@@ -189,7 +189,7 @@
     var elLast = $("ovLastUpdate");
     if (elLast) {
       if (!lu) {
-        elLast.textContent = "Waiting for first sample...";
+        elLast.textContent = "等待首个样本...";
         elLast.className = "stat-hint";
       } else {
         var age = Math.max(0, Date.now() / 1000 - lu);
@@ -499,7 +499,7 @@
       return;
     }
     var gpus = d.gpus || [];
-    ui.setStatusBadge(stateEl, "online", gpus.length + " GPU" + (gpus.length === 1 ? "" : "s"));
+    ui.setStatusBadge(stateEl, "online", gpus.length + " 个 GPU");
     if (!gpus.length) {
       lineEl.textContent = "可用，暂无样本。";
       return;

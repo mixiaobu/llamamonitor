@@ -114,7 +114,7 @@ class UpdateApiLoopbackTests(_Base):
         r = client.post("/api/update/check")
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.json()["state"], "IDLE")
-        self.assertIn("not configured", r.json()["error"])
+        self.assertIn("未配置", r.json()["error"])
 
 
 class UpdateApiStateMachineTests(_Base):

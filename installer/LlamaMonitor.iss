@@ -50,7 +50,7 @@ AppId={#AppIdBraced}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher={#AppPublisher}
-AppComments=Local-only monitor for llama.cpp /metrics (Token / MTP / GPU statistics)
+AppComments=本地 llama.cpp /metrics 监控工具（Token / MTP / GPU 统计）
 DefaultDirName={localappdata}\Programs\LlamaMonitor
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
@@ -72,22 +72,24 @@ UninstallDisplayIcon={app}\LlamaMonitor.exe
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
+; 只定义了简体中文一个语言条目，Inno 自动将其作为默认语言（6.3+ 已移除 DefaultLangEntry）
 ; 内置运行中检测：与应用 Named Mutex 对应（PrepareToInstall 会先尝试优雅退出）
 AppMutex={#SingleInstanceMutex}
 CloseApplications=yes
 
 [Languages]
-Name: "english"; MessagesFile: "compiler:Default.isl"
+; 简体中文（官方 issrc 仓库 Files/Languages/ChineseSimplified.isl，Inno 6.5+ 格式）
+Name: "chinesesimplified"; MessagesFile: "Languages\ChineseSimplified.isl"
 
 [Tasks]
 ; 桌面快捷方式：默认**不勾选**（避免污染桌面，§20）
-Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional icons:"; Flags: unchecked
+Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: "附加图标:"; Flags: unchecked
 ; 可选删除用户数据：默认**不勾选**（安全默认 = 保留数据，§34/§35）。
 ; Inno Setup 6（本项目固定的 6.7.3）无"仅卸载器显示"的任务旗标，
 ; 故该任务在安装向导与卸载向导都会出现、默认不勾选：
 ;   - 安装时勾它无副作用（只有卸载的 DeinitializeUninstall 会执行删除）；
 ;   - 卸载时用户可勾它删除固定数据目录；静默卸载用 /TASKS=removedata 选择。
-Name: "removedata"; Description: "Remove LlamaMonitor monitoring data and settings (Token history, GPU history, configuration, backups, logs). This cannot be undone. Custom database locations are NOT affected."; GroupDescription: "User data:"; Flags: unchecked
+Name: "removedata"; Description: "删除 LlamaMonitor 的监控数据与设置（Token 历史、GPU 历史、配置、备份、日志）。此操作不可撤销。自定义数据库位置不受影响。"; GroupDescription: "用户数据:"; Flags: unchecked
 
 [Files]
 ; dist\LlamaMonitor\* 完整安装（含 static / assets / PyInstaller 运行时依赖）。
@@ -102,12 +104,12 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\LlamaMonitor.exe"; WorkingDir
 
 [Run]
 ; Finish 页默认勾选 Launch；静默安装不启动（skipifsilent，§21/§55）
-Filename: "{app}\LlamaMonitor.exe"; Description: "Launch {#AppName}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\LlamaMonitor.exe"; Description: "启动 {#AppName}"; Flags: nowait postinstall skipifsilent
 ; Phase 13：更新器触发的升级完成后自动启动新版（update_service 用 /SILENT /NORESTART
 ; /APPUPDATE[_BG] 启动安装器）。普通手工 /SILENT 安装不受影响（无 /APPUPDATE 参数，
 ; skipifsilent 条目照旧不启动；以下两条只在对应 Check 为真时出现在 Finish 页）。
-Filename: "{app}\LlamaMonitor.exe"; Description: "Start LlamaMonitor after update"; Flags: nowait postinstall; Check: IsAppUpdateInstall
-Filename: "{app}\LlamaMonitor.exe"; Parameters: "--background"; Description: "Start LlamaMonitor (background) after update"; Flags: nowait postinstall; Check: IsAppUpdateBg
+Filename: "{app}\LlamaMonitor.exe"; Description: "更新后启动 LlamaMonitor"; Flags: nowait postinstall; Check: IsAppUpdateInstall
+Filename: "{app}\LlamaMonitor.exe"; Parameters: "--background"; Description: "更新后启动 LlamaMonitor（后台）"; Flags: nowait postinstall; Check: IsAppUpdateBg
 
 [Code]
 // 说明：本 [Code] 只用 Inno 内置函数（RegQueryStringValue / RegWriteStringValue /
@@ -286,9 +288,9 @@ begin
       Log('Downgrade blocked (silent): installed=' + InstalledVersion + ' > new={#AppVersion}. Aborting.');
     end
     else
-      MsgBox('A newer version of LlamaMonitor (' + InstalledVersion + ') is already installed.' + #13#10 +
-             'Installing an older version (' + '{#AppVersion}' + ') may be incompatible with the newer database schema.' + #13#10#13#10 +
-             'Upgrade (or wait for a newer build) instead, or uninstall the current version first.',
+      MsgBox('已安装更新的 LlamaMonitor 版本（' + InstalledVersion + '）。' + #13#10 +
+             '安装旧版本（' + '{#AppVersion}' + '）可能与新版本的数据库结构不兼容。' + #13#10#13#10 +
+             '请优先使用升级（或等待更新的构建），或先卸载当前版本。',
              mbError, MB_OK);
     Result := False;
     Exit;
@@ -341,9 +343,9 @@ begin
     // WebView2 检测（§60/§61）：缺失只提示不拒绝（应用有默认浏览器回退，
     // 监控核心不受影响）；不静默联网下载。静默安装不弹框（检测非阻塞）。
     if (not WebView2Present) and (not IsSilentInstall) then
-      MsgBox('Microsoft Edge WebView2 Runtime was not detected.' + #13#10 +
-             'The dashboard window may fall back to your default browser;' + #13#10 +
-             'core monitoring is not affected. Most Windows 11 systems already include it.',
+      MsgBox('未检测到 Microsoft Edge WebView2 运行时。' + #13#10 +
+             '仪表盘窗口可能回退到系统默认浏览器；' + #13#10 +
+             '核心监控功能不受影响。大多数 Windows 11 系统已自带该运行时。',
              mbInformation, MB_OK);
   end;
 end;

@@ -178,17 +178,17 @@ def validate_release(release_dir: str | Path, version: str) -> list[str]:
         manifest_bytes = manifest_path.read_bytes()
         ok, key_id, err = verify_manifest_signature(manifest_bytes, sig_path.read_bytes())
         if not ok:
-            failures.append(f"manifest signature verification failed: {err} (key_id={key_id!r})")
+            failures.append(f"manifest 签名校验失败：{err} (key_id={key_id!r})")
             return failures  # 签名不过关：字段校验无意义（未信任内容）
         manifest = json.loads(manifest_bytes.decode("utf-8"))
         # canonical 格式：原始 bytes 必须与规范化序列化一致（构建/签名同一字节序列）
         if canonical_manifest_bytes(manifest) != manifest_bytes:
-            failures.append("manifest is not in canonical form (re-serialization differs)")
+            failures.append("manifest 不是 canonical 格式（重新序列化结果不一致）")
         selected, field_errors = validate_manifest_fields(manifest)
         if field_errors:
-            failures.extend(f"manifest field: {e}" for e in field_errors)
+            failures.extend(f"manifest 字段：{e}" for e in field_errors)
         if selected.get("version") != version:
-            failures.append(f"manifest version mismatch: {selected.get('version')!r} != {version!r}")
+            failures.append(f"manifest 版本不匹配：{selected.get('version')!r} != {version!r}")
         # installer/portable：filename + size + sha256 与实际产物一致
         for section, expected_file in (("installer", setup_path), ("portable", zip_path)):
             entry = selected.get(section)

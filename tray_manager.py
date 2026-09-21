@@ -77,33 +77,35 @@ class TrayManager:
     def _build_menu(self, pystray) -> object:
         st = self._status
         c = self._commands
+        # 状态值由 desktop._tray_status 生成（英文键：Online/Offline/Starting/Disabled/
+        # "N Online"/Unknown）——显示层映射为中文（映射表外原样显示，未知状态不丢信息）
         items = [
-            pystray.MenuItem("Open Dashboard", c["open"], default=True),
+            pystray.MenuItem("打开仪表盘", c["open"], default=True),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem(f"llama.cpp: {st.get('llama', 'Starting')}", None, enabled=False),
-            pystray.MenuItem(f"GPU: {st.get('gpu', 'Unknown')}", None, enabled=False),
-            pystray.MenuItem(f"Today: {st.get('today', '0')} tokens", None, enabled=False),
+            pystray.MenuItem(f"llama.cpp：{_zh_state(st.get('llama', 'Starting'))}", None, enabled=False),
+            pystray.MenuItem(f"GPU：{_zh_state(st.get('gpu', 'Unknown'))}", None, enabled=False),
+            pystray.MenuItem(f"今日：{st.get('today', '0')} tokens", None, enabled=False),
             pystray.Menu.SEPARATOR,
         ]
-        # Phase 13：有可用更新时显示 "Update Available: X"（点击 -> Dashboard 更新页）
+        # Phase 13：有可用更新时显示 "有可用更新: X"（点击 -> Dashboard 更新页）
         update_version = st.get("update_available")
         if update_version:
             items.append(pystray.MenuItem(
-                f"Update Available: {update_version}",
+                f"有可用更新: {update_version}",
                 c.get("open_updates") or c["open"],
             ))
             items.append(pystray.Menu.SEPARATOR)
         items.extend([
-            pystray.MenuItem("Open Data Folder", c["open_data"]),
-            pystray.MenuItem("Open Log Folder", c["open_logs"]),
+            pystray.MenuItem("打开数据文件夹", c["open_data"]),
+            pystray.MenuItem("打开日志文件夹", c["open_logs"]),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem(
-                "Start with Windows",
+                "开机自动启动",
                 c["autostart_toggle"],
                 checked=lambda _item: bool(st.get("autostart_enabled")),
             ),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("Exit", c["exit"]),
+            pystray.MenuItem("退出", c["exit"]),
         ])
         return pystray.Menu(*items)
 
@@ -228,10 +230,32 @@ def _load_icon_image(icon_path: Path):
     return image
 
 
+# 状态值（英文键，由 desktop._tray_status 生成）-> 中文显示。
+# 映射表外的值原样返回（如 "1 Online" 这类动态串），保证未知状态不丢信息。
+_STATE_ZH = {
+    "Online": "在线",
+    "Offline": "离线",
+    "Starting": "启动中",
+    "Unknown": "未知",
+    "Disabled": "已禁用",
+}
+
+
+def _zh_state(value) -> str:
+    """把托盘状态值映射为中文；未匹配的值（如 '2 Online'）做通用替换后返回。"""
+    if value is None:
+        return _STATE_ZH["Unknown"]
+    text = str(value)
+    if text in _STATE_ZH:
+        return _STATE_ZH[text]
+    # 动态串如 "2 Online" -> "2 在线"（保留数量前缀）
+    return text.replace("Online", "在线").replace("Offline", "离线").replace("Unknown", "未知")
+
+
 def _tooltip_for(status: dict) -> str:
     llama = status.get("llama")
     if llama == "Online":
-        return "LlamaMonitor - Online"
+        return "LlamaMonitor - 在线"
     if llama == "Offline":
-        return "LlamaMonitor - llama.cpp Offline"
+        return "LlamaMonitor - llama.cpp 离线"
     return "LlamaMonitor"

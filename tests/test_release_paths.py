@@ -159,7 +159,7 @@ class ValidateReleaseTests(unittest.TestCase):
             data[-1] ^= 1
             manifest_path.write_bytes(bytes(data))
             failures = _validate_with_trusted_key(release, "1.0.0", public)
-            self.assertTrue(any("signature verification failed" in f for f in failures), failures)
+            self.assertTrue(any("签名校验失败" in f for f in failures), failures)
 
     def test_version_mismatch_detected(self):
         with tempfile.TemporaryDirectory() as td:

@@ -65,12 +65,12 @@ class CheckFlowTests(_Base):
         return make_service(fake, db=self.db, updates_dir=self.updates, **kw)
 
     def test_not_configured_no_network(self):
-        """UPDATE_REPOSITORY 为空 -> 'Update service not configured.'，不访问网络。"""
+        """UPDATE_REPOSITORY 为空 -> '更新服务未配置。'，不访问网络。"""
         fake = self._fake()
         svc = make_service(fake, db=self.db, updates_dir=self.updates, repository="")
         status = run(svc.check(manual=True))
         self.assertEqual(status["state"], IDLE)
-        self.assertIn("Update service not configured", status["error"])
+        self.assertIn("更新服务未配置", status["error"])
 
     def test_check_finds_available_update(self):
         fake = self._fake()
@@ -104,12 +104,12 @@ class CheckFlowTests(_Base):
         self.assertEqual(status["state"], UP_TO_DATE)
 
     def test_missing_sig_asset(self):
-        """release 缺 .sig -> 'Update invalid'（missing assets）。"""
+        """release 缺 .sig -> '更新无效'（缺少资产）。"""
         fake = self._fake(omit_sig=True)
         svc = self._svc(fake)
         status = run(svc.check(manual=True))
         self.assertEqual(status["state"], ERROR)
-        self.assertIn("missing", status["error"].lower())
+        self.assertIn("缺少", status["error"])
         self.assertTrue(self.events("update_check_failed"))
 
     def test_missing_manifest_asset(self):
@@ -117,24 +117,24 @@ class CheckFlowTests(_Base):
         svc = self._svc(fake)
         status = run(svc.check(manual=True))
         self.assertEqual(status["state"], ERROR)
-        self.assertIn("missing", status["error"].lower())
+        self.assertIn("缺少", status["error"])
 
     def test_draft_release_rejected(self):
         fake = self._fake(draft=True)
         svc = self._svc(fake)
         status = run(svc.check(manual=True))
         self.assertEqual(status["state"], ERROR)
-        self.assertIn("draft/prerelease", status["error"])
+        self.assertIn("不是正式版", status["error"])
 
     def test_prerelease_release_rejected(self):
         fake = self._fake(prerelease=True)
         svc = self._svc(fake)
         status = run(svc.check(manual=True))
         self.assertEqual(status["state"], ERROR)
-        self.assertIn("draft/prerelease", status["error"])
+        self.assertIn("不是正式版", status["error"])
 
     def test_rate_limit(self):
-        """429 -> 'GitHub API rate limit reached.'。"""
+        """429 -> 速率限制提示。"""
         fake = self._fake()
 
         def rate_limit_handler(request):
@@ -148,10 +148,10 @@ class CheckFlowTests(_Base):
         svc = UpdateServiceForTest(factory, self.db, self.updates, "owner/repo")
         status = run(svc.check(manual=True))
         self.assertEqual(status["state"], ERROR)
-        self.assertIn("rate limit", status["error"])
+        self.assertIn("速率限制", status["error"])
 
     def test_network_error_transient(self):
-        """网络错误 -> 'Unable to check for updates.'，监控主流程不受影响。"""
+        """网络错误 -> 无法检查更新，监控主流程不受影响。"""
         def factory(timeout):
             def boom(request):
                 raise httpx.ConnectError("connection refused")
@@ -160,7 +160,7 @@ class CheckFlowTests(_Base):
         svc = UpdateServiceForTest(factory, self.db, self.updates, "owner/repo")
         status = run(svc.check(manual=True))
         self.assertEqual(status["state"], ERROR)
-        self.assertIn("Unable to check for updates", status["error"])
+        self.assertIn("无法检查更新", status["error"])
 
     def test_etag_304_not_modified(self):
         """§71：带 ETag 的第二次检查 -> 304 -> 保留上次结果（不重复下载/解析）。"""
@@ -243,7 +243,7 @@ class DownloadFlowTests(_Base):
         svc._client_factory = trunc_factory
         status = run(svc.download())
         self.assertEqual(status["state"], ERROR)
-        self.assertIn("size mismatch", status["error"])
+        self.assertIn("大小不匹配", status["error"])
         self.assertIsNone(self._downloaded_file())
         self.assertEqual(list(self.updates.glob("*/*.part")), [], ".part 必须被删除")
         self.assertTrue(self.events("update_verification_failed"))
@@ -266,7 +266,7 @@ class DownloadFlowTests(_Base):
         svc._client_factory = evil_factory
         status = run(svc.download())
         self.assertEqual(status["state"], ERROR)
-        self.assertIn("SHA-256 mismatch", status["error"])
+        self.assertIn("SHA-256 不匹配", status["error"])
         self.assertIsNone(self._downloaded_file())
         self.assertTrue(self.events("update_verification_failed"))
 
@@ -279,7 +279,7 @@ class DownloadFlowTests(_Base):
                                return_value=type("DU", (), {"free": 1024})()):
             status = run(svc.download())
         self.assertEqual(status["state"], ERROR)
-        self.assertIn("Insufficient disk space", status["error"])
+        self.assertIn("磁盘空间不足", status["error"])
         self.assertIsNone(self._downloaded_file())
 
     def test_download_cancel(self):
@@ -320,7 +320,7 @@ class DownloadFlowTests(_Base):
 
         status = asyncio.run(scenario())
         self.assertEqual(status["state"], UPDATE_AVAILABLE)
-        self.assertIn("cancelled", (status["error"] or "").lower())
+        self.assertIn("已取消", status["error"] or "")
         self.assertEqual(list(self.updates.glob("*/*.part")), [], "取消后 .part 必须删除")
 
     def test_download_requires_check_first(self):
@@ -370,7 +370,7 @@ class AuditRegressionTests(_Base):
                             api_base="https://api.github.com")
         status = run(svc.check(manual=True))
         self.assertEqual(status["state"], ERROR)
-        self.assertIn("too large", status["error"])
+        self.assertIn("过大", status["error"])
 
     def test_oversized_manifest_rejected(self):
         """AUDIT-SEC-003：manifest > 1MB -> BAD_RELEASE。"""
@@ -388,7 +388,7 @@ class AuditRegressionTests(_Base):
         svc._client_factory = factory
         status = run(svc.check(manual=True))
         self.assertEqual(status["state"], ERROR)
-        self.assertIn("too large", status["error"])
+        self.assertIn("过大", status["error"])
 
     def test_oversized_sig_rejected(self):
         """AUDIT-SEC-003：.sig > 64KB -> BAD_RELEASE。"""
@@ -406,7 +406,7 @@ class AuditRegressionTests(_Base):
         svc._client_factory = factory
         status = run(svc.check(manual=True))
         self.assertEqual(status["state"], ERROR)
-        self.assertIn("too large", status["error"])
+        self.assertIn("过大", status["error"])
 
     def test_auto_download_task_reference(self):
         """AUDIT-ASYNC-001：auto-download 任务有强引用（防 GC 中途回收），完成后释放。"""

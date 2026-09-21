@@ -136,7 +136,7 @@
   function updateDbPathHint() {
     var v = $("setDbPath").value.trim();
     var hint = $("dbPathHint");
-    if (hint) hint.textContent = v ? "Current: " + v : "Default: " + (lastPaths ? lastPaths.database : "--");
+    if (hint) hint.textContent = v ? "当前：" + v : "默认：" + (lastPaths ? lastPaths.database : "--");
   }
 
   async function loadSettings() {
@@ -444,7 +444,7 @@
       if (data.success) {
         var db = data.health && data.health.database;
         out.className = "inline-result " + (db === "healthy" ? "ok" : "bad");
-        out.textContent = (db === "healthy" ? "Database check passed (healthy)." : "Database check: " + db) +
+        out.textContent = (db === "healthy" ? "数据库检查通过（健康）。" : "数据库检查：" + db) +
           (data.health && data.health.database_detail ? " - " + data.health.database_detail : "");
         ui.toast(out.textContent, db === "healthy" ? "ok" : "err");
       } else {
@@ -517,7 +517,7 @@
       status.style.color = "var(--warning)";
       repairRow.style.display = "";
     } else {
-      status.textContent = a.enabled ? "Enabled" : "Disabled";
+      status.textContent = a.enabled ? "已启用" : "未启用";
       status.style.color = "";
       repairRow.style.display = "none";
     }
@@ -570,7 +570,8 @@
     if (!st) return;
     updateStatus = st;
     $("updCurrentVersion").textContent = st.current_version || "--";
-    $("updInstallMode").textContent = st.installation_mode || "--";
+    var _modeMap = { "installed": "安装版", "portable": "便携版", "development": "开发模式" };
+    $("updInstallMode").textContent = _modeMap[st.installation_mode] || st.installation_mode || "--";
     $("updLastCheck").textContent = st.last_check || "从未";
     $("updLatestVersion").textContent = st.available_version || "--";
     var stEl = $("updStatus");

@@ -46,7 +46,7 @@ def parse_version(text: str) -> tuple[int, int, int]:
     拒绝：v1.2.3 / 1.2 / 1.2.3-beta / abc / 空 / 非 str —— 抛 ValueError。
     """
     if not isinstance(text, str) or not _VERSION_RE.fullmatch(text):
-        raise ValueError(f"invalid version: {text!r} (expected MAJOR.MINOR.PATCH)")
+        raise ValueError(f"无效的版本号：{text!r}（应为 MAJOR.MINOR.PATCH）")
     return tuple(int(p) for p in text.split("."))  # type: ignore[return-value]
 
 
@@ -172,27 +172,27 @@ def verify_manifest_signature(manifest_bytes: bytes, sig_bytes: bytes) -> tuple[
     try:
         sidecar = json.loads(sig_bytes.decode("utf-8"))
     except (ValueError, UnicodeDecodeError):
-        return False, "", "signature file is not valid JSON"
+        return False, "", "签名文件不是有效的 JSON"
     if not isinstance(sidecar, dict):
-        return False, "", "signature file is not a JSON object"
+        return False, "", "签名文件不是 JSON 对象"
 
     algorithm = sidecar.get("algorithm")
     if algorithm != ALGORITHM:
-        return False, "", f"unsupported signature algorithm: {algorithm!r} (only {ALGORITHM} allowed)"
+        return False, "", f"不支持的签名算法：{algorithm!r}（仅支持 {ALGORITHM}）"
 
     key_id = sidecar.get("key_id")
     if not isinstance(key_id, str) or key_id not in _trusted_keys():
-        return False, str(key_id or ""), "Update signature was created with an unknown signing key."
+        return False, str(key_id or ""), "更新签名由未知的签名密钥创建。"
 
     raw_sig = sidecar.get("signature")
     if not isinstance(raw_sig, str):
-        return False, key_id, "signature field missing or not a string"
+        return False, key_id, "签名字段缺失或不是字符串"
     try:
         signature = base64.b64decode(raw_sig, validate=True)
         public_key = _load_public_key(key_id)
         public_key.verify(signature, manifest_bytes)
     except Exception as exc:  # 无效 Base64 / 长度不符 / 签名不匹配都归为验签失败
-        return False, key_id, f"signature verification failed ({type(exc).__name__})"
+        return False, key_id, f"签名校验失败（{type(exc).__name__}）"
     return True, key_id, None
 
 
@@ -219,16 +219,16 @@ def validate_manifest_fields(manifest: dict) -> tuple[dict, list[str]]:
     """
     errors: list[str] = []
     if not isinstance(manifest, dict):
-        return {}, ["manifest is not a JSON object"]
+        return {}, ["manifest 不是 JSON 对象"]
 
     if manifest.get("schema") != MANIFEST_SCHEMA:
-        errors.append(f"schema must be {MANIFEST_SCHEMA}, got {manifest.get('schema')!r}")
+        errors.append(f"schema 应为 {MANIFEST_SCHEMA}，实际为 {manifest.get('schema')!r}")
     if manifest.get("product") != PRODUCT:
-        errors.append(f"product must be {PRODUCT!r}, got {manifest.get('product')!r}")
+        errors.append(f"product 应为 {PRODUCT!r}，实际为 {manifest.get('product')!r}")
     if manifest.get("platform") != PLATFORM:
-        errors.append(f"platform must be {PLATFORM!r}, got {manifest.get('platform')!r}")
+        errors.append(f"platform 应为 {PLATFORM!r}，实际为 {manifest.get('platform')!r}")
     if manifest.get("architecture") != ARCHITECTURE:
-        errors.append(f"architecture must be {ARCHITECTURE!r}, got {manifest.get('architecture')!r}")
+        errors.append(f"architecture 应为 {ARCHITECTURE!r}，实际为 {manifest.get('architecture')!r}")
 
     version = manifest.get("version")
     try:
@@ -243,20 +243,21 @@ def validate_manifest_fields(manifest: dict) -> tuple[dict, list[str]]:
         if entry is None:
             continue  # 该 section 可选（portable-only 构建可缺 installer）
         if not isinstance(entry, dict):
-            errors.append(f"{section} entry must be an object")
+            _sec_zh = "installer（安装程序）" if section == "installer" else "portable（便携版）"
+            errors.append(f"{_sec_zh} 条目必须是对象")
             continue
         out[section] = _validate_artifact(section, entry, version, errors)
     return out, errors
 
 
 def _validate_artifact(section: str, entry: dict, version: str, errors: list[str]) -> dict | None:
-    label = "installer" if section == "installer" else "portable"
+    label = "安装程序" if section == "installer" else "便携版"
     filename = entry.get("filename")
     size = entry.get("size")
     sha = entry.get("sha256")
 
     if not is_safe_basename(filename):
-        errors.append(f"{label}.filename {filename!r} is not a safe basename (no / \\ : ..)")
+        errors.append(f"{label}.filename {filename!r} 不是安全文件名（不能含 / \\ : ..）")
     else:
         expected = (
             expected_installer_filename(version)
@@ -264,12 +265,12 @@ def _validate_artifact(section: str, entry: dict, version: str, errors: list[str
             else expected_portable_filename(version)
         )
         if filename != expected:
-            errors.append(f"{label}.filename {filename!r} != expected {expected!r} (must match version)")
+            errors.append(f"{label}.filename {filename!r} 与预期 {expected!r} 不符（须与版本匹配）")
 
     if not isinstance(size, int) or isinstance(size, bool) or size <= 0:
-        errors.append(f"{label}.size must be a positive integer, got {size!r}")
+        errors.append(f"{label}.size 必须为正整数，实际为 {size!r}")
     if not isinstance(sha, str) or not _SHA_RE.match(sha):
-        errors.append(f"{label}.sha256 must be 64 hex chars, got {sha!r}")
+        errors.append(f"{label}.sha256 必须为 64 位十六进制字符，实际为 {sha!r}")
 
     if any(not ok for ok in (
         is_safe_basename(filename),

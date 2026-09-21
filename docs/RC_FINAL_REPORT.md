@@ -7,7 +7,7 @@
 
 **READY FOR 1.0.0（带 2 项 Accepted Risk，均不阻塞）。**
 
-- 候选版本 **0.16.4**（RC-005 双根因修复版），build 2026-09-21 18:13（clean venv .venv-rc，Python 3.13.14，PyInstaller 6.22.3）。
+- 候选版本 **0.16.5**（0.16.4 基础上全界面中文化 i18n，无逻辑变更），build 2026-09-22（clean venv .venv-rc，Python 3.13.14，PyInstaller 6.22.3）。RC-005 双根因修复版 0.16.4（2026-09-21 18:13）的所有结论继续有效。
 - RC 测试矩阵（items 5-128）：**数字项全部 PASS**（0 个 IN PROGRESS / PENDING / FAIL）；PARTIAL 1（item 38，多次睡眠 ≥3，用户确认保留注记——monitor 侧睡眠鲁棒性已由 item 37/81/34 覆盖，遗留 1.0.0 后系统稳定环境补做）；观察项 1（item 116.1，非缺陷）。无 open BLOCKER / HIGH。详见 §4/§5。
 - **burn-in（2026-09-21 规格修订）**：不再要求真实 48~72h，改为**加速压测 + 4~8h 真实 Windows burn-in** 组合覆盖长期可靠性：
   - 加速器（`tools/runtime_stress_test.py`，假 llama/假 GPU/临时库，真实 collector/DB/HTTP/UI 代码路径）：100000 轮 collector（恒等式 0/0）、100000 GPU 样本（全场景）、60000 HTTP 请求（**1 复用连接**）、UI 生命周期（hide/show 500 + 页面 500 + 主题 100 + resize 200）、lifecycle 故障 570 次、nvidia-smi 子进程 mock 100k + 真实 2h。
@@ -26,6 +26,7 @@
 | 0.16.2 | 2026-09-20 18:13 | RC-003：Inno [Run] 段 `--background` 误入 Filename；签名密钥对轮换（key-2026-09） |
 | 0.16.3 | 2026-09-20 22:16 | RC-004：死系统代理绕过（httpx trust_env 本地直连）；测试基础设施同根因修复 |
 | **0.16.4** | 2026-09-21 18:13 | **RC-005 双根因修复：①evaluate_js UI 线程自死锁（可见性信号移到 daemon worker）②set_on_top 跨线程 GIL 循环等待（产品级 BeginInvoke monkeypatch + _window_op_guarded 纵深防御）；burnin_ops powrprof 修复** |
+| **0.16.5** | 2026-09-22 | **全界面中文化（i18n，无逻辑变更）**：Inno 安装/卸载向导引入官方简体中文消息文件（installer/Languages/ChineseSimplified.isl，Inno 6.5+ [LangOptions] 格式）+ 向导任务/提示/弹窗全中文化；托盘菜单/状态/tooltip（在线→在线、N Online→N 台在线）；更新服务全部错误提示（检查/下载/校验/安装）；manifest 签名与字段校验错误；设置页（当前/默认、数据库检查、自启、安装模式 安装版/便携版/开发模式）；server 测试连接参数错误与 GPU 未配置提示；桌面"仍在托盘运行"通知 |
 
 每版均：clean build → 全量测试（403 OK / 0.16.4 为 410 OK）→ validate_release（Ed25519 key-2026-09 + SHA256 + size + version）→ GitHub prerelease（5 assets）。
 
@@ -54,7 +55,7 @@
 |---|---|---|
 | 0 open BLOCKER | PASS | 0 |
 | 0 open HIGH | PASS | RC-002/RC-004/RC-005 均 FIXED（RC-MED-001 为 MEDIUM → AR-003） |
-| 测试套件 ×10 PASS | PASS | 403 tests ×10（0.16.3）+ **410 tests ×10 连续 10/10 OK（0.16.4，281~290s/轮，无 flaky）** |
+| 测试套件 ×10 PASS | PASS | 403 tests ×10（0.16.3）+ **410 tests ×10 连续 10/10 OK（0.16.4，281~290s/轮，无 flaky）** + 0.16.5 i18n 后全量 410 tests 复跑 OK（断言随文案中文化同步更新，2026-09-22） |
 | 7d 模拟 PASS | PASS | Difference 0/0（1,814,400 GT 基） |
 | 30d 模拟 PASS | PASS | Difference 0/0（7,776,000 GT 基，5917s） |
 | 90d 模拟 PASS | PASS | Difference 0/0（23,328,000 GT 基，18806s） |
@@ -70,12 +71,12 @@
 | 无 subprocess 泄漏 | PASS | item 82/126：mock 100k 全场景吸收（ok 49934/timeout 15003/error 15060/invalid 20003）；真实 nvidia-smi 5s×120min（1373 轮）before 0 → after 0 无残留 |
 | Token spot-check PASS | PASS | 实机推理 delta 63 exact + 09-21 09:04 复测 exact（integer exact）；burn-in 每日复测 |
 | SQLite quick_check PASS | PASS | burn-in 期间每日 ok（含 5MB 生产库 + soak 14MB 库） |
-| Clean install PASS | PASS | 独立环境首装 + 首次启动 baseline |
+| Clean install PASS | PASS | 独立环境首装 + 首次启动 baseline + **0.16.5 实机交互安装复验**：向导全程简体中文（"安装 - LlamaMonitor 版本 0.16.5" 标题 / 附加任务页 / 准备安装 / 正在安装 / 完成 LlamaMonitor 安装向导），安装后 0.16.5 自启、/api/version=0.16.5、server_online=true（2026-09-22） |
 | Upgrade PASS | PASS | 0.16.0→0.16.1→0.16.2→0.16.3 顺序升级（含数据保留） |
 | Uninstall/Reinstall PASS | PASS | 卸载/重删/重删数据/重装均验证 |
 | Update PASS | PASS | 0.16.0→0.16.1 完整 Check/Download/Verify/Install/Graceful + 0.16.3 /APPUPDATE_BG 自启 |
 | Security checks PASS | PASS | loopback-only API、签名验证、篡改 manifest/installer 拒收 |
-| Release validation PASS | PASS | validate_release.py 五版本全 OK（含 0.16.4 "RELEASE VALIDATION OK (version 0.16.4)"，09-21 18:15） |
+| Release validation PASS | PASS | validate_release.py 六版本全 OK（0.16.4 "RELEASE VALIDATION OK (version 0.16.4)" 09-21 18:15；**0.16.5 "RELEASE VALIDATION OK (version 0.16.5)" 09-22 实跑**） |
 
 ## 6. Burn-in 数据完整性（修订规格：加速 + 4h 真实）
 
@@ -106,7 +107,8 @@
 
 ## 8. 交付物
 
-- GitHub releases：v0.16.0 / v0.16.1 / v0.16.2 / v0.16.3 / **v0.16.4**（各 5 assets：installer/zip/manifest/sig/SHA256SUMS；0.16.4 = RC-005 修复版，zip 29816741B / setup 23646008B，SHA256 见 release/SHA256SUMS.txt）。
+- GitHub releases：v0.16.0 / v0.16.1 / v0.16.2 / v0.16.3 / v0.16.4 / **v0.16.5**（各 5 assets：installer/zip/manifest/sig/SHA256SUMS；0.16.4 = RC-005 修复版；0.16.5 = 全界面中文化 i18n，SHA256 见 release/SHA256SUMS.txt）。
+- 中文本地化：installer/Languages/ChineseSimplified.isl（官方简体中文 Inno 消息文件）+ 产品代码内全部用户可见文案中文化（tray_manager / update_service / update_manifest / settings / desktop / static JS）。
 - docs/RC_TEST_REPORT.md（测试矩阵 items 5-128 明细 + 逐 Gate 证据）。
 - docs/RC_FINAL_REPORT.md（本报告）。
 - 签名密钥 key-2026-09（公钥内置 update_keys.py；私钥 %LOCALAPPDATA%\LlamaMonitor\update-keys\）。

@@ -632,11 +632,11 @@ def build_app(
         timeout = payload.get("timeout_seconds", 3)
         # 与 config.py 相同的校验口径
         if not (isinstance(url, str) and (url.startswith("http://") or url.startswith("https://"))):
-            return {"success": False, "error": "Invalid url"}
+            return {"success": False, "error": "无效的 URL"}
         if not (isinstance(path, str) and path.startswith("/")):
-            return {"success": False, "error": "Invalid metrics_path"}
+            return {"success": False, "error": "无效的 metrics_path"}
         if not (isinstance(timeout, (int, float)) and not isinstance(timeout, bool) and 0.5 <= timeout <= 60):
-            return {"success": False, "error": "Invalid timeout_seconds"}
+            return {"success": False, "error": "无效的 timeout_seconds"}
         metrics_url = build_metrics_url(url, path)
         t0 = time.perf_counter()
         try:
@@ -676,7 +676,7 @@ def build_app(
             return {
                 "available": False,
                 "provider": "nvidia-smi",
-                "reason": "gpu collector not configured",
+                "reason": "GPU 采集器未配置",
                 "last_update": None,
                 "detected": [],
                 "gpus": [],

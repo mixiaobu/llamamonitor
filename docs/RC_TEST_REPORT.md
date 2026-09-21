@@ -7,28 +7,28 @@
 
 | 字段 | 值 |
 |---|---|
-| Candidate Version | **0.16.4**（0.16.0 起步 → RC-002 修 0.16.1 → RC-003+密钥轮换 0.16.2 → RC-004 修 0.16.3 → **RC-005 双根因修复 0.16.4**；burn-in 前段 0.16.2 19:05 起，21:07 起修复源码运行，00:41 起 0.16.3 EXE，09-21 18:14 起 0.16.4 EXE） |
-| Build Date | 0.16.0: 2026-09-20 11:46；0.16.1: 2026-09-20 16:48；0.16.2: 2026-09-20 18:13；0.16.3: 2026-09-20 22:16；**0.16.4: 2026-09-21 18:13**（均 clean venv .venv-rc，Python 3.13.14，PyInstaller 6.22.3） |
+| Candidate Version | **0.16.5**（0.16.0 起步 → RC-002 修 0.16.1 → RC-003+密钥轮换 0.16.2 → RC-004 修 0.16.3 → RC-005 双根因修复 0.16.4 → **全界面中文化 i18n 0.16.5**；burn-in 前段 0.16.2 19:05 起，21:07 起修复源码运行，00:41 起 0.16.3 EXE，09-21 18:14 起 0.16.4 EXE） |
+| Build Date | 0.16.0: 2026-09-20 11:46；0.16.1: 2026-09-20 16:48；0.16.2: 2026-09-20 18:13；0.16.3: 2026-09-20 22:16；0.16.4: 2026-09-21 18:13；**0.16.5: 2026-09-22 00:26**（均 clean venv .venv-rc，Python 3.13.14，PyInstaller 6.22.3） |
 | Windows Version | Windows 11 24H2 (Build 26200) |
 | GPU | NVIDIA（双卡：GPU0 4GB / GPU1 32GB，nvidia-smi 可用） |
 | llama.cpp Version | 未在 /metrics 暴露（build/commit 无指标行）；模型见下 |
 | Model | Huihui-Qwen3.8-27B-abliterated-UD-Q4_K_XL.gguf（256K ctx, CUDA0, mmproj, MTP draft-mtp n_max=4, alias qwen3.8-27b-medium） |
 | Test Duration | 修订规格（2026-09-21）：加速压测（100k collector / 100k GPU / 60k HTTP / UI 500 级 / 365d 模拟，items 121-127）+ 4~8h 真实 Windows burn-in（item 128，09-21 11:50 起 4h 序列 + 0.16.4 修复版 18:14 起补跑）；前段真实数据 09-20 19:05 起三段版本 14h+ |
-| Installer Version | **LlamaMonitor-Setup-0.16.4-win-x64.exe**（最新，2026-09-21 18:13 构建） |
+| Installer Version | **LlamaMonitor-Setup-0.16.5-win-x64.exe**（最新，2026-09-22 00:26 构建，简体中文向导） |
 | Database Schema Version | 4 |
 
 ## 版本一致性（item 8）
 
 | 来源 | 值 | 状态 |
 |---|---|---|
-| `--version` | **"LlamaMonitor 0.16.4"（09-21 22:22 实机验证）** | PASS |
-| `/api/version` | 0.16.4（09-21 22:22 实机复核，schema_version 4） | PASS |
-| About 页 | （0.16.0 安装后验证过；各版本同源 version.py，0.16.4 同路径同源码） | PASS |
-| Windows EXE Properties | ProductVersion 0.16.4 / FileVersion 0.16.4.0（09-21 22:22 实机复核） | PASS |
-| Installer 文件名 | LlamaMonitor-Setup-0.16.4-win-x64.exe（2026-09-21 18:13 构建，已实机安装） | PASS |
-| Installed Apps | "LlamaMonitor version 0.16.4" / DisplayVersion 0.16.4（HKCU Uninstall，09-21 22:22 复核） | PASS |
-| Portable 文件名 | LlamaMonitor-0.16.4-win-x64.zip（2026-09-21 18:13 构建） | PASS |
-| release-manifest.json | version 0.16.4（09-21 复核，Ed25519 sig key-2026-09 + validate_release.py "RELEASE VALIDATION OK (version 0.16.4)"） | PASS |
+| `--version` | **"LlamaMonitor 0.16.5"（构建 smoke test 实跑；09-22 实机安装验证）** | PASS |
+| `/api/version` | 0.16.5（09-22 实机复核，server_online=true，schema_version 4） | PASS |
+| About 页 | （0.16.0 安装后验证过；各版本同源 version.py，0.16.5 同路径同源码） | PASS |
+| Windows EXE Properties | ProductVersion 0.16.5 / FileVersion 0.16.5.0（09-22 实机复核） | PASS |
+| Installer 文件名 | LlamaMonitor-Setup-0.16.5-win-x64.exe（2026-09-22 00:26 构建，已实机安装 + 卸载/重装） | PASS |
+| Installed Apps | "LlamaMonitor 版本 0.16.5" / DisplayVersion 0.16.5（HKCU Uninstall，09-22 复核；名称已中文本地化） | PASS |
+| Portable 文件名 | LlamaMonitor-0.16.5-win-x64.zip（2026-09-22 00:26 构建） | PASS |
+| release-manifest.json | version 0.16.5（09-22 复核，Ed25519 sig key-2026-09 + validate_release.py "RELEASE VALIDATION OK (version 0.16.5)"） | PASS |
 
 ## 1. Release Build（items 5-7）
 
@@ -245,7 +245,7 @@
 
 | # | 项 | 状态 | 证据/备注 |
 |---|---|---|---|
-| 115 | pytest ×10 连续全过（async/thread flaky 重点） | PASS | 0.16.2：unittest discover（400 tests，含 RC-002/RC-003 回归）×10 连续 10/10 OK（268~291s，无 flaky；首轮版本 bump 时序 3 个 test_version 差异非 flaky）。**0.16.3：403 tests（含 RC-004 三项 + 死代理修复）×10 连续 10/10 OK（274~280s，2026-09-21 07:49 起，无 flaky）。0.16.4：410 tests（+7 RC-005 回归）×10 连续 10/10 OK（281~290s，2026-09-21 22:30 起，无 flaky）** |
+| 115 | pytest ×10 连续全过（async/thread flaky 重点） | PASS | 0.16.2：unittest discover（400 tests，含 RC-002/RC-003 回归）×10 连续 10/10 OK（268~291s，无 flaky；首轮版本 bump 时序 3 个 test_version 差异非 flaky）。**0.16.3：403 tests（含 RC-004 三项 + 死代理修复）×10 连续 10/10 OK（274~280s，2026-09-21 07:49 起，无 flaky）。0.16.4：410 tests（+7 RC-005 回归）×10 连续 10/10 OK（281~290s，2026-09-21 22:30 起，无 flaky）。0.16.5（i18n 文案中文化、断言同步更新）：全量 410 tests 复跑 OK（285s，2026-09-22）** |
 | 116 | Accelerated Soak：7/30/90 天 FakeClock，无 unrecoverable gap，Observed==Ground Truth | PASS | **7d PASS**（seed=42，1235s 实跑）：Ground Truth 1,814,400/604,800；Observed 1,747,263/582,421；Known Lost 67,137/22,379；**Difference = 0/0（恒等式精确闭合）**；1801 counter resets（online 1013/offline 788）全被检测，2036 离线事件=2036 缺口 1:1，3025 采样缺口（790 possible_loss）；3602 核心 reset 事件。**90d PASS**（seed=1，18806s 实跑）：GT 23,328,000/7,776,000；Observed 22,485,342/7,495,114；Known Lost 842,658/280,886；**Difference 0/0（恒等式精确闭合）**；22454 counter resets（online 12624/offline 9830）；12703 monitor restarts；25693 offline 事件=25693 缺口 1:1；38396 采样缺口（9917 possible loss）；28530 核心 reset 事件。**30d PASS**（seed=7，5917s 重跑）：GT 7,776,000/2,592,000；Observed 7,482,219/2,494,073；Known Lost 293,781/97,927；**Difference 0/0**；7658 resets；8671 offline=8671 缺口 1:1。**7d/30d/90d 三档全部 PASS，observed+known_lost==truth 恒等式在三档均精确闭合**。**观察（非产品缺陷）**：soak 与测试套件/构建并行时会在同一确定性点 0-CPU 卡死（测试工具自身在 CPU 争用下的问题）；单独顺序运行正常。产品 collector 的故障恢复可靠性由 items 18-33/111-112 独立验证 |
 | 117 | Migration Matrix 全过 | PASS | test_migration（v0 legacy→v4 数据完整 / v2→v4 / v3→v4 / fresh / 中断回滚重试）+ test_newer_schema_guard（Pre-Migration Backup 验证、轮换排除、新版 schema 只读守卫）13 tests OK |
 | 116.1 | （观察）安装器升级 MoveFile code 5 | 观察（非产品缺陷，已定位） | 0.16.2→0.16.3 安装过程中多次**中途杀掉安装器**，标准目录残留 `is-*.tmp` + 半解包主 exe（Inno 先解 tmp 再 MoveFile rename）；后续无 `/DIR` 升级命中该脏目录 → 主 exe `MoveFile: in use (5)` 重试后 A/R/I 弹窗（静默下卡住）。**对照实验**：装全新目录（C:\LMtest / LlamaMonitor2）均 exit 0；显式 `/DIR=<标准目录>`（清脏后）exit 0 且 EXE OK。根因 = 半安装脏状态 + 升级复用旧 InstallLocation，非安装器本体缺陷。正常升级路径（item 62：0.16.0→0.16.1→0.16.2 顺序升级）历史 PASS。处置：清目录 + 显式 /DIR 完成 0.16.3 安装，自启值恢复，0.16.3 实机在线。**360 排查（用户线索，2026-09-21 08:40~09:10，结论：基本排除）**：机器装有 360 安全卫士全套（12 个内核驱动含 360FsFlt 文件过滤 minifilter、"主动防御"服务 Running；不注册标准 AV WMI 类所以早期常规检查漏检）。排查结论：(a) 360 隔离区（Roaming\360safe\isolate）无条目、360 安装目录无 Llama 残留 → 排除查杀/隔离；(b) **360 近 3 天全部日志（log/txt/dat）grep "LlamaMonitor" 零命中** → 360 从未记录处理过我们的文件，基本排除其干扰（若 minifilter 拦过，事件通常落 360evtmgrpb.dat/CloudLog）；(c) 干净目录 + monitor 未运行 + 360 全开重装 0.16.3 → exit 0、EXE OK；(d) 原 MoveFile code 5 复现场景全部叠加"半安装脏目录 + Inno 记住 InstallLocation 复用 + （部分场景）monitor 在运行"——**主因仍是半安装脏状态**（杀安装器产生的 is-*.tmp/半解包残留 + MoveFile 窗口内被占），360 降为低嫌疑背景因素。另确认：burn-in monitor 运行时直接覆盖安装触发 Inno AppMutex "LlamaMonitor is currently running" OK/Cancel 弹窗，静默下卡住（升级前应先优雅停 monitor；产品更新流程 /APPUPDATE_BG 已有此步骤）。若要在产品层面加固（升级前先探测并清理残留 is-*.tmp / 半解包文件 + monitor 运行中时升级先自停）列为 1.0.0 打磨 |

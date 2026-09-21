@@ -763,7 +763,7 @@ def main(argv: list[str] | None = None, loaded: LoadedConfig | None = None) -> i
                     return None
                 if not tray_hint_shown["v"] and tray_ref["tray"]:
                     tray_hint_shown["v"] = True
-                    tray_ref["tray"].notify("LlamaMonitor is still running in the system tray.")
+                    tray_ref["tray"].notify("LlamaMonitor 仍在系统托盘中运行。")
                 log.info("[LlamaMonitor] 窗口已关闭 -> 隐藏到托盘（监控继续；Tray->Exit 才真正退出）")
                 return False  # 取消关闭
 

@@ -144,7 +144,7 @@ class ManifestTests(unittest.TestCase):
             # 篡改 manifest 1 字节 -> 验签失败
             ok2, _k, err2 = self._verify_with_mock(um, raw + b" ", sig_bytes, public)
             self.assertFalse(ok2)
-            self.assertIn("signature verification failed", err2)
+            self.assertIn("签名校验失败", err2)
 
     @staticmethod
     def _verify_with_mock(um, raw: bytes, sig_bytes: bytes, public):
@@ -164,7 +164,7 @@ class ManifestTests(unittest.TestCase):
             sig_bytes = write_signature(raw, private, "not-trusted-key", Path(td) / "release-manifest.sig")
             ok, _key_id, err = verify_manifest_signature(raw, sig_bytes)
             self.assertFalse(ok)
-            self.assertIn("unknown signing key", err)
+            self.assertIn("未知的签名密钥", err)
 
 
 if __name__ == "__main__":

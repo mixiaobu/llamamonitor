@@ -335,7 +335,7 @@ class UpdateService:
         """POST /api/update/check：检查 GitHub Release（manual=用户主动点击）。"""
         async with self._lock:
             if self._state in BUSY_STATES:
-                raise UpdateError("Update busy (a check/download/install is already running).",
+                raise UpdateError("更新繁忙（已有检查/下载/安装正在进行）。",
                                   code="UPDATE_BUSY")
             prior_state = self._state
             self._set_state(CHECKING, None)
@@ -359,7 +359,7 @@ class UpdateService:
     async def _check_impl(self, manual: bool, prior_state: str = IDLE) -> None:
         repo = self._repository.strip()
         if not repo or "/" not in repo:
-            self._set_state(IDLE, "Update service not configured.")
+            self._set_state(IDLE, "更新服务未配置。")
             return
 
         headers = {
@@ -389,13 +389,13 @@ class UpdateService:
                         return
 
                     if _is_rate_limited(resp):
-                        raise UpdateError("GitHub API rate limit reached. Try again later.",
+                        raise UpdateError("已达 GitHub API 速率限制，请稍后重试。",
                                           code="RATE_LIMITED", transient=True)
                     if resp.status_code == 404:
-                        raise UpdateError("No release found (repository or release does not exist).",
+                        raise UpdateError("未找到 Release（仓库或 Release 不存在）。",
                                           code="NOT_FOUND")
                     if resp.status_code != 200:
-                        raise UpdateError(f"Unable to check for updates (GitHub API HTTP {resp.status_code}).",
+                        raise UpdateError(f"无法检查更新（GitHub API HTTP {resp.status_code}）。",
                                           code="NETWORK_ERROR", transient=True)
 
                     body_chunks: list[bytes] = []
@@ -403,25 +403,25 @@ class UpdateService:
                     async for chunk in resp.aiter_bytes():
                         total += len(chunk)
                         if total > MAX_RELEASE_JSON_BYTES:
-                            raise UpdateError("Update invalid: release response too large.",
+                            raise UpdateError("更新无效：Release 响应过大。",
                                               code="BAD_RELEASE")
                         body_chunks.append(chunk)
                     release_body = b"".join(body_chunks)
             except httpx.HTTPError as exc:
-                raise UpdateError(f"Unable to check for updates ({type(exc).__name__}).",
+                raise UpdateError(f"无法检查更新（{type(exc).__name__}）。",
                                   code="NETWORK_ERROR", transient=True) from exc
 
             try:
                 release = json.loads(release_body.decode("utf-8"))
             except (ValueError, UnicodeDecodeError) as exc:
-                raise UpdateError("Update invalid: release response is not JSON.",
+                raise UpdateError("更新无效：Release 响应不是 JSON。",
                                   code="BAD_RELEASE") from exc
 
             if not isinstance(release, dict):
-                raise UpdateError("Update invalid: release payload malformed.", code="BAD_RELEASE")
+                raise UpdateError("更新无效：Release 数据格式错误。", code="BAD_RELEASE")
             # §20：draft / prerelease 都不用于 stable channel
             if release.get("draft") or release.get("prerelease"):
-                raise UpdateError("Latest release is not a stable release (draft/prerelease).",
+                raise UpdateError("最新 Release 不是正式版（draft/prerelease）。",
                                   code="UNSTABLE_RELEASE")
 
             assets = {
@@ -433,7 +433,7 @@ class UpdateService:
             sig_asset = assets.get(SIGNATURE_ASSET)
             if not manifest_asset or not sig_asset:
                 raise UpdateError(
-                    "Update invalid: release is missing release-manifest.json or release-manifest.sig.",
+                    "更新无效：Release 缺少 release-manifest.json 或 release-manifest.sig。",
                     code="MISSING_ASSETS",
                 )
 
@@ -448,11 +448,11 @@ class UpdateService:
             if not ok:
                 self._record_event("update_check_failed", "warning",
                                    {"stage": "signature", "key_id": key_id, "error": err})
-                raise UpdateError(err or "Update signature verification failed.", code="BAD_SIGNATURE")
+                raise UpdateError(err or "更新签名校验失败。", code="BAD_SIGNATURE")
             try:
                 manifest = json.loads(manifest_bytes.decode("utf-8"))
             except (ValueError, UnicodeDecodeError) as exc:
-                raise UpdateError("Update invalid: signed manifest is not valid JSON/UTF-8.",
+                raise UpdateError("更新无效：签名 manifest 不是有效的 JSON/UTF-8。",
                                   code="BAD_MANIFEST") from exc
 
             # §22 步骤 5-11：字段验证（product/schema/platform/arch/version/filename/entry）
@@ -460,7 +460,7 @@ class UpdateService:
             if errors:
                 self._record_event("update_check_failed", "warning",
                                    {"stage": "manifest_fields", "errors": errors[:8]})
-                raise UpdateError("Update invalid: " + "; ".join(errors[:4]), code="BAD_MANIFEST")
+                raise UpdateError("更新无效：" + "；".join(errors[:4]), code="BAD_MANIFEST")
 
             version = selected["version"]
             # 交叉核对 GitHub asset 元数据（API 报告的 size 必须与 manifest 一致）
@@ -473,12 +473,12 @@ class UpdateService:
                     self._record_event("update_check_failed", "warning",
                                        {"stage": "asset_lookup", "filename": entry["filename"]})
                     raise UpdateError(
-                        f"Update invalid: release does not contain {entry['filename']}.",
+                        f"更新无效：Release 不包含 {entry['filename']}。",
                         code="MISSING_ASSETS",
                     )
                 if asset.get("size") is not None and int(asset["size"]) != entry["size"]:
                     raise UpdateError(
-                        f"Update invalid: asset size mismatch for {entry['filename']}.",
+                        f"更新无效：{entry['filename']} 的大小不匹配。",
                         code="BAD_MANIFEST",
                     )
 
@@ -579,7 +579,7 @@ class UpdateService:
         try:
             async with client.stream("GET", url, timeout=60.0, follow_redirects=True) as resp:
                 if resp.status_code != 200:
-                    raise UpdateError(f"Unable to check for updates (HTTP {resp.status_code}).",
+                    raise UpdateError(f"无法检查更新（HTTP {resp.status_code}）。",
                                       code="NETWORK_ERROR", transient=True)
                 chunks: list[bytes] = []
                 total = 0
@@ -587,11 +587,11 @@ class UpdateService:
                     total += len(chunk)
                     if total > max_bytes:
                         raise UpdateError(
-                            f"Update invalid: asset too large (>{max_bytes // 1024} KB).",
+                            f"更新无效：资产过大（>{max_bytes // 1024} KB）。",
                             code="BAD_RELEASE")
                     chunks.append(chunk)
         except httpx.HTTPError as exc:
-            raise UpdateError(f"Unable to check for updates ({type(exc).__name__}).",
+            raise UpdateError(f"无法检查更新（{type(exc).__name__}）。",
                               code="NETWORK_ERROR", transient=True) from exc
         return b"".join(chunks)
 
@@ -601,23 +601,24 @@ class UpdateService:
         """POST /api/update/download：流式下载 + 边下载边算 SHA-256 + size 校验。"""
         async with self._lock:
             if self._state in BUSY_STATES:
-                raise UpdateError("Update busy (a check/download/install is already running).",
+                raise UpdateError("更新繁忙（已有检查/下载/安装正在进行）。",
                                   code="UPDATE_BUSY")
             if self._state != UPDATE_AVAILABLE or not self._available:
                 raise UpdateError(
-                    "Download requires a verified update (state=UPDATE_AVAILABLE); run Check first.",
+                    "下载需要已验证的更新（状态=UPDATE_AVAILABLE），请先执行检查。",
                     code="NOT_READY",
                 )
             mode = self._installation_mode()
             if mode == "development":
-                raise UpdateError("Update download is unavailable in development mode.",
+                raise UpdateError("开发模式下无法下载更新。",
                                   code="DEVELOPMENT_MODE")
 
             section = "installer" if mode == "installed" else "portable"
             entry = self._available.get(section)
             if not entry:
+                _sec_zh = "安装程序" if section == "installer" else "便携版"
                 raise UpdateError(
-                    f"Release does not provide a {section} artifact for this installation mode.",
+                    f"该 Release 未提供当前安装模式（{_sec_zh}）对应的产物。",
                     code="MISSING_ASSETS",
                 )
             filename = entry["filename"]
@@ -638,33 +639,33 @@ class UpdateService:
                 # §33：大小上限（不信远程 Content-Length，只作预警；实际写入量同样受限）
                 if expected_size > MAX_UPDATE_SIZE:
                     raise UpdateError(
-                        f"Update too large: {expected_size} bytes exceeds the 2 GiB limit.",
+                        f"更新过大：{expected_size} 字节超过 2 GiB 上限。",
                         code="TOO_LARGE",
                     )
                 # §34：磁盘空间（下载前检查，不下载到一半才失败）
                 try:
                     free = shutil.disk_usage(vdir).free
                 except OSError as exc:
-                    raise UpdateError(f"Unable to check disk space ({type(exc).__name__}).",
+                    raise UpdateError(f"无法检查磁盘空间（{type(exc).__name__}）。",
                                       code="DISK_SPACE") from exc
                 if free < expected_size + DISK_SAFETY_MARGIN_BYTES:
                     raise UpdateError(
-                        "Insufficient disk space for the update "
-                        f"(need {expected_size + DISK_SAFETY_MARGIN_BYTES} bytes, free {free}).",
+                        "磁盘空间不足以更新 "
+                        f"（需要 {expected_size + DISK_SAFETY_MARGIN_BYTES} 字节，剩余 {free}）。",
                         code="INSUFFICIENT_DISK_SPACE",
                     )
                 async with self._client() as client:
                     async with client.stream("GET", url, timeout=60.0,
                                              follow_redirects=True) as resp:
                         if resp.status_code != 200:
-                            raise UpdateError(f"Download failed (HTTP {resp.status_code}).",
+                            raise UpdateError(f"下载失败（HTTP {resp.status_code}）。",
                                               code="DOWNLOAD_ERROR", transient=True)
                         declared = resp.headers.get("Content-Length")
                         if declared is not None:
                             try:
                                 if int(declared) > MAX_UPDATE_SIZE:
                                     raise UpdateError(
-                                        "Update too large: server declares more than 2 GiB.",
+                                        "更新过大：服务器声明超过 2 GiB。",
                                         code="TOO_LARGE",
                                     )
                             except ValueError:
@@ -674,7 +675,7 @@ class UpdateService:
                         with open(part, "wb") as f:
                             async for chunk in resp.aiter_bytes(DOWNLOAD_CHUNK_SIZE):
                                 if self._cancel_event.is_set():
-                                    raise UpdateError("Download cancelled.", code="CANCELLED")
+                                    raise UpdateError("下载已取消。", code="CANCELLED")
                                 if not chunk:
                                     continue
                                 f.write(chunk)
@@ -682,7 +683,7 @@ class UpdateService:
                                 written += len(chunk)
                                 if written > MAX_UPDATE_SIZE:
                                     raise UpdateError(
-                                        "Update too large: downloaded more than 2 GiB.",
+                                        "更新过大：已下载超过 2 GiB。",
                                         code="TOO_LARGE",
                                     )
                                 self._downloaded_bytes = written
@@ -691,14 +692,14 @@ class UpdateService:
                 self._set_state(VERIFYING, None)
                 if written != expected_size:
                     raise UpdateError(
-                        "Update verification failed: size mismatch "
-                        f"(got {written}, expected {expected_size}).",
+                        "更新校验失败：大小不匹配 "
+                        f"（实际 {written}，预期 {expected_size}）。",
                         code="SIZE_MISMATCH",
                     )
                 if hasher.hexdigest().lower() != expected_sha:
                     raise UpdateError(
-                        "Update verification failed: SHA-256 mismatch "
-                        f"(got {hasher.hexdigest()}, expected {expected_sha}).",
+                        "更新校验失败：SHA-256 不匹配 "
+                        f"（实际 {hasher.hexdigest()}，预期 {expected_sha}）。",
                         code="HASH_MISMATCH",
                     )
                 final = vdir / filename
@@ -711,7 +712,7 @@ class UpdateService:
             except UpdateError as exc:
                 self._cleanup_part(part)
                 if exc.code == "CANCELLED":
-                    self._set_state(UPDATE_AVAILABLE, "Download cancelled.")
+                    self._set_state(UPDATE_AVAILABLE, "下载已取消。")
                     self._record_event("update_download_cancelled", "info",
                                        {"filename": filename})
                 else:
@@ -726,11 +727,11 @@ class UpdateService:
                 # 非 busy（原来 .part 要等 24h startup 清理、状态卡在 DOWNLOADING）。
                 self._cleanup_part(part)
                 if self._state == DOWNLOADING:
-                    self._set_state(UPDATE_AVAILABLE, "Download interrupted.")
+                    self._set_state(UPDATE_AVAILABLE, "下载已中断。")
                 raise
             except (httpx.HTTPError, OSError) as exc:
                 self._cleanup_part(part)
-                self._set_state(ERROR, f"Download failed ({type(exc).__name__}).")
+                self._set_state(ERROR, f"下载失败（{type(exc).__name__}）。")
                 self._record_event("update_verification_failed", "warning",
                                    {"filename": filename, "code": "NETWORK",
                                     "message": str(exc)})
@@ -750,7 +751,7 @@ class UpdateService:
     async def cancel(self) -> dict:
         """POST /api/update/cancel：只允许 DOWNLOADING（§40：cancel event，不强杀线程）。"""
         if self._state != DOWNLOADING:
-            raise UpdateError("No active download to cancel.", code="NOT_DOWNLOADING")
+            raise UpdateError("没有可取消的进行中下载。", code="NOT_DOWNLOADING")
         self._cancel_event.set()
         return self.status()
 
@@ -769,42 +770,40 @@ class UpdateService:
         """
         async with self._lock:
             if self._state in BUSY_STATES:
-                raise UpdateError("Update busy (a check/download/install is already running).",
+                raise UpdateError("更新繁忙（已有检查/下载/安装正在进行）。",
                                   code="UPDATE_BUSY")
             if self._state != READY_TO_INSTALL or self._verified_path is None:
                 raise UpdateError(
-                    "Install requires a verified download (state=READY_TO_INSTALL).",
+                    "安装需要已验证的下载（状态=READY_TO_INSTALL）。",
                     code="NOT_READY",
                 )
             mode = self._installation_mode()
             if mode == "development":
-                raise UpdateError("Update installation is unavailable in development mode.",
+                raise UpdateError("开发模式下无法安装更新。",
                                   code="DEVELOPMENT_MODE")
             if mode == "portable":
                 raise UpdateError(
-                    "Portable builds are not self-overwritten. Use 'Open Download Folder' "
-                    "and update manually.",
+                    "便携版不覆盖自身。请使用“打开下载文件夹”手动更新。",
                     code="PORTABLE_MODE",
                 )
             if self._request_exit is None:
                 raise UpdateError(
-                    "Update installation is unavailable (desktop integration missing).",
+                    "无法安装更新（桌面集成缺失）。",
                     code="NOT_READY",
                 )
             if not self._verified_path.is_file():
-                raise UpdateError("Verified installer is missing from disk; download again.",
+                raise UpdateError("已验证的安装程序不在磁盘上，请重新下载。",
                                   code="NOT_READY")
 
             from_version = __version__
             to_version = self._available["version"] if self._available else ""
             if not to_version:
-                raise UpdateError("Verified download has no version metadata.", code="NOT_READY")
+                raise UpdateError("已验证的下载缺少版本信息。", code="NOT_READY")
 
             # §49：数据库本身 corrupt -> 不自动继续（提示用户先处理）
             if self._db is not None and getattr(self._db, "health", None) == "corrupt":
                 raise UpdateError(
-                    "Database health issue detected. Resolve or manually back up data "
-                    "before updating.",
+                    "检测到数据库健康问题。请先处理或手动备份数据，再执行更新。",
                     code="DB_UNHEALTHY",
                 )
 
@@ -817,15 +816,14 @@ class UpdateService:
                 try:
                     actual_sha = await asyncio.to_thread(_file_sha256, self._verified_path)
                 except OSError as exc:
-                    raise UpdateError(f"Verified installer unreadable before launch: {exc}",
+                    raise UpdateError(f"启动前无法读取已验证的安装程序：{exc}",
                                       code="NOT_READY") from exc
                 if actual_sha.lower() != expected_sha.lower():
                     self._record_event("update_install_aborted", "warning",
                                        {"stage": "toctou_rehash",
                                         "expected": expected_sha, "actual": actual_sha})
                     raise UpdateError(
-                        "Update verification failed: installer changed after download "
-                        "(SHA-256 mismatch before launch).",
+                        "更新校验失败：安装程序在下载后被修改（启动前 SHA-256 不匹配）。",
                         code="HASH_MISMATCH",
                     )
 
@@ -837,7 +835,7 @@ class UpdateService:
             )
             if not ok:
                 self._record_event("update_backup_failed", "warning", {"detail": detail})
-                raise UpdateError(f"Pre-update backup failed. ({detail})", code="BACKUP_FAILED")
+                raise UpdateError(f"更新前备份失败。（{detail}）", code="BACKUP_FAILED")
 
             # §62：pending update marker（只用于恢复状态；不含命令/任意路径/URL）
             marker = {
@@ -852,7 +850,7 @@ class UpdateService:
                     json.dumps(marker, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
                 )
             except OSError as exc:
-                raise UpdateError(f"Pre-update backup failed. (cannot write pending marker: {exc})",
+                raise UpdateError(f"更新前备份失败。（无法写入 pending 标记：{exc}）",
                                   code="BACKUP_FAILED") from exc
 
             # §55/§56：启动已验证 Installer（列表参数、无 shell；/SILENT 有安装反馈、
@@ -867,7 +865,7 @@ class UpdateService:
                     creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if _IS_WINDOWS else 0,
                 )
             except OSError as exc:
-                raise UpdateError(f"Failed to launch installer: {exc}", code="INSTALL_LAUNCH") from exc
+                raise UpdateError(f"启动安装程序失败：{exc}", code="INSTALL_LAUNCH") from exc
 
             self._set_state(INSTALLING, None)
             self._record_event("update_install_started", "info",

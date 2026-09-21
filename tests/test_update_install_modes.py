@@ -182,7 +182,7 @@ class InstallFlowTests(_Base):
                 self.fail("应抛出 DB_UNHEALTHY")
             except Exception as exc:
                 self.assertIn("DB_UNHEALTHY", getattr(exc, "code", "") or str(exc))
-                self.assertIn("Database health issue", str(exc))
+                self.assertIn("数据库健康问题", str(exc))
             self.assertEqual(popen.call_count, 0, "corrupt DB 时绝不能启动 Installer")
 
     def test_install_backup_failure_no_installer_launch(self):
@@ -221,7 +221,7 @@ class ToctouRegressionTests(_Base):
                 self.fail("应抛出 HASH_MISMATCH")
             except Exception as exc:
                 self.assertIn("HASH_MISMATCH", getattr(exc, "code", "") or str(exc))
-                self.assertIn("changed after download", str(exc))
+                self.assertIn("下载后被修改", str(exc))
             self.assertEqual(popen.call_count, 0, "复验失败绝不能启动 Installer")
         self.assertFalse((self.updates / PENDING_MARKER_NAME).exists(),
                          "复验失败时不写 pending marker（在 Popen 前拦截）")
@@ -284,7 +284,7 @@ class InstallModeTests(_Base):
             self.fail("应抛出 PORTABLE_MODE")
         except Exception as exc:
             self.assertIn("PORTABLE_MODE", getattr(exc, "code", "") or str(exc))
-            self.assertIn("not self-overwritten", str(exc))
+            self.assertIn("不覆盖自身", str(exc))
 
     def test_development_check_allowed_download_install_rejected(self):
         """§52：development 模式 Check 可用，Download/Install 被禁用。"""
@@ -308,7 +308,7 @@ class InstallModeTests(_Base):
         svc = make_service(fake, db=self.db, updates_dir=self.updates, mode="installed")
         status = run(svc.check(manual=True))
         self.assertEqual(status["state"], "ERROR")
-        self.assertIn("does not contain", status["error"])
+        self.assertIn("不包含", status["error"])
 
 
 class PendingUpdateDetectionTests(_Base):

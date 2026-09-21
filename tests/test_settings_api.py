@@ -305,7 +305,7 @@ class ConfigApiTests(unittest.TestCase):
             })
             data = r.json()
             self.assertFalse(data["success"])
-            self.assertIn("url", data["error"])
+            self.assertIn("无效的 URL", data["error"])
         finally:
             client.__exit__(None, None, None)
 
