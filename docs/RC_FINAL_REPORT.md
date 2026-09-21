@@ -63,14 +63,16 @@
 | Security checks PASS | PASS | loopback-only API、签名验证、篡改 manifest/installer 拒收 |
 | Release validation PASS | PASS | validate_release.py 四版本全 OK |
 
-## 6. Burn-in 恒等式（收尾值）
+## 6. Burn-in 数据完整性（收尾值）
 
-> 收尾采样（2026-09-23 ~19:00）：
+> burn-in 自 2026-09-20 19:05 起，期间 llama-server 持续真实推理（生产负载），总 token 单调增长。完整性判定不依赖"起点 vs 终点"（期间有 3 次 monitor/llama 重启），而基于三层核对：
 
-- baseline total（19:05）：79,623,454
-- 收尾 total：`__FILL__`
-- burn-in 期间增量 = 真实推理消耗（llama /metrics delta 逐段核对，无重复/无负值）
-- data_gaps：46（含 2× 系统睡眠、1× 崩溃重启、monitor/llama 重启测试，全部 reason 正确、token_recoverable 标记正确）
+1. **daily 行无负值/无重复**：6 行 daily_usage（09-15~09-21）SUM 单调递增，negative_rows=0（已验证 09-21 09:15）
+2. **llama /metrics ↔ monitor 逐段精确核对**（item 109 每日复测）：09-21 09:04 spot-check llama prompt=88,660/output=6,724 与 monitor today prompt/output **integer exact 一致**；此前 09-20 推理 delta 63 exact
+3. **SQLite 完整性**：quick_check ok + WAL journal 稳定（burn-in 期间多次验证）
+4. **缺口全部解释**：data_gaps 47 条，reason 全部正确（server_offline/monitor_restart/system_pause_or_sleep），token_recoverable 标记正确，含 09-21 08:48~09:05 安装器排查 monitor 重启 348s（recoverable=1 无丢失）
+
+> 收尾采样（2026-09-23 ~19:00）：收尾 total `__FILL__`（起点 19:05 时 79.6M 量级，00:41 参考点 79,623,517）；收尾时重跑上述 1-4 并记录 RSS/Handles/Threads 72h 终值。
 
 ## 7. 遗留（1.0.0 打磨，不阻塞）
 
