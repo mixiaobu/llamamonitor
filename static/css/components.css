@@ -13,7 +13,7 @@
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-large);
   box-shadow: var(--shadow-card);
-  padding: var(--spacing-lg) var(--spacing-xl);
+  padding: var(--spacing-md) var(--spacing-lg);
   min-width: 0;
   transition: background-color var(--transition-normal), border-color var(--transition-normal);
 }
@@ -30,8 +30,8 @@
   justify-content: space-between;
   gap: var(--spacing-md);
   flex-wrap: wrap;
-  margin: 0 0 var(--spacing-md);
-  font-size: var(--font-size-body);
+  margin: 0 0 var(--spacing-lg);
+  font-size: var(--font-size-subtitle);
   font-weight: var(--font-weight-semibold);
   color: var(--text-primary);
 }
@@ -240,6 +240,17 @@
   gap: 5px;
   min-width: 0;
 }
+
+/* 输入框宽度工具类（避免 HTML 内联 style，保持 4px 栅格）。
+   显式宽度类优先于下方 .setting-row 的 180px 默认宽度。 */
+.input.w-s { width: 100px; }
+.input.w-m { width: 160px; }
+.input.w-l { width: 240px; }
+.input.w-xl { width: 320px; }
+@media (max-width: 900px) {
+  .input.w-l,
+  .input.w-xl { width: 100%; }
+}
 .input-label {
   font-size: var(--font-size-caption);
   color: var(--text-secondary);
@@ -418,7 +429,7 @@
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  font-size: var(--font-size-body);
+  font-size: var(--font-size-caption);
   font-weight: var(--font-weight-regular);
   color: var(--text-primary);
 }
@@ -719,7 +730,8 @@
   gap: var(--spacing-md);
   flex: none;
 }
-.setting-row .setting-control .input,
+/* 默认 180px；带显式宽度工具类（.w-s/.w-m/.w-l/.w-xl）的输入框不被覆盖 */
+.setting-row .setting-control .input:not(.w-s):not(.w-m):not(.w-l):not(.w-xl),
 .setting-row .setting-control .select {
   width: 180px;
 }

@@ -37,6 +37,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  color: var(--accent);
 }
 .nav-brand .brand-icon svg {
   width: 26px;
