@@ -1,16 +1,19 @@
-"""Real burn-in ops orchestrator (Phase 16 spec H/I).
+r"""Real burn-in ops orchestrator (Phase 16 spec H/I).
 
 按修订后规格 H 在真实环境（真实 llama-server + 真实 LlamaMonitor 0.16.3）
-执行运维操作序列，并在 T=1h/2h/4h 打 checkpoint（spec I）：
+执行运维操作序列，并在 T=1h/2h/4h 打 checkpoint（spec I）。
+实际时间表（main() steps）：
 
   T+20s   monitor restart #1        T+1h40m llama restart #3
-  T+40m   monitor restart #2        T+2h05m backup (POST /api/data/backup)
-  T+1h00  llama restart #1          T+2h10m CSV export (/api/data/export/daily.csv)
-  T+1h20m llama restart #2          T+2h30m GPU load change (completion via llama)
-                                    T+2h45m Settings view (config API)
-  T+1h40m tray hide/show x20
-  T+2h20m sleep #1 (~120s)  T+2h25m sleep #2 (~120s)
-  T+4h    final checkpoint, 结束（满足 H 最小 4h）
+  T+40m   monitor restart #2        T+1h43m tray hide/show x20
+  T+1h00  llama restart #1          T+2h00m backup (POST /api/data/backup)
+  T+1h20m llama restart #2          T+2h05m CSV export (/api/data/export/daily.csv)
+                                    T+2h12m sleep #1 (~120s)
+                                    T+2h22m sleep #2 (~120s)
+                                    T+2h25m GPU load change (completion via llama)
+                                    T+2h30m Settings view (config API)
+  T=1h/2h/4h checkpoint（spec I 全指标）
+  T+4h    结束（满足 H 最小 4h）
 
 每步记录到 %TEMP%\lm_ops_log.txt（时间戳 + 结果），便于报告引用。
 """

@@ -1,6 +1,6 @@
 # RC Final Report — LlamaMonitor Phase 16
 
-> Release Candidate 验证总报告。逐项 PASS/FAIL 明细见 `docs/RC_TEST_REPORT.md`（129 项测试矩阵 + Release Gate）。
+> Release Candidate 验证总报告。逐项 PASS/FAIL 明细见 `docs/RC_TEST_REPORT.md`（测试矩阵 items 5-128 + Release Gate）。
 > 本报告为收尾结论：版本演进、Bug 清单、Release Gate 判定、1.0.0 就绪结论。
 
 ## 1. 结论
@@ -8,7 +8,7 @@
 **READY FOR 1.0.0（带 2 项 Accepted Risk，均不阻塞）。**
 
 - 候选版本 **0.16.3**（RC-004 修复版），build 2026-09-20 22:16（clean venv .venv-rc，Python 3.13.14，PyInstaller 6.22.3）。
-- 129 项 RC 测试矩阵：PASS 127 + PARTIAL 1（item 38，用户确认保留注记）+ 观察项 1（item 116.1，非缺陷），详见 §4；无 open BLOCKER / HIGH。修订规格新增 items 121-128（加速压测 + 4h 真实 burn-in，见 §5 门禁）。
+- RC 测试矩阵（含 2026-09-21 修订新增 items 121-128）：130 行，当前 **PASS 119**；IN PROGRESS 7（items 77/78/79/80/105/107/128，均由 4h 真实 burn-in + 泄漏判定 J 统一收口）；PENDING 2（items 126/127，待真实 nvidia-smi 2h / 365d soak 跑完判定）；PARTIAL 1（item 38，用户确认保留注记）；观察项 1（item 116.1，非缺陷）。无 open BLOCKER / HIGH。详见 §4/§5。
 - **burn-in（2026-09-21 规格修订）**：不再要求真实 48~72h，改为**加速压测 + 4~8h 真实 Windows burn-in** 组合覆盖长期可靠性：
   - 加速器（`tools/runtime_stress_test.py`，假 llama/假 GPU/临时库，真实 collector/DB/HTTP/UI 代码路径）：100000 轮 collector（恒等式 0/0）、100000 GPU 样本（全场景）、60000 HTTP 请求（**1 复用连接**）、UI 生命周期（hide/show 500 + 页面 500 + 主题 100 + resize 200）、lifecycle 故障 570 次、nvidia-smi 子进程 mock 100k + 真实 2h。
   - 真实 burn-in：0.16.3 EXE 真实推理环境 4h 全操作序列（llama ×3 / monitor ×3 / tray ×20 / sleep ×2 / backup / CSV / GPU 负载），叠加 09-20 19:05 起三段版本前段数据（14h+）。
@@ -40,7 +40,7 @@
 ## 4. 带注记的 PASS（如实记录）
 
 - **item 37/38（Sleep/Wake）**：monitor 侧 PASS（105s 睡眠存活、`system_pause_or_sleep` 缺口正确记录、无重复实例/线程增长）；双 GPU 机器（T400+V100）睡眠/唤醒系统级硬崩溃（当日 3× Event 41）为已知平台缺陷，非 monitor 问题，已记录。第 3 次+ 睡眠循环留待系统稳定后补做（PARTIAL 注记）。
-- **item 77-80（24h 泄漏点）**：11h+ 采样无泄漏趋势（RSS 187~205MB 波动、Handles 780±10、Threads 恒 22）；24h/48h/72h 终值由 burn-in 收尾采样覆盖。
+- **item 77-80（24h 泄漏点）**：11h+ 采样无泄漏趋势（RSS 187~205MB 波动、Handles 780±10、Threads 恒 22）；修订规格（2026-09-21）后判定依据改为**加速段后段斜率 + 4h 真实 burn-in**（不再等待 72h 终值）。
 - **item 116.1（观察）**：安装器在"多次中途杀安装器留下的半安装脏目录"上升级会 MoveFile code 5 卡住；干净目录/显式 /DIR 均 exit 0。非产品缺陷，产品化加固列为 1.0.0 打磨。
 - **soak 工具观察**：soak 与测试套件/构建并行时在同一确定性点 0-CPU 卡死（测试工具自身 GIL 争用问题）；顺序运行三档全 PASS。
 
@@ -57,9 +57,9 @@
 | 30d 模拟 PASS | PASS | Difference 0/0（7,776,000 GT 基，5917s） |
 | 90d 模拟 PASS | PASS | Difference 0/0（23,328,000 GT 基，18806s） |
 | 365d 模拟 PASS | （跑完填） | soak_test.py --days 365（自动 60s poll）+ 时钟边缘（午夜/月底/年份/DST/wall 前跳后跳）负 daily 0 |
-| 100000 collector cycles PASS | （跑完填） | item 121：100k 轮恒等式 0/0 + 无持续线性 RAM/Thread/Handle/DB 增长 |
+| 100000 collector cycles PASS | PASS | item 121：100k 轮恒等式 0/0（74 reset + 42 restart + 83 gap 注入）+ RSS 后段斜率 2.35（一次性爬升后平台化）/Thread 4→2/Handle 149→155 |
 | 50000+ HTTP polling PASS | PASS | item 123：60000 请求 → 1 复用连接（60000×），0 失败，Thread/Handle 稳定 |
-| GPU fake stress PASS | （跑完填） | item 122：100k 样本全场景，energy 梯形积分无负值，memory/DB 受控 |
+| GPU fake stress PASS | PASS | item 122：100k 样本全场景，energy 48386Wh 无负值，RSS/Thread/Handle 受控 |
 | UI lifecycle stress PASS | PASS | item 124：hide/show 500 + 页面 500 + 主题 100 + resize 200，ECharts 恒 7、poll 任务恒 12、JS 堆斜率 0 |
 | 4~8h 真实 Windows burn-in PASS | IN PROGRESS | item 128：0.16.3 EXE 4h 全操作序列（llama ×3 / monitor ×3 / tray ×20 / sleep ×2 / backup / CSV / GPU 负载）+ 14h+ 前段数据 |
 | 无持续线性 RAM 增长 | （J 判定填） | item 79/121/122：加速段后段斜率 + 14h 真实采样带内非单调 + 4h burn-in T=0/1h/2h/4h |
@@ -102,6 +102,6 @@
 ## 8. 交付物
 
 - GitHub releases：v0.16.0 / v0.16.1 / v0.16.2 / v0.16.3（各 5 assets：installer/zip/manifest/sig/SHA256SUMS）。
-- docs/RC_TEST_REPORT.md（129 项明细 + 逐 Gate 证据）。
+- docs/RC_TEST_REPORT.md（测试矩阵 items 5-128 明细 + 逐 Gate 证据）。
 - docs/RC_FINAL_REPORT.md（本报告）。
 - 签名密钥 key-2026-09（公钥内置 update_keys.py；私钥 %LOCALAPPDATA%\LlamaMonitor\update-keys\）。

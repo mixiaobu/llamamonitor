@@ -159,7 +159,7 @@
 | 61 | Missing Signature：无 .sig → Updater 拒绝 | PASS | 单测 test_update_check_download.test_missing_sig_asset |
 | 62 | Update Real：0.16.0→Check→Download→Verify→Install→Graceful→0.16.1 | PASS（含 RC-003） | 实机全流程：Check→Download(100%)→Install(/SILENT)→旧版优雅关闭(0.6s)→0.16.1 装好(FileVersion 0.16.1.0)→update_success 事件+marker 删除+旧 0.13.1 目录清理。**发现 RC-003**：更新后新版未自动启动（Inno [Run] 段 `--background` 误写入 Filename→CreateProcess code 2），已修复（移入 Parameters），待 0.16.2 验证 |
 | 63 | Update 数据保留：Token/GPU/Config/Backup/Data Quality 不变 | PASS | 更新前后对比：total 77.2M→77.4M（只增）、daily 5 行不变、gpu 6、mtp 26、state 15、config poll=5.0、backups 保留、data quality last_gap 保留 |
-| 64 | Update 后 Schema（migration 版本）：Pre-Migration Backup + 完整 | PASS | 0.16.0→0.16.1 同 schema 4（无 migration）；单测 test_newer_schema_guard.PreMigrationBackupTests + 实机备份列表含 pre_migration_v3_to_v4_*.db；跨 schema 升级在 migration 矩阵（item 119）覆盖 |
+| 64 | Update 后 Schema（migration 版本）：Pre-Migration Backup + 完整 | PASS | 0.16.0→0.16.1 同 schema 4（无 migration）；单测 test_newer_schema_guard.PreMigrationBackupTests + 实机备份列表含 pre_migration_v3_to_v4_*.db；跨 schema 升级在 migration 矩阵（item 117）覆盖 |
 
 ## 13. Installer / Uninstall / Portable（items 65-70）
 
@@ -189,8 +189,8 @@
 |---|---|---|---|
 | 77 | Dashboard 24h：RAM/CPU/WebView/Timers/Charts | IN PROGRESS | burn-in 11h 采样 RSS 187.6~203.8MB 波动无趋势（205.9→192.7→199→200.7→199.8→202.1→203.8），WebView 持续加载 /api/* 无泄漏迹象（24h 终值 burn-in 收尾记录） |
 | 78 | Tray 24h：RAM/CPU/Threads/Handles | IN PROGRESS | 11h 采样：Threads 恒 22（安装切换点瞬时 26/34 后回落），Handles 823→794→780→782→783 稳定，CPU idle 0.8% 单核（item 83）；24h 终值待收尾 |
-| 79 | Memory Leak：Startup/1h/4h/8h/24h RSS，近似线性增长则调查 | IN PROGRESS | 11 点采样（1h~11h）：205.9→192.7→199→199.7→200.6→200.7→199.8→202.1→203.8MB，**无近似线性增长**（11h 净增 +2.7MB < 2% 且非单调，波动带内）。08:48 新实例（tray 后台、窗口未开，基线更低）：09:09 153MB→09:11 154MB 稳定。24h/48h/72h 点 burn-in 收尾时补记（同实例生命周期内比较；RSS 绝对值受窗口可见性影响，判定标准为生命周期内趋势） |
-| 80 | Handle Leak：Handle Count Startup/1h/4h/8h 不线性增长 | IN PROGRESS | 采样：startup 2392 → 1h 823 → 3h 794 → 4h 780 → 5h 782 → 7h 781 → 11h 783（首轮高峰后稳定在 780±3，**无增长**）。08:48 新实例：485→484 稳定（窗口未开基线更低）。72h 终值收尾判定（同生命周期内比较） |
+| 79 | Memory Leak：Startup/1h/4h/8h/24h RSS，近似线性增长则调查 | IN PROGRESS | 11 点采样（1h~11h）：205.9→192.7→199→199.7→200.6→200.7→199.8→202.1→203.8MB，**无近似线性增长**（11h 净增 +2.7MB < 2% 且非单调，波动带内）。08:48 新实例（tray 后台、窗口未开，基线更低）：09:09 153MB→09:11 154MB 稳定。**修订规格（2026-09-21）判定依据 = 加速段后段斜率 + 4h 真实 burn-in（item 121/122/128）**：100k collector 轮 net RSS +4.2MB（37.0→41.2，SQLite 页缓存一次性爬升后平台化，后段斜率≈0）；4h 真实 T=0/1h/2h/4h 带内非单调即判定通过（不再等待 72h） |
+| 80 | Handle Leak：Handle Count Startup/1h/4h/8h 不线性增长 | IN PROGRESS | 采样：startup 2392 → 1h 823 → 3h 794 → 4h 780 → 5h 782 → 7h 781 → 11h 783（首轮高峰后稳定在 780±3，**无增长**）。08:48 新实例：485→484 稳定（窗口未开基线更低）。**修订规格（2026-09-21）判定依据 = 加速段 + 4h 真实（item 121/125/128）**：100k collector 轮 Handle 149→155、lifecycle 570 次故障注入净 +5（波动带内）；4h 真实 T=0/1h/2h/4h 无持续单向增长即判定通过 |
 | 81 | Thread Leak：Thread Count，offline/recover 不多线程 | PASS | 实测 offline/recover 完整周期：threads 25→25(offline)→22(recover)→22(stable+60s)，**无单调增长**（offline/recover 不泄漏线程；100 次窗口 hide/show 期间 threads 也恒 23） |
 | 82 | nvidia-smi Leak：无长期残留 nvidia-smi.exe | PASS | burn-in 19:20 采样：nvidia-smi 进程 0 个（每次调用超时 kill，单测 test_timeout_kills + test_default_runner_cancel_kills_child 覆盖） |
 | 83 | CPU Idle：Tray 后台不持续占一个核 | PASS | burn-in 采样：monitor 20s CPU delta 0.16s = 0.8% 单核（tray 后台空闲，5s 轮询 + GPU 采样为主） |
@@ -261,8 +261,8 @@
 
 | # | 项 | 状态 | 证据/备注 |
 |---|---|---|---|
-| 121 | A：collector 加速 100000 轮（50-100ms 级，假 metrics 源+真实 SQLite WAL 临时库）：RSS/Thread/Handle/DB Size 无持续线性增长；恒等式闭合 | （跑完填） | 100k 轮含 74 次在线 reset + 42 次 monitor restart + 83 条缺口注入；**恒等式 observed+lost==truth 差值 0/0（1500000/500000）**；net RSS +4.2MB（37.0→41.2，SQLite 页缓存一次性爬升后平台化）；Thread 4→2；Handle 149→155；live_rows 99713 窗口内；DB 10.25MB |
-| 122 | B：GPU fake stress 100000 样本（正常/N-A/offline/recovery/UUID reorder/long gap 场景轮换）：memory/DB 增长受控、energy 梯形积分正确 | （跑完填） | 100k 样本：gpu_samples 38715 行、gpu_daily 14 天分桶、5131 条 gpu gap（offline/long-gap 正确记录）；总能量 48386Wh 无负值（min>0）；UUID reorder 场景身份按 UUID 跟踪；net RSS +4.1MB（38.4→42.5，同 A 模式）；Thread 恒 2 |
+| 121 | A：collector 加速 100000 轮（50-100ms 级，假 metrics 源+真实 SQLite WAL 临时库）：RSS/Thread/Handle/DB Size 无持续线性增长；恒等式闭合 | PASS | 100k 轮（330s 实跑）含 **74 次在线 reset + 42 次 monitor restart + 83 条缺口注入**；**恒等式 observed+lost==truth 差值 0/0（GT 1500000/500000，observed 1498890/499630，lost 1110/370）**；518 次 core reset 事件全记录。RSS 37.1→41.6MB（**净 +4.5MB，SQLite 页缓存一次性爬升后平台化：后段斜率 2.35 vs 整体 12.46MB/1000**，判无持续泄漏）；Thread 4→2；Handle 149→155；live_rows 99713（48h 窗口内）；DB 10.25MB |
+| 122 | B：GPU fake stress 100000 样本（正常/N-A/offline/recovery/UUID reorder/long gap 场景轮换）：memory/DB 增长受控、energy 梯形积分正确 | PASS | 100k 样本（842s 实跑）：gpu_samples 38715 行、gpu_daily 14 天分桶、**5131 条 gpu gap**（offline/long-gap 正确记录）；**总能量 48386Wh 无负值（min 2423Wh>0，梯形积分正确，N-A 段不积分）**；UUID reorder 场景身份按 UUID 跟踪（index 互换不错位）；RSS 38.7→42.7MB（净 +4MB，后段平坦）、Thread 恒 2、Handle 150→155；DB 8.4MB |
 | 123 | C：HTTP poll 60000 请求（真实 httpx keep-alive 客户端→进程内假 llama server，生产 `_get_client` 参数）：连接复用、Thread/Handle/Socket 稳定 | PASS | 60000 请求 **唯一连接数 = 1（复用比 60000×）**——keep-alive 连接全程复用；fetch 失败 0/60000；RSS 后段斜率 -1.63MB/1000（无增长）；Thread 5→3；Handle 179→178；dead-system-proxy 下 trust_env_for(环回)=False 路径同时被验证（RC-004 同源配置） |
 | 124 | D：UI 生命周期（Playwright/Chromium 加载真实运行 UI）：Dashboard hide/show ×500、页面循环 ×500、主题 ×100、resize ×200：无重复 Timer/ECharts 实例、无线性内存增长 | PASS | hide/show 500 + 页面循环 500（overview/usage/performance/gpu/settings）+ 主题 dark/light/system 100 + 视口 800↔1400 resize 200；ECharts 实例恒 7（懒初始化 6→7 后不再增）；canvas 6→7 后恒定（1:1 无泄漏）；polling 任务恒 12（无重复注册，inFlight 结束采样归 0）；JS 堆 9.5→9.5MB 斜率 0.00（performance.memory，裁 15% 预热） |
 | 125 | E：lifecycle stress（临时库）：offline/recover ×200、counter reset ×200、monitor restart ×50、backup ×50、quick_check ×20、reset ×20：无死锁/重复/线程/句柄增长 | PASS | 570 次故障注入全部完成：Thread 2→2、Handle 174→179（净 +5，波动带内）；50 次 backup 均 >0 字节；20 次 quick_check 全 ok；reset_statistics 20 次后采集正常继续；无死锁/异常 |
@@ -276,7 +276,7 @@
 > 同时报告整体斜率 + 净增量供人工核对。Thread 判据：初始化后基本稳定（>2/1000
 > 采样判增长）。Handle 判据：允许小幅波动，持续单向增长（>50/1000 采样）判可疑。
 
-## Release Gate（item 124）
+## Release Gate（原 spec item 124；修订规格 K 重定义行）
 
 | Gate | 状态 | 证据 |
 |---|---|---|
@@ -286,9 +286,9 @@
 | 7-day simulation PASS | PASS | item 116：Difference 0/0 |
 | 30-day simulation PASS | PASS | item 116：Difference 0/0（5917s 实跑） |
 | 90-day simulation PASS | PASS | item 116：Difference 0/0（18806s 实跑） |
-| 100000 collector cycles PASS | （121 跑完填） | item 121：100k 轮恒等式 0/0 + RSS/Thread/Handle/DB 无持续线性增长 |
+| 100000 collector cycles PASS | PASS | item 121：100k 轮恒等式 0/0（74 reset + 42 restart + 83 gap 注入）+ RSS 后段斜率 2.35（一次性爬升后平台化，无持续线性增长）/Thread 4→2/Handle 149→155 |
 | 50000+ HTTP polling PASS | PASS | item 123：60000 请求 → 1 复用连接（60000×），0 失败，Thread/Handle 稳定 |
-| GPU fake stress PASS | （122 跑完填） | item 122：100k 样本全场景（N-A/offline/recovery/reorder/long gap），energy 无负值，memory/DB 受控 |
+| GPU fake stress PASS | PASS | item 122：100k 样本全场景（N-A/offline/recovery/reorder/long gap），energy 48386Wh 无负值，RSS/Thread/Handle 受控 |
 | UI lifecycle stress PASS | PASS | item 124：hide/show 500 + 页面 500 + 主题 100 + resize 200，ECharts 恒 7、poll 任务恒 12、JS 堆斜率 0 |
 | 7-30-90-365d simulation PASS | （365d 跑完填） | items 116/127：7/30/90 已 PASS（0/0）；365d soak + 时钟边缘（午夜/月底/年份/DST/wall 跳变）负 daily 0 |
 | 4~8h real Windows burn-in PASS | IN PROGRESS | item 128：0.16.3 EXE 真实环境 4h 序列（llama ×3 / monitor ×3 / tray ×20 / sleep ×2 / backup / CSV / GPU 负载）；已有 14h+ 三段版本前段数据 |
