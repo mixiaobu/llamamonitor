@@ -180,7 +180,7 @@
 | 72 | nvidia-smi Error（timeout）：不卡住 app | PASS | 单测 test_timeout_kills（3s 超时 kill 子进程）+ test_runner_failure_and_recovery（失败只置 available=false）+ test_runner_exception + test_default_runner_cancel_kills_child（cancel 时 kill 孤儿） |
 | 73 | Large Context：高上下文 n_tokens_max 显示不溢出/截断/误命名 | PASS | 单测 test_gpu_api.test_runtime_shape_and_capabilities（16384 正确回显）；Node 实跑 formatters：131072 -> "131.07K" 无溢出/误命名；API 字段名 n_tokens_max 与 metrics 标签一致 |
 | 74 | 大 Token 总量（>1B）：UI 1.23B，Tooltip 1,234,567,890 | PASS（含小瑕疵） | Node 实跑：formatTokenCount(1234567890)="1.23B"，formatTokenCountFull="1,234,567,890"，8324129="8.32M"，null="--" 全对。瑕疵：999,999,999 -> "1000.00M"（边界 [999.5M,1B) 显示 1000.00M 非 1.00B），纯显示问题记 Accepted Risk |
-| 75 | 超大 Daily History（365/1000 天）：正常，API 响应合理 | PASS | 实测：365 天 DB 36KB，1000 天 DB 68KB；summary/daily 查询均 <2ms（见 item 76）。soak 90 天模拟数据实机采集运行中（pwsh-6），完成后回填 |
+| 75 | 超大 Daily History（365/1000 天）：正常，API 响应合理 | PASS | 实测：365 天 DB 36KB，1000 天 DB 68KB；summary/daily 查询均 <2ms（见 item 76）。**回填**：soak 90d 模拟库（28748 行 live / 91 天 daily，14MB）实机采集完成（item 116 PASS），查询性能与 1000 天数据同级无压力 |
 | 76 | DB Query Performance：summary/daily/live/gpu-live 无秒级卡顿 | PASS | 实测 1000 天数据：全表 SUM <0.2ms、最近 30 天 0.15ms、全量 1000 行 1.85ms（10 次均值）。SQLite 单表 1000 行级别无压力，WAL 模式读不阻塞写 |
 
 ## 15. Performance / Leak（items 77-87）
