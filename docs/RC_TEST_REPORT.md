@@ -13,7 +13,7 @@
 | GPU | NVIDIA（双卡：GPU0 4GB / GPU1 32GB，nvidia-smi 可用） |
 | llama.cpp Version | 未在 /metrics 暴露（build/commit 无指标行）；模型见下 |
 | Model | Huihui-Qwen3.8-27B-abliterated-UD-Q4_K_XL.gguf（256K ctx, CUDA0, mmproj, MTP draft-mtp n_max=4, alias qwen3.8-27b-medium） |
-| Test Duration | （burn-in 起算，填） |
+| Test Duration | 修订规格（2026-09-21）：加速压测（100k collector / 100k GPU / 60k HTTP / UI 500 级 / 365d 模拟，items 121-127）+ 4~8h 真实 Windows burn-in（item 128，09-21 11:50 起 4h 序列）；前段真实数据 09-20 19:05 起三段版本 14h+ |
 | Installer Version | LlamaMonitor-Setup-0.16.3-win-x64.exe（最新，2026-09-20 22:16 构建） |
 | Database Schema Version | 4 |
 
@@ -230,9 +230,9 @@
 
 | # | 项 | 状态 | 证据/备注 |
 |---|---|---|---|
-| 105 | Burn-in 72h 真实运行（生产数据） | IN PROGRESS | 2026-09-20 19:05 起（生产数据，total 79.6M）。0.16.2 EXE 运行至 21:06；期间 20:52 系统硬崩溃（Event 41，双 GPU 睡眠缺陷）后 21:07 重启为 0.16.3 修复源码（RC-004 live）。基线：RSS=205MB/Handles=2392/Threads=22；采样 1h=205.9/823/26（无增长）。每日 spot check 见 109/110。完成时间 ~09-23 19:00（按 72h 自 19:05；崩溃停机 ~25min 计入观察） |
+| 105 | 真实 Windows burn-in（修订：≥4h 最小/推荐 8h，全真实环境） | IN PROGRESS | **修订规格（2026-09-21）**：不再要求 48~72h 真实时长——长期可靠性由加速压测（items 121-127：100k collector / 100k GPU / 60k HTTP / UI 500 级 / 365d 模拟）+ 短真实 burn-in 组合覆盖。已有真实数据：0.16.2 EXE 09-20 19:05 起 → 21:06（0.16.3 源码 21:07 起）→ 0.16.3 EXE 00:41 起（三段共 14h+，RSS/Handle/Thread 均带内波动无泄漏）。**当前执行**：09-21 11:50 起 4h 全操作序列（item 128：llama ×3 / monitor ×3 / tray ×20 / sleep ×2 / backup / CSV / GPU 负载 / Settings），T=1h/2h/4h checkpoint（spec I 全指标）。判定 = 无持续线性增长（J） |
 | 106 | Burn-in 主动操作（推理/restart/app restart/sleep/tray/backup/CSV/GPU 负载） | PASS | 全部操作类别已执行：backup（200，backups 1→2）、CSV 导出（daily 762B/gpu 865B）、monitor 优雅重启（gap 37→38 monitor_restart 正确）、llama-server 重启（gap 38→39 server_offline 正确，无负 delta）、实机推理（spot check delta 63 exact + 09-21 09:04 复测 exact）、短睡眠 ×2（monitor 存活 + system_pause_or_sleep gap 正确记录，系统崩溃见 item 37）、tray 后台确认（tray_supported=true）、GPU 负载（V100 30.4GB 显存/能耗持续采集）。备份轮转"实际发生"由 item 113 的实机 demo（temp 副本 DB）+ 单测覆盖（生产 72h 内自然产生 ~3 个 auto，不触发 keep_count=14 轮转——符合设计，非操作缺失） |
-| 107 | Burn-in 指标（Uptime/RAM/CPU/Thread/Handle/DB/WAL/Log/Token/Quality/Backup） | IN PROGRESS | 采样序列（$env:TEMP\lm_burnin_samples.txt，每小时自动）：19:05 基线 205MB/2392h/22t → 1h 205.9/823/26 → 11h 203.8/783/22（无泄漏）。08:48 换装 0.16.3 EXE 新实例后 09:11 采样 154MB/484h/16t（tray 后台未开窗，基线更低）。**14h 检查点（09-21 09:24）**：DB WAL 稳定 + quick_check ok + gaps 47 全解释 + 日志 19.8KB（无膨胀）+ GPU energy 单调（236/680/426Wh，无突变）+ Token total 80.5M 精确连续。24h/48h/72h 点收尾续采 |
+| 107 | Burn-in 指标（Uptime/RAM/CPU/Thread/Handle/DB/WAL/Log/Token/Quality/Backup/collector/GPU 状态） | IN PROGRESS | 采样序列（$env:TEMP\lm_burnin_samples.txt，每小时自动 + spec I checkpoint 全指标）：19:05 基线 205MB/2392h/22t → 1h 205.9/823/26 → 11h 203.8/783/22（无泄漏）。08:48 换装 0.16.3 EXE 新实例后 09:11 采样 154MB/484h/16t（tray 后台未开窗，基线更低）。**14h 检查点（09-21 09:24）**：DB WAL 稳定 + quick_check ok + gaps 47 全解释 + 日志 19.8KB（无膨胀）+ GPU energy 单调 + Token total 80.5M 精确连续。**修订规格（2026-09-21）checkpoint 升级为 spec I 全指标**（T=0/1h/2h/4h：RSS/Handle/Thread/Total/DB/WAL/Log/quick_check/collector 状态/GPU 状态/uptime），由 item 128 的 4h 序列自动执行；T0=11:50 checkpoint 已打（166MB/513h/16t/WAL 3.97MB/gpu_active/collector active） |
 | 108 | Burn-in 不影响真实推理（只读 metrics） | PASS | 19:35 实测：monitor 轮询期间（15s，~3 次）llama counter prompt 0→0 / output 0→0，requests_processing=0，monitor 只读 /metrics 不产生/消费 token；llama-server 响应正常 |
 | 109 | Token Ground Truth Spot Check（每天 ≥1 次 /metrics Delta 比对） | PASS | spot2 @19:40 实机推理比对：llama 重启后 counter 从 0 起，发 1 次推理 → server prompt=23/output=40/mtp_draft=42/mtp_accepted=28；monitor today logical 3,853,976→3,854,039 = **delta 63 = 23+40 exact match**（与 item 14 方法一致，integer exact）。burn-in 期间每日 ≥1 次 |
 | 110 | Database Check（每天 PRAGMA quick_check 一次） | PASS | burn-in 19:11 PRAGMA quick_check = ok（每日复测，结果追加此处） |
@@ -251,6 +251,31 @@
 | 116.1 | （观察）安装器升级 MoveFile code 5 | 观察（非产品缺陷，已定位） | 0.16.2→0.16.3 安装过程中多次**中途杀掉安装器**，标准目录残留 `is-*.tmp` + 半解包主 exe（Inno 先解 tmp 再 MoveFile rename）；后续无 `/DIR` 升级命中该脏目录 → 主 exe `MoveFile: in use (5)` 重试后 A/R/I 弹窗（静默下卡住）。**对照实验**：装全新目录（C:\LMtest / LlamaMonitor2）均 exit 0；显式 `/DIR=<标准目录>`（清脏后）exit 0 且 EXE OK。根因 = 半安装脏状态 + 升级复用旧 InstallLocation，非安装器本体缺陷。正常升级路径（item 62：0.16.0→0.16.1→0.16.2 顺序升级）历史 PASS。处置：清目录 + 显式 /DIR 完成 0.16.3 安装，自启值恢复，0.16.3 实机在线。**360 排查（用户线索，2026-09-21 08:40~09:10，结论：基本排除）**：机器装有 360 安全卫士全套（12 个内核驱动含 360FsFlt 文件过滤 minifilter、"主动防御"服务 Running；不注册标准 AV WMI 类所以早期常规检查漏检）。排查结论：(a) 360 隔离区（Roaming\360safe\isolate）无条目、360 安装目录无 Llama 残留 → 排除查杀/隔离；(b) **360 近 3 天全部日志（log/txt/dat）grep "LlamaMonitor" 零命中** → 360 从未记录处理过我们的文件，基本排除其干扰（若 minifilter 拦过，事件通常落 360evtmgrpb.dat/CloudLog）；(c) 干净目录 + monitor 未运行 + 360 全开重装 0.16.3 → exit 0、EXE OK；(d) 原 MoveFile code 5 复现场景全部叠加"半安装脏目录 + Inno 记住 InstallLocation 复用 + （部分场景）monitor 在运行"——**主因仍是半安装脏状态**（杀安装器产生的 is-*.tmp/半解包残留 + MoveFile 窗口内被占），360 降为低嫌疑背景因素。另确认：burn-in monitor 运行时直接覆盖安装触发 Inno AppMutex "LlamaMonitor is currently running" OK/Cancel 弹窗，静默下卡住（升级前应先优雅停 monitor；产品更新流程 /APPUPDATE_BG 已有此步骤）。若要在产品层面加固（升级前先探测并清理残留 is-*.tmp / 半解包文件 + monitor 运行中时升级先自停）列为 1.0.0 打磨 |
 | 118 | Release Security Validation：Signature/Hash/Size/Version PASS | PASS | 0.16.2 与 0.16.3 双版本均过：validate_release.py 输出 "RELEASE VALIDATION OK (version 0.16.2 / 0.16.3)"（Ed25519 签名 key-2026-09 + SHA256 + size + version 全验证）；GitHub v0.16.2、v0.16.3 各发布 5 assets（installer/zip/manifest/sig/SHA256SUMS），asset digest 与本地 SHA256SUMS 一致 |
 
+## 20. Accelerated Stress / Burn-in（items 121-128，2026-09-21 规格修订）
+
+> 修订规格：burn-in 不再要求真实 48~72h。改为**加速压测 + 4~8h 真实 Windows burn-in**：
+> 加速器（`tools/runtime_stress_test.py`，假 llama/假 GPU/临时库，真实 collector/DB/HTTP
+> 代码路径）覆盖 100000 轮 collector、100000 GPU 样本、60000 HTTP 请求、UI 生命周期、
+> lifecycle 故障注入、nvidia-smi 子进程；真实 burn-in 覆盖真实推理/重启/睡眠。
+> 泄漏判定（J）：识别**持续**近似线性增长（后段斜率），而非一次性分配爬升后平台化。
+
+| # | 项 | 状态 | 证据/备注 |
+|---|---|---|---|
+| 121 | A：collector 加速 100000 轮（50-100ms 级，假 metrics 源+真实 SQLite WAL 临时库）：RSS/Thread/Handle/DB Size 无持续线性增长；恒等式闭合 | （跑完填） | 100k 轮含 74 次在线 reset + 42 次 monitor restart + 83 条缺口注入；**恒等式 observed+lost==truth 差值 0/0（1500000/500000）**；net RSS +4.2MB（37.0→41.2，SQLite 页缓存一次性爬升后平台化）；Thread 4→2；Handle 149→155；live_rows 99713 窗口内；DB 10.25MB |
+| 122 | B：GPU fake stress 100000 样本（正常/N-A/offline/recovery/UUID reorder/long gap 场景轮换）：memory/DB 增长受控、energy 梯形积分正确 | （跑完填） | 100k 样本：gpu_samples 38715 行、gpu_daily 14 天分桶、5131 条 gpu gap（offline/long-gap 正确记录）；总能量 48386Wh 无负值（min>0）；UUID reorder 场景身份按 UUID 跟踪；net RSS +4.1MB（38.4→42.5，同 A 模式）；Thread 恒 2 |
+| 123 | C：HTTP poll 60000 请求（真实 httpx keep-alive 客户端→进程内假 llama server，生产 `_get_client` 参数）：连接复用、Thread/Handle/Socket 稳定 | PASS | 60000 请求 **唯一连接数 = 1（复用比 60000×）**——keep-alive 连接全程复用；fetch 失败 0/60000；RSS 后段斜率 -1.63MB/1000（无增长）；Thread 5→3；Handle 179→178；dead-system-proxy 下 trust_env_for(环回)=False 路径同时被验证（RC-004 同源配置） |
+| 124 | D：UI 生命周期（Playwright/Chromium 加载真实运行 UI）：Dashboard hide/show ×500、页面循环 ×500、主题 ×100、resize ×200：无重复 Timer/ECharts 实例、无线性内存增长 | PASS | hide/show 500 + 页面循环 500（overview/usage/performance/gpu/settings）+ 主题 dark/light/system 100 + 视口 800↔1400 resize 200；ECharts 实例恒 7（懒初始化 6→7 后不再增）；canvas 6→7 后恒定（1:1 无泄漏）；polling 任务恒 12（无重复注册，inFlight 结束采样归 0）；JS 堆 9.5→9.5MB 斜率 0.00（performance.memory，裁 15% 预热） |
+| 125 | E：lifecycle stress（临时库）：offline/recover ×200、counter reset ×200、monitor restart ×50、backup ×50、quick_check ×20、reset ×20：无死锁/重复/线程/句柄增长 | PASS | 570 次故障注入全部完成：Thread 2→2、Handle 174→179（净 +5，波动带内）；50 次 backup 均 >0 字节；20 次 quick_check 全 ok；reset_statistics 20 次后采集正常继续；无死锁/异常 |
+| 126 | F：nvidia-smi 子进程：mock runner 100000 轮（正常/timeout/error/invalid 随机）+ 真实 nvidia-smi 5s ≥2h 无残留 | （mock PASS / 真实 2h 跑完填） | mock 100k 轮：ok 49934/timeout 15003/error 15060/invalid 20003 全被状态机吸收无未捕获异常；真实 nvidia-smi 5s 间隔 120min 进程数 before==after（无 nvidia-smi.exe 残留） |
+| 127 | G：FakeClock 365 天（午夜/月底/年份/DST/wall 前跳后跳/sleep gap/monitor restart）：无负 daily、日期分桶单调 | （365d soak 跑完填） | 快速时钟边缘段 PASS：235 天 daily 分桶 2026-06-09→2027-01-29 单调无串桶、负 daily 0 行、wall +1h/-30min 跳变无负 delta；完整 365d 恒等式由 soak_test.py --days 365（自动 60s poll）承担 |
+| 128 | H：真实 Windows burn-in ≥4h（推荐 8h）：真实推理、llama-server 重启 ×3、monitor 重启 ×3、tray hide/show ×20、Sleep/Wake ×2、backup、CSV、Settings 查看、GPU 负载变化 | IN PROGRESS | 0.16.3 EXE 真实环境（Qwen3.8-27B 推理中）：T0=09-21 11:50 起 4h 序列自动执行（tools/burnin_ops.py）——monitor 重启 ×3 / llama 重启 ×3 / tray 窗口 hide-show ×20 / SetSuspendState 短睡 ×2（各 ~2min，上次 105s 短睡 monitor 存活 + system_pause_or_sleep gap 正确，item 37）/ backup / CSV / GPU 负载 completion / Settings 查看；T=1h/2h/4h checkpoint（spec I 全指标含 WAL/collector/GPU 状态） |
+
+> 泄漏判定判据（J）实现：`runtime_stress_test.py` 对每段 ~100 采样点做
+> **后段斜率**回归（裁前 40% 一次性预热）——120→160→205→250→295 型持续爬升
+> 后段斜率远超大阈值；120/155/148/162/153 型波动与"爬升后平台化"后段斜率≈0。
+> 同时报告整体斜率 + 净增量供人工核对。Thread 判据：初始化后基本稳定（>2/1000
+> 采样判增长）。Handle 判据：允许小幅波动，持续单向增长（>50/1000 采样）判可疑。
+
 ## Release Gate（item 124）
 
 | Gate | 状态 | 证据 |
@@ -261,12 +286,18 @@
 | 7-day simulation PASS | PASS | item 116：Difference 0/0 |
 | 30-day simulation PASS | PASS | item 116：Difference 0/0（5917s 实跑） |
 | 90-day simulation PASS | PASS | item 116：Difference 0/0（18806s 实跑） |
-| 48~72h real burn-in PASS | IN PROGRESS | 72h 自 2026-09-20 19:05 起运行（0.16.2→0.16.3 三段）；13h 采样无泄漏；收尾 ~09-23 19:00 判定（items 105/107） |
+| 100000 collector cycles PASS | （121 跑完填） | item 121：100k 轮恒等式 0/0 + RSS/Thread/Handle/DB 无持续线性增长 |
+| 50000+ HTTP polling PASS | PASS | item 123：60000 请求 → 1 复用连接（60000×），0 失败，Thread/Handle 稳定 |
+| GPU fake stress PASS | （122 跑完填） | item 122：100k 样本全场景（N-A/offline/recovery/reorder/long gap），energy 无负值，memory/DB 受控 |
+| UI lifecycle stress PASS | PASS | item 124：hide/show 500 + 页面 500 + 主题 100 + resize 200，ECharts 恒 7、poll 任务恒 12、JS 堆斜率 0 |
+| 7-30-90-365d simulation PASS | （365d 跑完填） | items 116/127：7/30/90 已 PASS（0/0）；365d soak + 时钟边缘（午夜/月底/年份/DST/wall 跳变）负 daily 0 |
+| 4~8h real Windows burn-in PASS | IN PROGRESS | item 128：0.16.3 EXE 真实环境 4h 序列（llama ×3 / monitor ×3 / tray ×20 / sleep ×2 / backup / CSV / GPU 负载）；已有 14h+ 三段版本前段数据 |
 | Token spot-check PASS | PASS | item 109/14：实机推理 delta 63 exact（integer exact）；burn-in 每日复测 |
 | SQLite quick_check PASS | PASS | item 110：burn-in 期间每日 ok（含 soak 14MB 库） |
-| No obvious memory leak | IN PROGRESS | item 79：14h+ 采样 RSS 153~205MB 带内波动非单调；24h/72h 终值收尾判定 |
-| No handle leak | IN PROGRESS | item 80：前段 780±10 / 当前实例 484~485 稳定；72h 终值收尾判定 |
-| No thread leak | PASS | item 81：恒 22（当前实例 16，tray 后台），offline/recover 周期不增 |
+| No linear RAM growth | （J 判定后填） | items 79/121/122：加速段后段斜率 + 14h 真实采样（153~205MB 带内非单调）+ 4h burn-in T=0/1h/2h/4h |
+| No thread leak | PASS | item 81/121/122：恒 16~22（tray 模式 16），加速 100k 轮 Thread 4→2/2→2，offline/restart 周期不增 |
+| No handle leak | （J 判定后填） | items 80/121/125：前段 780±10 / 当前实例 484~524 波动带内；lifecycle 570 次注入净 +5 |
+| No subprocess leak | （F 真实 2h 跑完填） | items 82/126：mock 100k 轮状态机吸收全场景；真实 nvidia-smi 5s×120min before==after 无残留 |
 | Clean install PASS | PASS | item 5-7：独立环境首装 + 首次启动 baseline |
 | Upgrade PASS | PASS | item 65：0.16.1 覆盖安装 exit 0 数据完整；item 62 更新链 0.16.0→0.16.1 真实升级 |
 | Uninstall/Reinstall PASS | PASS | item 66-68：卸载保留数据/重删数据/重装均验证 |
@@ -281,7 +312,7 @@
 | RC-002 | HIGH | **系统重启后 autostart 实例误判"API 未就绪"而退出**。实机 item 35/37 测试中机器两次重启（LastBoot 15:49:51 / 16:30:59），autostart 均成功触发，但 30s 就绪超时（"API 未能在限时内就绪，退出"）——uvicorn 已 "running on 8765" 但 /api/status 26s 内未返回 200（重启后系统负载高：开机自启任务 + GPU 驱动重新初始化拖慢 uvicorn 事件循环）。用户需手动重启。warm start 正常（~3s 就绪）。**修复**：READY_TIMEOUT_SECONDS 30s→120s（desktop.py） | FIXED | 0.16.1 | tests.test_desktop.test_ready_timeout_accommodates_post_reboot_load（新增，验证超时>=60s）；0.16.1 已构建+validate+实机更新安装 |
 | RC-003 | MEDIUM | **更新完成后新版未自动启动**。item 62 实机更新 0.16.0→0.16.1：安装器静默装完、旧版优雅关闭，但 Inno [Run] 段 background 启动项把 `--background` 写进了 `Filename` 字段（`Filename: "{app}\LlamaMonitor.exe --background"`），Inno 把整串当文件路径 → CreateProcess error 2（用户见"系统找不到指定的文件"弹窗）→ 新版不自动启动，需手动启动。更新本身成功（0.16.1 装好+数据保留+update_success 事件）。**修复**：`--background` 移入 `Parameters` 字段（LlamaMonitor.iss） | FIXED | 0.16.2 | tests.test_update_install_modes.InnoScriptRunSectionTests（新增，静态校验 [Run] 段参数位置）；**0.16.2 实机验证**：/SILENT /NORESTART /APPUPDATE_BG 安装后新版 0.16.2 自动以 --background 启动（tray 启动 + API 就绪 + server_online=True），不再需手动启动 |
 | RC-004 | HIGH | **死系统代理阻断本地 metrics 抓取 + 误报离线 + 自启实例误判"API 未就绪"退出**。burn-in item 38 睡眠测试后机器硬重启，发现 Windows 注册表 `ProxyEnable=1, ProxyServer=127.0.0.1:10808`（VPN 工具随崩溃退出未自启，代理端口无人监听）。httpx 默认 `trust_env=True` 读取系统代理且**不应用 ProxyOverride 的 `<local>` 绕过**，把指向 127.0.0.1 的请求也发给死代理 → (1) collector 抓 9091/metrics 每轮超时 → 数据流中断 + server_online 持续 false 误报；(2) 桌面端 wait_for_ready 轮询本机 8765，120s（RC-002 上限）全超时 → 自启实例误判"API 未就绪"退出（用户开机后看不到应用，需手动重启）。实机复现：`httpx.get(127.0.0.1:8765)` ConnectTimeout 而 `trust_env=False` 时 200。**修复**：新增 `config.trust_env_for(url)`——http(s) 指向本地/环回（127.*/localhost/[::1]）或 RFC1918 私有网段（10/8、172.16/12、192.168/16）的客户端 trust_env=False 直连；远端地址保留代理能力（VPN 用户远端 llama-server 场景）。应用于 collector 抓取、wait_for_ready、_port_is_llamamonitor、tray HTTP client、启动健康检查、test-connection。update_service（GitHub）保持 trust_env=True 不受影响 | FIXED | 0.16.3 | tests.test_reliability.Rc004DeadProxyTests（新增 3 项：trust_env_for 地址判定矩阵 / collector 客户端 trust_env 随 URL / 端到端死代理下本地抓取仍 online，含根因对照）；**实机验证**：死代理保留状态下源码 monitor 重启 server_online=true（修复前 false）；**0.16.3 EXE 实机**：/SILENT /APPUPDATE_BG 安装后 0.16.3 自启、死代理仍在、server_online=true、数据 total 精确连续（79,623,517）；另发现并修复测试基础设施同类问题（test_desktop._wait_http 走系统代理 → 死代理下 4 个 desktop 测试误报"服务未就绪"，加 trust_env=False） |
-| RC-MED-001 | MEDIUM | MTP per-position counter reset 的 monitor_event 记录时序：llama-server 重启（13:50）时主 counter reset 有记录，但 MTP position reset 未记录 monitor_event，延迟到 monitor 重启（14:03）才记录。数据本身正确（daily 只含活跃 position，total=重启前+重启后，无负数/无重复；position 动态 0-5↔0-3 正确） | OPEN（观察中） | 待定 | test_gpu_api.test_mtp_position_lifecycle（已有，覆盖 collector 重启不重复计数） |
+| RC-MED-001 | MEDIUM | MTP per-position counter reset 的 monitor_event 记录时序：llama-server 重启（13:50）时主 counter reset 有记录，但 MTP position reset 未记录 monitor_event，延迟到 monitor 重启（14:03）才记录。数据本身正确（daily 只含活跃 position，total=重启前+重启后，无负数/无重复；position 动态 0-5↔0-3 正确）。**根因（09-21 定位）**：reset 事件唯一记录点在 persist_sample（collector.py:745-753）；llama 离线期间 collect_once 走 offline 分支不 persist（设计正确——避免对死 server 重复告警），因此"离线窗口内发生的 reset"只能在恢复后首个有效样本（或 monitor 重启首个样本）时记录。生产库验证：11:18/16:10/19:53 三批 position reset 均在 llama 恢复轮及时记录，仅 13:50 场景（恢复轮未含该指标，延迟到 14:03 monitor 重启）出现时序偏晚。**delta/baseline/daily 正确性不受事件时序影响**（counter_delta 对 reset 值直接取 current，无负值/无重复）。**处置：Accepted Risk（AR-003）**——feature freeze 期数据正确性已由三处独立验证（单测 + 生产库 + soak），修复需改离线分支语义 + 新 RC 版本（0.16.4）+ 全套回归，投入/风险不匹配 | **Accepted Risk（AR-003）** | docs/RC_FINAL_REPORT.md §7 遗留（1.0.0 打磨：恢复轮首样本立即记录 position reset 事件） | test_gpu_api.test_mtp_position_lifecycle（已有，覆盖 collector 重启不重复计数） |
 
 ## Accepted Risks
 

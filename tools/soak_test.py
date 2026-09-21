@@ -419,6 +419,10 @@ def main(argv=None) -> int:
     ap.add_argument("--prompt-rate", type=int, default=3, help="prompt tokens/秒")
     ap.add_argument("--output-rate", type=int, default=1, help="output tokens/秒")
     args = ap.parse_args(argv)
+    # 365 天档用更粗的 poll（如 60s）压缩模拟轮数，仍覆盖午夜/月底/年份/DST/sleep/restart
+    if args.days >= 365 and args.poll == 5.0:
+        args.poll = 60.0
+        print(f"[note] days={args.days}: auto poll 5s -> 60s to keep simulation tractable")
 
     sim = SoakSimulation(
         days=args.days,

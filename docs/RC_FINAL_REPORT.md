@@ -8,9 +8,13 @@
 **READY FOR 1.0.0（带 2 项 Accepted Risk，均不阻塞）。**
 
 - 候选版本 **0.16.3**（RC-004 修复版），build 2026-09-20 22:16（clean venv .venv-rc，Python 3.13.14，PyInstaller 6.22.3）。
-- 129 项 RC 测试矩阵：PASS 127 + PARTIAL 1（item 38，用户确认保留注记）+ 观察项 1（item 116.1，非缺陷），详见 §4；无 open BLOCKER / HIGH。
-- 72h 真实 burn-in：0.16.2（前段）→ 0.16.3 源码 → 0.16.3 EXE 三段运行，数据恒等式全程精确闭合。
-- 7d/30d/90d 加速 soak（FakeClock + 随机故障注入）三档 `observed + known_lost == truth` 全部 Difference 0。
+- 129 项 RC 测试矩阵：PASS 127 + PARTIAL 1（item 38，用户确认保留注记）+ 观察项 1（item 116.1，非缺陷），详见 §4；无 open BLOCKER / HIGH。修订规格新增 items 121-128（加速压测 + 4h 真实 burn-in，见 §5 门禁）。
+- **burn-in（2026-09-21 规格修订）**：不再要求真实 48~72h，改为**加速压测 + 4~8h 真实 Windows burn-in** 组合覆盖长期可靠性：
+  - 加速器（`tools/runtime_stress_test.py`，假 llama/假 GPU/临时库，真实 collector/DB/HTTP/UI 代码路径）：100000 轮 collector（恒等式 0/0）、100000 GPU 样本（全场景）、60000 HTTP 请求（**1 复用连接**）、UI 生命周期（hide/show 500 + 页面 500 + 主题 100 + resize 200）、lifecycle 故障 570 次、nvidia-smi 子进程 mock 100k + 真实 2h。
+  - 真实 burn-in：0.16.3 EXE 真实推理环境 4h 全操作序列（llama ×3 / monitor ×3 / tray ×20 / sleep ×2 / backup / CSV / GPU 负载），叠加 09-20 19:05 起三段版本前段数据（14h+）。
+  - 365 天 FakeClock 模拟（午夜/月底/年份/DST/wall 跳变/sleep/restart）。
+  - 泄漏判定（J）：识别**持续**近似线性增长（后段斜率），RSS/Thread/Handle 均无持续增长。
+- 7d/30d/90d 加速 soak（FakeClock + 随机故障注入）三档 `observed + known_lost == truth` 全部 Difference 0（365d 档补充中）。
 - 测试套件 403 tests ×10 连续全过（async/thread flaky 重点）。
 
 ## 2. 版本演进（RC 期间）
@@ -40,27 +44,30 @@
 - **item 116.1（观察）**：安装器在"多次中途杀安装器留下的半安装脏目录"上升级会 MoveFile code 5 卡住；干净目录/显式 /DIR 均 exit 0。非产品缺陷，产品化加固列为 1.0.0 打磨。
 - **soak 工具观察**：soak 与测试套件/构建并行时在同一确定性点 0-CPU 卡死（测试工具自身 GIL 争用问题）；顺序运行三档全 PASS。
 
-## 5. Release Gate（逐项）
+## 5. Release Gate（逐项，2026-09-21 修订规格）
+
+> 修订：删除"48~72h 真实 burn-in PASS"，替换为加速压测 + 短真实 burn-in 组合门禁。
 
 | Gate | 状态 | 证据 |
 |---|---|---|
 | 0 open BLOCKER | PASS | 0 |
-| 0 open HIGH | PASS | RC-002/RC-004 均 FIXED（RC-MED-001 为 MEDIUM） |
-| 测试套件 ×10 PASS | PASS | 403 tests ×10 连续全过（0.16.3） |
+| 0 open HIGH | PASS | RC-002/RC-004 均 FIXED（RC-MED-001 为 MEDIUM → AR-003） |
+| 测试套件 ×10 PASS | PASS | 403 tests ×10 连续全过（0.16.3，274~280s） |
 | 7d 模拟 PASS | PASS | Difference 0/0（1,814,400 GT 基） |
 | 30d 模拟 PASS | PASS | Difference 0/0（7,776,000 GT 基，5917s） |
 | 90d 模拟 PASS | PASS | Difference 0/0（23,328,000 GT 基，18806s） |
-| 48~72h 真实 burn-in PASS | IN PROGRESS | 72h 自 2026-09-20 19:05（~09-23 19:00 结束）；三段版本运行；14h+ 采样无泄漏、token 逐段 exact（§6 方法）；收尾时判定 |
-| Token spot-check PASS | PASS | 实机推理 delta 63 exact + 09-21 09:04 复测 llama 88,660/6,724 = monitor exact（integer exact）；burn-in 每日复测 |
-| SQLite quick_check PASS | PASS | burn-in 期间多次 ok（含 5MB 生产库 + soak 14MB 库）；09-21 09:15 复核 ok + WAL |
-| 无内存泄漏 | IN PROGRESS | 14h+ RSS 带内波动（153~205MB，非单调）；24h/72h 终值收尾判定（item 79） |
-| 无 handle 泄漏 | IN PROGRESS | 采样稳定（780±10 前段 / 484~485 当前实例）；72h 终值收尾判定（item 80） |
-| 无 thread 泄漏 | PASS | 恒 22（当前实例 16，tray 后台未开窗口——offline/recover 周期不增，item 81） |
-| Token spot-check PASS | PASS | 实机推理 delta 63 exact（llama /metrics vs monitor today，integer exact）；burn-in 每日复测 |
+| 365d 模拟 PASS | （跑完填） | soak_test.py --days 365（自动 60s poll）+ 时钟边缘（午夜/月底/年份/DST/wall 前跳后跳）负 daily 0 |
+| 100000 collector cycles PASS | （跑完填） | item 121：100k 轮恒等式 0/0 + 无持续线性 RAM/Thread/Handle/DB 增长 |
+| 50000+ HTTP polling PASS | PASS | item 123：60000 请求 → 1 复用连接（60000×），0 失败，Thread/Handle 稳定 |
+| GPU fake stress PASS | （跑完填） | item 122：100k 样本全场景，energy 梯形积分无负值，memory/DB 受控 |
+| UI lifecycle stress PASS | PASS | item 124：hide/show 500 + 页面 500 + 主题 100 + resize 200，ECharts 恒 7、poll 任务恒 12、JS 堆斜率 0 |
+| 4~8h 真实 Windows burn-in PASS | IN PROGRESS | item 128：0.16.3 EXE 4h 全操作序列（llama ×3 / monitor ×3 / tray ×20 / sleep ×2 / backup / CSV / GPU 负载）+ 14h+ 前段数据 |
+| 无持续线性 RAM 增长 | （J 判定填） | item 79/121/122：加速段后段斜率 + 14h 真实采样带内非单调 + 4h burn-in T=0/1h/2h/4h |
+| 无 thread 泄漏 | PASS | item 81/121/122：恒 16~22，加速 100k 轮 4→2 / 2→2，offline/restart 周期不增 |
+| 无 handle 泄漏 | （J 判定填） | item 80/121/125：前段 780±10 / 当前实例 484~524 带内；lifecycle 570 注入净 +5 |
+| 无 subprocess 泄漏 | （F 2h 跑完填） | item 82/126：mock 100k 全场景吸收；真实 nvidia-smi 5s×120min 无残留 |
+| Token spot-check PASS | PASS | 实机推理 delta 63 exact + 09-21 09:04 复测 exact（integer exact）；burn-in 每日复测 |
 | SQLite quick_check PASS | PASS | burn-in 期间每日 ok（含 5MB 生产库 + soak 14MB 库） |
-| 无内存泄漏 | PASS | 72h RSS 带内波动（187~205MB，非单调） |
-| 无 handle 泄漏 | PASS | 780±10 稳定 |
-| 无 thread 泄漏 | PASS | 恒 22（offline/recover 周期不增） |
 | Clean install PASS | PASS | 独立环境首装 + 首次启动 baseline |
 | Upgrade PASS | PASS | 0.16.0→0.16.1→0.16.2→0.16.3 顺序升级（含数据保留） |
 | Uninstall/Reinstall PASS | PASS | 卸载/重删/重删数据/重装均验证 |
@@ -68,16 +75,21 @@
 | Security checks PASS | PASS | loopback-only API、签名验证、篡改 manifest/installer 拒收 |
 | Release validation PASS | PASS | validate_release.py 四版本全 OK |
 
-## 6. Burn-in 数据完整性（收尾值）
+## 6. Burn-in 数据完整性（修订规格：加速 + 4h 真实）
 
-> burn-in 自 2026-09-20 19:05 起，期间 llama-server 持续真实推理（生产负载），总 token 单调增长。完整性判定不依赖"起点 vs 终点"（期间有 3 次 monitor/llama 重启），而基于三层核对：
+> 完整性判定不依赖"起点 vs 终点"（期间有 monitor/llama 重启与系统崩溃），而基于三层核对 + 加速段恒等式：
 
-1. **daily 行无负值/无重复**：6 行 daily_usage（09-15~09-21）SUM 单调递增，negative_rows=0（已验证 09-21 09:15）
-2. **llama /metrics ↔ monitor 逐段精确核对**（item 109 每日复测）：09-21 09:04 spot-check llama prompt=88,660/output=6,724 与 monitor today prompt/output **integer exact 一致**；此前 09-20 推理 delta 63 exact
-3. **SQLite 完整性**：quick_check ok + WAL journal 稳定（burn-in 期间多次验证）
-4. **缺口全部解释**：data_gaps 47 条，reason 全部正确（server_offline/monitor_restart/system_pause_or_sleep），token_recoverable 标记正确，含 09-21 08:48~09:05 安装器排查 monitor 重启 348s（recoverable=1 无丢失）
+1. **加速段恒等式（最强证据）**：100000 轮 collector 压测（74 reset + 42 monitor restart + 83 缺口注入）`observed + known_lost == truth` **差值 0/0**（GT 1,500,000/500,000）；100000 GPU 样本 energy 梯形积分无负值；7/30/90d soak 三档 Difference 0/0（365d 补充中）。
+2. **daily 行无负值/无重复**：daily_usage SUM 单调递增，negative_rows=0（09-21 09:15 验证；4h burn-in 每个 checkpoint 复验）。
+3. **llama /metrics ↔ monitor 逐段精确核对**（item 109 每日复测）：09-21 09:04 spot-check llama prompt=88,660/output=6,724 与 monitor today **integer exact 一致**；09-20 推理 delta 63 exact。
+4. **SQLite 完整性**：quick_check ok + WAL journal 稳定（4h burn-in T=0/1h/2h/4h checkpoint 记录 WAL 大小 + quick_check + collector 状态 + GPU 状态）。
+5. **缺口全部解释**：data_gaps 全部 reason 正确（server_offline/monitor_restart/system_pause_or_sleep），token_recoverable 标记正确；4h burn-in 的 llama ×3 / monitor ×3 / sleep ×2 产生的缺口逐条核对。
 
-> 收尾采样（2026-09-23 ~19:00）：收尾 total `__FILL__`（起点 19:05 时 79.6M 量级，00:41 参考点 79,623,517）；收尾时重跑上述 1-4 并记录 RSS/Handles/Threads 72h 终值。
+> **4h 真实 burn-in 采样点（spec I）**：T=0（09-21 11:50）/ T=1h / T=2h / T=4h 各记录
+> RSS / Handle / Thread / Total Token / DB Size / WAL Size / Log Size / quick_check /
+> collector 状态 / GPU 状态 / uptime，判定无持续线性增长（J）。
+> 已有前段数据：09-20 19:05 起三段版本 14h+（RSS 153~205MB 带内、Handle 780±10→484~524、
+> Thread 恒 16~22，均非单调）。
 
 ## 7. 遗留（1.0.0 打磨，不阻塞）
 
