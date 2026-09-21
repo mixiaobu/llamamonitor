@@ -148,7 +148,11 @@ def sleep_wake(n: int, secs: int) -> None:
     log(f"=== sleep #{n} (~{secs}s, SetSuspendState) ===")
     before = len(db_q("SELECT id FROM data_gaps WHERE reason='system_pause_or_sleep'"))
     import ctypes
-    r = ctypes.windll.kernel32.SetSuspendState(ctypes.c_int(0), ctypes.c_int(0), ctypes.c_int(1))
+    # SetSuspendState 在 powrprof.dll（不是 kernel32）
+    powrprof = ctypes.windll.powrprof
+    powrprof.SetSuspendState.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_int]
+    powrprof.SetSuspendState.restype = ctypes.c_int
+    r = powrprof.SetSuspendState(0, 0, 1)
     log(f"SetSuspendState ret={r} (0/False=可能失败)")
     t0 = time.time()
     while time.time() - t0 < secs + 900:

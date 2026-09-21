@@ -444,5 +444,237 @@ class DesktopTests(unittest.TestCase):
         self.assertTrue(thread.is_alive())
 
 
+class UIVisibleBridgeTests(unittest.TestCase):
+    """RC-005 回归：_notify_ui_visible 从 WinForms UI 线程调用时不得自死锁。
+
+    真实根因（py-spy 定位）：_on_closing 跑在 WinForms UI 线程，调用
+    evaluate_js；pywebview(edgechromium) 的 evaluate_js 内部 Invoke(把释放
+    回调投到 UI 线程自己的 SyncContext) 后 semaphore.acquire() **无超时**
+    ——在 UI 线程上等待 UI 线程自己来释放 => 自死锁，消息泵冻结，
+    set_on_top / Collector 落盘 / /api/status 全部停摆直到重启。
+
+    修复后 evaluate_js 一律在后台 worker 线程执行：UI 线程只入队最新值即返回。
+    本测试用"会阻塞的 evaluate_js"模拟上述等待，断言扮演 UI 线程的调用方
+    不被卡住，且 evaluate_js 确实在非 UI 线程上执行。
+    """
+
+    def setUp(self):
+        # 重置模块级单例（隔离用例）；旧 worker 是 daemon，park 在共享 wake 上
+        # 无害——锁保证每个 pending 只被消费一次。
+        self._saved = (
+            desktop._ui_vis_state["pending"],
+            desktop._ui_vis_worker_started,
+        )
+        desktop._ui_vis_state["pending"] = None
+        desktop._ui_vis_worker_started = False
+        desktop._ui_vis_wake.clear()
+
+    def tearDown(self):
+        # 释放可能仍阻塞在 evaluate_js 上的 worker，并清空 pending
+        desktop._ui_vis_state["pending"] = None
+
+    class _BlockingWindow:
+        """evaluate_js 会阻塞（模拟等待 UI 线程消息泵）直到 release。"""
+
+        def __init__(self):
+            self.release = threading.Event()
+            self.calls = []  # (js, thread_name)
+
+        def evaluate_js(self, js):
+            self.calls.append((js, threading.current_thread().name))
+            self.release.wait(timeout=5)  # UI 线程被占 => 旧实现永久阻塞于此
+
+    def _call_from_ui_thread(self, w):
+        """在独立线程扮演 WinForms UI 线程调用 _notify_ui_visible；
+        若自死锁，join 超时会失败。"""
+        returned = []
+        ui = threading.Thread(
+            target=lambda: returned.append(desktop._notify_ui_visible(w, False) or "ok"),
+            name="fake-ui-thread",
+        )
+        ui.start()
+        ui.join(timeout=2.0)
+        self.assertFalse(
+            ui.is_alive(),
+            "RC-005：UI 线程上的 _notify_ui_visible 自死锁（evaluate_js 同步阻塞）",
+        )
+        return returned
+
+    def test_notify_does_not_block_ui_thread(self):
+        w = self._BlockingWindow()
+        returned = self._call_from_ui_thread(w)
+        self.assertEqual(returned, ["ok"])
+        # 释放阻塞，让后台 worker 完成 evaluate_js，然后确认它确实执行了
+        w.release.set()
+        deadline = time.monotonic() + 3.0
+        while not w.calls and time.monotonic() < deadline:
+            time.sleep(0.02)
+        self.assertTrue(w.calls, "worker 应已在后台执行 evaluate_js")
+        js, thr = w.calls[0]
+        self.assertNotEqual(
+            thr, "fake-ui-thread",
+            "evaluate_js 不得在 UI 线程执行（否则自死锁）",
+        )
+        self.assertIn("false", js)
+
+    def test_none_window_is_noop(self):
+        # window 为 None 时静默返回，不启动 worker、不入队
+        desktop._notify_ui_visible(None, True)
+        self.assertIsNone(desktop._ui_vis_state["pending"])
+
+    def test_latest_value_coalesced(self):
+        """快速 hide/show 循环：worker 取"最新值"，不丢最终态。"""
+        w = self._BlockingWindow()
+        w.release = threading.Event()  # 一开始就放行，便于多次调用快速入队
+        for v in (True, False, True):
+            desktop._notify_ui_visible(w, v)
+        w.release.set()
+        deadline = time.monotonic() + 3.0
+        while time.monotonic() < deadline:
+            if w.calls:
+                break
+            time.sleep(0.02)
+        self.assertTrue(w.calls)
+        # 最终发送的可见性应为最后一次 True
+        self.assertIn("true", w.calls[-1][0])
+
+
+@unittest.skipUnless(sys.platform == "win32", "仅 Windows（pywebview winforms 平台）")
+class SetOnTopPatchTests(unittest.TestCase):
+    """RC-005(2/2) 回归：pywebview(winforms) set_on_top 打补丁后走非阻塞投递。
+
+    真实根因（0.16.4 托盘 20 次 hide/show 实测复现，py-spy --native 定位）：
+    原 set_on_top 跨线程**直接**写 Control.TopMost（不经 Invoke，与 show/hide/
+    restore 不同）-> 触发 NtUserSetWindowPos（阻塞式 Win32 调用），调用方 Python
+    线程停在该调用上并继续持有 GIL；同时 WinForms UI 线程执行 Python 回调需
+    PyGILState_Ensure 获取 GIL => 循环等待 => GIL 星型饿死 => asyncio 事件循环
+    （/api/status + 事件循环内 Collector）停摆直到进程重启。
+    dump 实证：Thread-5 park 在 NtUserSetWindowPos（持 GIL），UI 线程 park 在
+    PyGILState_Ensure（等 GIL）。
+    修复：create_window 前 monkeypatch 模块级 set_on_top，改为 BeginInvoke 非阻塞
+    投递 + 纯 .NET 方法组委托。本测试断言打补丁后 set_on_top 走 BeginInvoke、
+    不跨线程直写 TopMost；句柄未建/同线程时回退同线程直写；未知 uid 无副作用。
+    """
+
+    def _wf(self):
+        try:
+            from webview.platforms import winforms as wf
+        except Exception:
+            self.skipTest("winforms 不可导入（无 pythonnet/clr）")
+        return wf
+
+    def _apply_and_restore(self, wf):
+        original = wf.set_on_top
+        self.assertTrue(desktop._patch_pywebview_set_on_top())
+        return original
+
+    def _restore(self, wf, original):
+        wf.set_on_top = original
+        try:
+            del wf._llamamonitor_set_on_top_patched
+        except AttributeError:
+            pass
+
+    def test_patch_applies_and_is_idempotent(self):
+        wf = self._wf()
+        original = wf.set_on_top
+        try:
+            self._apply_and_restore(wf)
+            self.assertIsNot(wf.set_on_top, original, "补丁应替换模块级 set_on_top")
+            first = wf.set_on_top
+            self.assertTrue(desktop._patch_pywebview_set_on_top(), "二次调用应幂等返回 True")
+            self.assertIs(wf.set_on_top, first, "幂等：不得再次替换")
+        finally:
+            self._restore(wf, original)
+
+    def test_patched_uses_begininvoke_not_direct_cross_thread_write(self):
+        wf = self._wf()
+        original = wf.set_on_top
+        try:
+            self._apply_and_restore(wf)
+            fake = _FakeControlCrossThread()
+            wf.BrowserView.instances["rc005-x"] = fake
+            try:
+                wf.set_on_top("rc005-x", True)
+            finally:
+                wf.BrowserView.instances.pop("rc005-x", None)
+            self.assertEqual(fake.begin_invoked, [True], "应经 BeginInvoke 非阻塞投递")
+            self.assertEqual(fake.direct_set, [], "不得跨线程直写 Control.TopMost")
+        finally:
+            self._restore(wf, original)
+
+    def test_patched_falls_back_to_direct_write_when_no_handle(self):
+        wf = self._wf()
+        original = wf.set_on_top
+        try:
+            self._apply_and_restore(wf)
+            fake = _FakeControlNoHandle()
+            wf.BrowserView.instances["rc005-y"] = fake
+            try:
+                wf.set_on_top("rc005-y", False)
+            finally:
+                wf.BrowserView.instances.pop("rc005-y", None)
+            self.assertEqual(fake.direct_set, [False], "句柄未建/同线程时应回退同线程直写")
+        finally:
+            self._restore(wf, original)
+
+    def test_unknown_uid_is_noop(self):
+        wf = self._wf()
+        original = wf.set_on_top
+        try:
+            self._apply_and_restore(wf)
+            wf.set_on_top("no-such-uid-rc005", True)  # 不得抛异常
+        finally:
+            self._restore(wf, original)
+
+
+class _FakeControlCrossThread:
+    """模拟真实 WinForms.Form（句柄已建、跨线程）：记录 BeginInvoke vs 直写。"""
+
+    def __init__(self):
+        self.begin_invoked = []
+        self.direct_set = []
+        self.InvokeRequired = True
+        self._topmost = None
+
+    def set_TopMost(self, v):
+        self.direct_set.append(v)
+
+    @property
+    def TopMost(self):
+        return self._topmost
+
+    @TopMost.setter
+    def TopMost(self, v):
+        self.set_TopMost(v)
+
+    def BeginInvoke(self, delegate, args):
+        self.begin_invoked.append(args[0])
+        return "op"
+
+
+class _FakeControlNoHandle:
+    """模拟句柄未建：BeginInvoke 抛错、InvokeRequired=False（同线程可直写）。"""
+
+    def __init__(self):
+        self.direct_set = []
+        self.InvokeRequired = False
+        self._topmost = None
+
+    def set_TopMost(self, v):
+        self.direct_set.append(v)
+
+    @property
+    def TopMost(self):
+        return self._topmost
+
+    @TopMost.setter
+    def TopMost(self, v):
+        self.set_TopMost(v)
+
+    def BeginInvoke(self, delegate, args):
+        raise Exception("handle not created")
+
+
 if __name__ == "__main__":
     unittest.main()

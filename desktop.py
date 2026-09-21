@@ -42,6 +42,7 @@ import sys
 import threading
 import time
 import webbrowser
+from collections.abc import Callable
 from pathlib import Path
 
 import httpx
@@ -183,6 +184,171 @@ def _fatal_dialog(message: str) -> None:
     _message_box(message, 0x10)
 
 
+# ---------- UI 可见性桥接（Phase 15 UI-024；RC-005 线程安全化） ----------
+#
+# RC-005 根因：_on_closing 在 **WinForms UI 线程** 上执行，它调用
+# _notify_ui_visible -> window.evaluate_js()。pywebview(edgechromium) 的
+# evaluate_js 先 Invoke(把释放回调投到 UI 线程自己的 SyncContext) 再
+# semaphore.acquire() **无超时**——即"在 UI 线程上等待 UI 线程自己来释放"，
+# 自死锁：UI 消息泵卡死 -> set_on_top 等跨线程窗口操作、Collector 落盘、
+# /api/status 全部停摆，直到进程重启。真实 X 按钮/WM_CLOSE(tray hide)路径
+# 才会走到 _on_closing；加速 UI 压测走的是 ShowWindow/JS 路径，故此前未暴露。
+#
+# 修复：evaluate_js 一律在**后台 worker 线程**执行（pywebview 本就允许任意
+# 线程调用，内部 Invoke 会正确跨线程投递）。UI 线程 _notify_ui_visible 只把
+# 最新状态入队即返回，绝不阻塞消息泵。可见性信号是 best-effort（前端另有
+# document.visibilitychange 轮询兜底），延迟/合并可接受；worker 取"最新值"，
+# 快速 hide/show 循环不堆积线程、不丢最终态。
+_ui_vis_state: dict = {"pending": None}
+_ui_vis_lock = threading.Lock()
+_ui_vis_wake = threading.Event()
+_ui_vis_worker_started = False
+
+
+def _ui_visible_worker(state: dict, lock: threading.Lock, wake: threading.Event) -> None:
+    """单例守护线程：把最新窗口可见性发给前端，跨线程调用 evaluate_js（不卡 UI）。
+
+    state/lock/wake 以参数捕获（启动时固定），避免运行期被替换导致多 worker 串扰。
+    """
+    while True:
+        wake.wait()
+        wake.clear()
+        # 排空当前突发：每次取"最新值"发送；发送期间若又有新值则继续。
+        for _ in range(16):
+            with lock:
+                pending = state["pending"]
+                if pending is None:
+                    break
+                state["pending"] = None
+            window, visible = pending
+            try:
+                window.evaluate_js(
+                    "if (window.__lmSetVisible) { window.__lmSetVisible(%s); }"
+                    % ("true" if visible else "false")
+                )
+            except Exception:
+                pass  # 纯 UI 增强，静默
+            with lock:
+                if state["pending"] is None:
+                    break
+
+
+def _window_op_guarded(op: Callable[[], None], timeout: float = 3.0) -> bool:
+    """在守护线程上执行窗口操作，限时等待完成（超时返回 False）。
+
+    RC-005 第二成因（防御层）：经 `Invoke` 投递的 restore/show/hide 与
+    evaluate_js（跨线程 Invoke + **无超时** semaphore.acquire）在 WinForms
+    UI 线程消息泵被卡时都会把调用方（llamamonitor-ui dispatcher）无限期阻塞。
+    dispatcher 卡死后续连锁：托盘命令停摆 +（UI 线程 GIL 星型饿死时）
+    API/Collector 停摆直到重启。set_on_top 已由 `_patch_pywebview_set_on_top`
+    改为 BeginInvoke 非阻塞，不经过本守卫；本守卫覆盖其余阻塞式窗口操作。
+    修复：操作一律在 daemon 线程执行 + join(timeout)——卡住的操作留在后台
+    daemon 线程（parked；其 GIL 占用无法靠超时消除，但至少 dispatcher/UI
+    线程绝不被无限阻塞，托盘命令保持响应——严格优于无超时版）。
+    返回 True=限时内完成，False=超时（调用方自行决定回退/静默）。
+    """
+    done = threading.Event()
+    err: dict = {}
+
+    def _run() -> None:
+        try:
+            op()
+        except Exception as exc:
+            err["e"] = exc
+        finally:
+            done.set()
+
+    t = threading.Thread(target=_run, name="llamamonitor-winop", daemon=True)
+    t.start()
+    if not done.wait(timeout):
+        return False
+    if "e" in err:
+        raise err["e"]
+    return True
+
+
+def _notify_ui_visible(window, visible: bool) -> None:
+    """把窗口真实可见性桥给前端（best-effort）。
+
+    必须在 WinForms UI 线程上也安全（closing 处理器跑在该线程）：本函数只入队
+    最新值 + 唤醒 worker 即返回，evaluate_js 在后台 worker 执行，不会自死锁
+    UI 消息泵（RC-005）。window 为 None 时静默返回。
+    """
+    global _ui_vis_worker_started
+    if window is None:
+        return
+    with _ui_vis_lock:
+        _ui_vis_state["pending"] = (window, bool(visible))
+        if not _ui_vis_worker_started:
+            _ui_vis_worker_started = True
+            threading.Thread(
+                target=_ui_visible_worker,
+                args=(_ui_vis_state, _ui_vis_lock, _ui_vis_wake),
+                name="llamamonitor-ui-visible",
+                daemon=True,
+            ).start()
+    _ui_vis_wake.set()
+
+
+# ---------- RC-005（2/2）：pywebview(winforms) set_on_top 跨线程直接写 TopMost ----------
+#
+# 第二根因（0.16.4 托盘 20 次 hide/show 实测复现，py-spy --native dump 定位）：
+# pywebview winforms 的模块级 set_on_top 是所有窗口操作中**唯一**由调用线程
+# （llamamonitor-ui dispatcher / threading.Timer）**直接跨线程写** Control 的
+# ——`i.TopMost = on_top` 不经过 Invoke（show/hide/restore/minimize/load_url 全部
+# 经 Invoke 投递）。跨线程直接写触发 NtUserSetWindowPos（阻塞式 Win32 调用），
+# 调用方 Python 线程在该调用上停住并继续持有 GIL；同时 WinForms UI 线程执行
+# Python 回调（如 500ms timer）需 PyGILState_Ensure 获取 GIL => 循环等待 =>
+# GIL 星型饿死 => asyncio 事件循环（/api/status + 事件循环内 Collector）停摆
+# 直到进程重启。dump 实证：Thread-5 park 在 NtUserSetWindowPos（持 GIL），
+# UI 线程 park 在 PyGILState_Ensure（等 GIL）。
+#
+# 修复（产品级，随源码走、不依赖第三方 venv 补丁）：create_window 前 monkeypatch
+# 模块级 set_on_top，改为 **BeginInvoke 非阻塞投递** + **纯 .NET 方法组委托**
+# Action[bool](i.set_TopMost)——.NET 委托在 UI 线程执行时无 Python 帧、不取
+# GIL（与 pywebview 自身 show/hide 的 self.Show/self.Hide 模式一致）；调用线程
+# 微秒级返回，绝不停留在跨线程阻塞 Win32 调用上持有 GIL，循环等待从结构上
+# 消失。句柄未建/同线程时回退同线程直接写（InvokeRequired=False 无跨线程问题）。
+# 仅 win32 生效、幂等；winforms 导入失败（测试 fake / 无 pythonnet）时 no-op。
+def _patch_pywebview_set_on_top() -> bool:
+    """对 pywebview(winforms) 施加 RC-005(2/2) 补丁。返回 True=已生效。"""
+    if sys.platform != "win32":
+        return False
+    try:
+        from webview.platforms import winforms as _wf
+    except Exception:
+        return False
+    if getattr(_wf, "_llamamonitor_set_on_top_patched", False):
+        return True
+    try:
+        # pythonnet 的 System shim：winforms 导入成功即 clr 已加载（上面已保证）
+        from System import Action as _Action
+    except Exception:
+        return False
+
+    def _safe_set_on_top(uid, on_top: bool) -> None:
+        try:
+            i = _wf.BrowserView.instances.get(uid)
+        except Exception:
+            return
+        if not i:
+            return
+        try:
+            # 句柄已建：非阻塞投递到 UI 线程（纯 .NET 委托，UI 线程执行不取 GIL）
+            i.BeginInvoke(_Action[bool](i.set_TopMost), [bool(on_top)])
+        except Exception:
+            try:
+                # 句柄未建/当前即 UI 线程：同线程直接写是安全的
+                if not i.InvokeRequired:
+                    i.TopMost = bool(on_top)
+            except Exception:
+                pass
+
+    _wf.set_on_top = _safe_set_on_top
+    _wf._llamamonitor_set_on_top_patched = True
+    return True
+
+
 def main(argv: list[str] | None = None, loaded: LoadedConfig | None = None) -> int:
     parser = argparse.ArgumentParser(description="LlamaMonitor 桌面入口（pywebview + 内嵌 FastAPI + 系统托盘）")
     parser.add_argument("--background", action="store_true", help="后台启动：完整运行但主窗口保持隐藏（托盘）")
@@ -250,29 +416,14 @@ def main(argv: list[str] | None = None, loaded: LoadedConfig | None = None) -> i
                 pass
         return True
 
-    def _notify_ui_visible(w, visible: bool) -> None:
-        """Phase 15（UI-024）：把窗口真实可见性桥给前端。
-
-        WebView2 隐藏窗口（Win32 SW_HIDE）不保证触发 document.visibilitychange，
-        前端轮询需要真实的窗口级可见性来降频；失败静默（纯 UI 增强）。
-        前端在 polling.js 初始化时注册 window.__lmSetVisible。
-        """
-        try:
-            w.evaluate_js(
-                "if (window.__lmSetVisible) { window.__lmSetVisible(%s); }"
-                % ("true" if visible else "false")
-            )
-        except Exception:
-            pass
-
     def _cmd_show() -> None:
         w = ui["window"]
         if w is not None and ui["webview_ok"]:
             try:
                 # hidden -> show；minimized -> restore；然后短暂置顶带到最前
-                w.on_top = True
-                w.restore()
-                w.show()
+                w.on_top = True  # RC-005：monkeypatch 后非阻塞（BeginInvoke 投递 UI 线程）
+                # RC-005：restore/show 走阻塞式 Invoke——守卫限 3s，dispatcher 绝不被卡死
+                _window_op_guarded(lambda: (w.restore(), w.show()))
                 _notify_ui_visible(w, True)
 
                 def _drop_topmost() -> None:
@@ -291,7 +442,7 @@ def main(argv: list[str] | None = None, loaded: LoadedConfig | None = None) -> i
         w = ui["window"]
         if w is not None:
             try:
-                w.hide()
+                _window_op_guarded(w.hide)  # RC-005：hide 阻塞式 Invoke——守卫限 3s
                 _notify_ui_visible(w, False)
             except Exception:
                 log.warning("隐藏窗口失败", exc_info=True)
@@ -304,21 +455,24 @@ def main(argv: list[str] | None = None, loaded: LoadedConfig | None = None) -> i
         w = ui["window"]
         if w is not None and ui["webview_ok"]:
             try:
-                w.on_top = True
-                w.restore()
-                w.show()
+                w.on_top = True  # RC-005：monkeypatch 后非阻塞（BeginInvoke 投递 UI 线程）
+                # RC-005：restore/show 走阻塞式 Invoke——守卫限 3s，dispatcher 绝不被卡死
+                _window_op_guarded(lambda: (w.restore(), w.show()))
 
                 def _drop_topmost() -> None:
                     try:
-                        w.on_top = False
+                        w.on_top = False  # monkeypatch 后非阻塞，不卡 Timer 线程
                     except Exception:
                         pass
 
                 threading.Timer(0.4, _drop_topmost).start()
                 _notify_ui_visible(w, True)
-                # 前端初始化时注册 window.__showUpdatesSection；页面未就绪时静默跳过
+                # 前端初始化时注册 window.__showUpdatesSection；页面未就绪时静默跳过。
+                # RC-005：evaluate_js 跨线程 Invoke + 无超时 acquire——守卫限 3s
                 try:
-                    w.evaluate_js("if (window.__showUpdatesSection) { window.__showUpdatesSection(); }")
+                    _window_op_guarded(
+                        lambda: w.evaluate_js("if (window.__showUpdatesSection) { window.__showUpdatesSection(); }")
+                    )
                 except Exception:
                     pass
                 return
@@ -582,6 +736,10 @@ def main(argv: list[str] | None = None, loaded: LoadedConfig | None = None) -> i
         start_hidden = background
         try:
             import webview as webview_module
+
+            # RC-005(2/2)：create_window 前打 set_on_top 补丁（须在窗口创建前，
+            # 保证 on_top setter 绑定的 gui.set_on_top 已是安全实现）
+            _patch_pywebview_set_on_top()
 
             window = webview_module.create_window(
                 WINDOW_TITLE,
