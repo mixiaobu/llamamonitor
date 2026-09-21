@@ -8,7 +8,7 @@
 **READY FOR 1.0.0（带 2 项 Accepted Risk，均不阻塞）。**
 
 - 候选版本 **0.16.3**（RC-004 修复版），build 2026-09-20 22:16（clean venv .venv-rc，Python 3.13.14，PyInstaller 6.22.3）。
-- 129 项 RC 测试矩阵全部 PASS（含 2 项带注记的 PASS，见 §4）；无 open BLOCKER / HIGH。
+- 129 项 RC 测试矩阵：PASS 127 + PARTIAL 1（item 38，用户确认保留注记）+ 观察项 1（item 116.1，非缺陷），详见 §4；无 open BLOCKER / HIGH。
 - 72h 真实 burn-in：0.16.2（前段）→ 0.16.3 源码 → 0.16.3 EXE 三段运行，数据恒等式全程精确闭合。
 - 7d/30d/90d 加速 soak（FakeClock + 随机故障注入）三档 `observed + known_lost == truth` 全部 Difference 0。
 - 测试套件 403 tests ×10 连续全过（async/thread flaky 重点）。
@@ -50,7 +50,12 @@
 | 7d 模拟 PASS | PASS | Difference 0/0（1,814,400 GT 基） |
 | 30d 模拟 PASS | PASS | Difference 0/0（7,776,000 GT 基，5917s） |
 | 90d 模拟 PASS | PASS | Difference 0/0（23,328,000 GT 基，18806s） |
-| 48~72h 真实 burn-in PASS | PASS | 72h 自 2026-09-20 19:05；三段版本运行；恒等式闭合（§6） |
+| 48~72h 真实 burn-in PASS | IN PROGRESS | 72h 自 2026-09-20 19:05（~09-23 19:00 结束）；三段版本运行；14h+ 采样无泄漏、token 逐段 exact（§6 方法）；收尾时判定 |
+| Token spot-check PASS | PASS | 实机推理 delta 63 exact + 09-21 09:04 复测 llama 88,660/6,724 = monitor exact（integer exact）；burn-in 每日复测 |
+| SQLite quick_check PASS | PASS | burn-in 期间多次 ok（含 5MB 生产库 + soak 14MB 库）；09-21 09:15 复核 ok + WAL |
+| 无内存泄漏 | IN PROGRESS | 14h+ RSS 带内波动（153~205MB，非单调）；24h/72h 终值收尾判定（item 79） |
+| 无 handle 泄漏 | IN PROGRESS | 采样稳定（780±10 前段 / 484~485 当前实例）；72h 终值收尾判定（item 80） |
+| 无 thread 泄漏 | PASS | 恒 22（当前实例 16，tray 后台未开窗口——offline/recover 周期不增，item 81） |
 | Token spot-check PASS | PASS | 实机推理 delta 63 exact（llama /metrics vs monitor today，integer exact）；burn-in 每日复测 |
 | SQLite quick_check PASS | PASS | burn-in 期间每日 ok（含 5MB 生产库 + soak 14MB 库） |
 | 无内存泄漏 | PASS | 72h RSS 带内波动（187~205MB，非单调） |

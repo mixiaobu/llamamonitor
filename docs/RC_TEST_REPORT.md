@@ -21,14 +21,14 @@
 
 | 来源 | 值 | 状态 |
 |---|---|---|
-| `--version` | LlamaMonitor 0.16.2 | PASS |
-| `/api/version` | 0.16.2 | PASS |
-| About 页 | （0.16.0 安装后验证过；0.16.2 同源 version.py） | PASS |
-| Windows EXE Properties | ProductVersion 0.16.2 / FileVersion 0.16.2.0 | PASS |
-| Installer 文件名 | LlamaMonitor-Setup-0.16.2-win-x64.exe | PASS |
-| Installed Apps | "LlamaMonitor version 0.16.2" / DisplayVersion 0.16.2 | PASS |
-| Portable 文件名 | LlamaMonitor-0.16.2-win-x64.zip | PASS |
-| release-manifest.json | version 0.16.2 | PASS |
+| `--version` | 同源 version.py（0.16.2 已实机验证 "LlamaMonitor 0.16.2"；0.16.3 同路径同源码） | PASS |
+| `/api/version` | 0.16.3（09-21 09:20 实机复核） | PASS |
+| About 页 | （0.16.0 安装后验证过；各版本同源 version.py） | PASS |
+| Windows EXE Properties | ProductVersion 0.16.3 / FileVersion 0.16.3.0（09-21 实机复核） | PASS |
+| Installer 文件名 | LlamaMonitor-Setup-0.16.3-win-x64.exe | PASS |
+| Installed Apps | "LlamaMonitor version 0.16.3" / DisplayVersion 0.16.3（HKCU Uninstall，09-21 复核） | PASS |
+| Portable 文件名 | LlamaMonitor-0.16.3-win-x64.zip | PASS |
+| release-manifest.json | version 0.16.3（09-21 复核） | PASS |
 
 ## 1. Release Build（items 5-7）
 
@@ -189,8 +189,8 @@
 |---|---|---|---|
 | 77 | Dashboard 24h：RAM/CPU/WebView/Timers/Charts | IN PROGRESS | burn-in 11h 采样 RSS 187.6~203.8MB 波动无趋势（205.9→192.7→199→200.7→199.8→202.1→203.8），WebView 持续加载 /api/* 无泄漏迹象（24h 终值 burn-in 收尾记录） |
 | 78 | Tray 24h：RAM/CPU/Threads/Handles | IN PROGRESS | 11h 采样：Threads 恒 22（安装切换点瞬时 26/34 后回落），Handles 823→794→780→782→783 稳定，CPU idle 0.8% 单核（item 83）；24h 终值待收尾 |
-| 79 | Memory Leak：Startup/1h/4h/8h/24h RSS，近似线性增长则调查 | IN PROGRESS | 11 点采样（1h~11h）：205.9→192.7→199→199.7→200.6→200.7→199.8→202.1→203.8MB，**无近似线性增长**（11h 净增 +2.7MB < 2% 且非单调，波动带内）；24h/48h/72h 点 burn-in 收尾时补记 |
-| 80 | Handle Leak：Handle Count Startup/1h/4h/8h 不线性增长 | IN PROGRESS | 采样：startup 2392 → 1h 823 → 3h 794 → 4h 780 → 5h 782 → 7h 781 → 11h 783（首轮高峰后稳定在 780±3，**无增长**）；24h 点收尾补记 |
+| 79 | Memory Leak：Startup/1h/4h/8h/24h RSS，近似线性增长则调查 | IN PROGRESS | 11 点采样（1h~11h）：205.9→192.7→199→199.7→200.6→200.7→199.8→202.1→203.8MB，**无近似线性增长**（11h 净增 +2.7MB < 2% 且非单调，波动带内）。08:48 新实例（tray 后台、窗口未开，基线更低）：09:09 153MB→09:11 154MB 稳定。24h/48h/72h 点 burn-in 收尾时补记（同实例生命周期内比较；RSS 绝对值受窗口可见性影响，判定标准为生命周期内趋势） |
+| 80 | Handle Leak：Handle Count Startup/1h/4h/8h 不线性增长 | IN PROGRESS | 采样：startup 2392 → 1h 823 → 3h 794 → 4h 780 → 5h 782 → 7h 781 → 11h 783（首轮高峰后稳定在 780±3，**无增长**）。08:48 新实例：485→484 稳定（窗口未开基线更低）。72h 终值收尾判定（同生命周期内比较） |
 | 81 | Thread Leak：Thread Count，offline/recover 不多线程 | PASS | 实测 offline/recover 完整周期：threads 25→25(offline)→22(recover)→22(stable+60s)，**无单调增长**（offline/recover 不泄漏线程；100 次窗口 hide/show 期间 threads 也恒 23） |
 | 82 | nvidia-smi Leak：无长期残留 nvidia-smi.exe | PASS | burn-in 19:20 采样：nvidia-smi 进程 0 个（每次调用超时 kill，单测 test_timeout_kills + test_default_runner_cancel_kills_child 覆盖） |
 | 83 | CPU Idle：Tray 后台不持续占一个核 | PASS | burn-in 采样：monitor 20s CPU delta 0.16s = 0.8% 单核（tray 后台空闲，5s 轮询 + GPU 采样为主） |
@@ -264,9 +264,9 @@
 | 48~72h real burn-in PASS | IN PROGRESS | 72h 自 2026-09-20 19:05 起运行（0.16.2→0.16.3 三段）；13h 采样无泄漏；收尾 ~09-23 19:00 判定（items 105/107） |
 | Token spot-check PASS | PASS | item 109/14：实机推理 delta 63 exact（integer exact）；burn-in 每日复测 |
 | SQLite quick_check PASS | PASS | item 110：burn-in 期间每日 ok（含 soak 14MB 库） |
-| No obvious memory leak | PASS | item 79：11h+ 采样 RSS 187~205MB 带内波动非单调（24h/72h 终值收尾确认） |
-| No handle leak | PASS | item 80：780±10 稳定 |
-| No thread leak | PASS | item 81：恒 22，offline/recover 周期不增 |
+| No obvious memory leak | IN PROGRESS | item 79：14h+ 采样 RSS 153~205MB 带内波动非单调；24h/72h 终值收尾判定 |
+| No handle leak | IN PROGRESS | item 80：前段 780±10 / 当前实例 484~485 稳定；72h 终值收尾判定 |
+| No thread leak | PASS | item 81：恒 22（当前实例 16，tray 后台），offline/recover 周期不增 |
 | Clean install PASS | PASS | item 5-7：独立环境首装 + 首次启动 baseline |
 | Upgrade PASS | PASS | item 65：0.16.1 覆盖安装 exit 0 数据完整；item 62 更新链 0.16.0→0.16.1 真实升级 |
 | Uninstall/Reinstall PASS | PASS | item 66-68：卸载保留数据/重删数据/重装均验证 |
