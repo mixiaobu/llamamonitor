@@ -54,7 +54,7 @@
 |---|---|---|
 | 0 open BLOCKER | PASS | 0 |
 | 0 open HIGH | PASS | RC-002/RC-004/RC-005 均 FIXED（RC-MED-001 为 MEDIUM → AR-003） |
-| 测试套件 ×10 PASS | PASS | 403 tests ×10（0.16.3）+ **410 tests ×10 连续全过（0.16.4，282s/轮，本 RC 收尾复跑中）** |
+| 测试套件 ×10 PASS | PASS | 403 tests ×10（0.16.3）+ **410 tests ×10 连续 10/10 OK（0.16.4，281~290s/轮，无 flaky）** |
 | 7d 模拟 PASS | PASS | Difference 0/0（1,814,400 GT 基） |
 | 30d 模拟 PASS | PASS | Difference 0/0（7,776,000 GT 基，5917s） |
 | 90d 模拟 PASS | PASS | Difference 0/0（23,328,000 GT 基，18806s） |
@@ -81,7 +81,7 @@
 
 > 完整性判定不依赖"起点 vs 终点"（期间有 monitor/llama 重启与系统崩溃），而基于三层核对 + 加速段恒等式：
 
-1. **加速段恒等式（最强证据）**：100000 轮 collector 压测（74 reset + 42 monitor restart + 83 缺口注入）`observed + known_lost == truth` **差值 0/0**（GT 1,500,000/500,000）；100000 GPU 样本 energy 梯形积分无负值；7/30/90d soak 三档 Difference 0/0（365d 补充中）。
+1. **加速段恒等式（最强证据）**：100000 轮 collector 压测（74 reset + 42 monitor restart + 83 缺口注入）`observed + known_lost == truth` **差值 0/0**（GT 1,500,000/500,000）；100000 GPU 样本 energy 梯形积分无负值；7/30/90/365d soak 四档全部 Difference 0/0。
 2. **daily 行无负值/无重复**：daily_usage SUM 单调递增，negative_rows=0（09-21 09:15 验证；4h burn-in 每个 checkpoint 复验）。
 3. **llama /metrics ↔ monitor 逐段精确核对**（item 109 每日复测）：09-21 09:04 spot-check llama prompt=88,660/output=6,724 与 monitor today **integer exact 一致**；09-20 推理 delta 63 exact。
 4. **SQLite 完整性**：quick_check ok + WAL journal 稳定（4h burn-in T=0/1h/2h/4h checkpoint 记录 WAL 大小 + quick_check + collector 状态 + GPU 状态）。
