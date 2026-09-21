@@ -93,7 +93,7 @@ a:hover {
 }
 ::-webkit-scrollbar-thumb {
   background: var(--scrollbar-thumb);
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   border: 2px solid transparent;
   background-clip: content-box;
 }

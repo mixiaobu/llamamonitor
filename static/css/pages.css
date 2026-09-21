@@ -30,12 +30,12 @@
 .gpu-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: var(--spacing-md);
+  gap: var(--spacing-lg);
 }
 .gpu-device {
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-medium);
+  border-radius: var(--radius-large);
   padding: var(--spacing-md) var(--spacing-lg);
   min-width: 0;
 }
@@ -61,7 +61,7 @@
 .gpu-kv {
   display: grid;
   grid-template-columns: 92px minmax(0, 1fr);
-  gap: 3px var(--spacing-md);
+  gap: var(--spacing-xs) var(--spacing-md);
   font-size: var(--font-size-caption);
   font-variant-numeric: tabular-nums;
 }
@@ -71,7 +71,7 @@
 /* Settings GPU 探测列表 */
 .gpu-detected label {
   display: flex;
-  gap: 6px;
+  gap: var(--spacing-sm);
   align-items: baseline;
   cursor: pointer;
   flex-wrap: wrap;
@@ -83,7 +83,7 @@
 }
 .gpu-detected .uuid {
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-caption);
   word-break: break-all;
 }
 .gpu-detected .na {
@@ -101,7 +101,7 @@
 .gpu-pick label {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--spacing-sm);
   cursor: pointer;
 }
 .gpu-pick input {
@@ -112,7 +112,7 @@
 .energy-rows {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: var(--spacing-xs);
   font-size: var(--font-size-caption);
   font-variant-numeric: tabular-nums;
 }
@@ -141,7 +141,7 @@
   flex-direction: column;
 }
 .backup-list div {
-  padding: 5px 0;
+  padding: var(--spacing-sm) 0;
   border-bottom: 1px solid var(--border-subtle);
   font-variant-numeric: tabular-nums;
   word-break: break-all;
@@ -154,7 +154,7 @@
   white-space: pre-wrap;
   word-break: break-word;
   margin: 0 0 var(--spacing-sm);
-  padding: 10px 12px;
+  padding: var(--spacing-md) var(--spacing-md);
   background: var(--bg-input);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-control);
@@ -185,7 +185,7 @@
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-large);
   box-shadow: var(--shadow-card);
-  padding: var(--spacing-lg) var(--spacing-xl);
+  padding: var(--spacing-md) var(--spacing-lg);
 }
 .settings-card > h2 {
   font-size: var(--font-size-title);
@@ -205,7 +205,7 @@
   align-items: center;
   gap: var(--spacing-md);
   margin-top: var(--spacing-lg);
-  padding: var(--spacing-md) var(--spacing-xl);
+  padding: var(--spacing-md) var(--spacing-lg);
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-large);
@@ -238,7 +238,7 @@
 .progress-label {
   font-size: var(--font-size-caption);
   color: var(--text-secondary);
-  margin-top: 6px;
+  margin-top: var(--spacing-sm);
   font-variant-numeric: tabular-nums;
 }
 
@@ -304,7 +304,7 @@
   font-size: var(--font-size-caption);
   font-weight: var(--font-weight-semibold);
   color: var(--text-secondary);
-  padding: 4px 0 8px;
+  padding: var(--spacing-xs) 0 var(--spacing-sm);
 }
 
 /* 今日大数字卡 */
@@ -313,7 +313,7 @@
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-large);
   box-shadow: var(--shadow-card);
-  padding: var(--spacing-xl) var(--spacing-2xl);
+  padding: var(--spacing-md) var(--spacing-lg);
 }
 .today-hero {
   display: grid;
@@ -334,10 +334,10 @@
 .today-hero .hero-label {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--spacing-sm);
   font-size: var(--font-size-caption);
   color: var(--text-secondary);
-  margin-top: 6px;
+  margin-top: var(--spacing-sm);
 }
 .today-divider {
   height: 1px;
@@ -352,7 +352,7 @@
 .today-breakdown .tb-label {
   font-size: var(--font-size-caption);
   color: var(--text-secondary);
-  margin-bottom: 4px;
+  margin-bottom: var(--spacing-xs);
 }
 .today-breakdown .tb-value {
   font-size: var(--font-size-subtitle);
@@ -366,21 +366,21 @@
 .perf-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: var(--spacing-md);
+  gap: var(--spacing-lg);
 }
 .perf-card {
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-large);
   box-shadow: var(--shadow-card);
-  padding: var(--spacing-md) var(--spacing-xl);
+  padding: var(--spacing-md) var(--spacing-lg);
 }
 .perf-card .pc-row {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
   gap: var(--spacing-md);
-  padding: 8px 0;
+  padding: var(--spacing-sm) 0;
 }
 .perf-card .pc-row + .pc-row {
   border-top: 1px solid var(--border-subtle);
@@ -405,8 +405,8 @@
 /* ---------- 数据质量缺口表外的提示块 ---------- */
 .gap-reason-tag {
   display: inline-block;
-  font-size: 11px;
-  padding: 1px 8px;
+  font-size: var(--font-size-caption);
+  padding: var(--spacing-xs) var(--spacing-sm);
   border-radius: 999px;
   background: var(--bg-subtle-hover);
   color: var(--text-secondary);
