@@ -108,7 +108,7 @@
 | 35 | Windows Restart + Autostart：后台启动，不弹 Dashboard，Tray 出现，Collector 运行 | PASS | 实机两次重启验证：autostart 均成功触发（HKCU Run → `--background`，无 Dashboard、Tray 出现、Collector 运行）。**但发现 RC-002**（重启后就绪超时 30s → monitor 退出，0.16.1 已修复） |
 | 36 | Autostart 后统计：后台期间 Token 已记录 | PASS | --background 模式 collector 持续采集（total 递增 75.85M→76.34M）；后台期间 token 正常记录 |
 | 37 | Sleep/Wake（5-10min）：App 运行，Collector/GPU 恢复，Token 正常，Energy 不暴涨，Gap 合理 | PASS（系统崩溃=已知双 GPU 缺陷，已记录） | burn-in 20:10 短睡眠（~105s）实测：**monitor 存活穿过睡眠**，唤醒后正确记录 `system_pause_or_sleep` 缺口（20:12:38→20:49:14，2196s，token_recoverable=1，possible_loss=0——恢复轮 delta 覆盖睡眠窗口，无重复计数），数据 total 精确连续（79,623,517 = 基线+63 推理）。第二次睡眠 20:49 后系统再次硬崩溃（Event 41 @20:52:24，当日第 3 次，双 GPU T400+V100 睡眠系统级缺陷，非 monitor 问题）；monitor 恢复后（0.16.3 源码）quick_check ok、gap 链完整 |
-| 38 | 多次 Sleep（≥3）：无重复实例/线程 | PARTIAL | 完成 2 次睡眠周期（第 2 次因系统硬崩溃中断）：每次唤醒后 monitor 实例数恒 1（单实例 mutex 有效，无重复实例），线程 22-26 无增长（与 item 81 数据一致）。第 3 次+ 留到系统稳定后补做（双 GPU 睡眠崩溃风险高，当日已 3 次 Event 41，继续强测有打断 burn-in 风险）；monitor 侧的睡眠鲁棒性已由 37 + gap 记录 + 线程数据覆盖 |
+| 38 | 多次 Sleep（≥3）：无重复实例/线程 | PARTIAL（用户确认保留注记） | 完成 2 次睡眠周期（第 2 次因系统硬崩溃中断）：每次唤醒后 monitor 实例数恒 1（单实例 mutex 有效，无重复实例），线程 22-26 无增长（与 item 81 数据一致）。**第 3 次短睡眠经用户确认跳过**（2026-09-21）：双 GPU 机器 2 天内 4 次睡眠硬崩溃（Event 41），monitor 侧睡眠鲁棒性已由 item 37（存活 + gap 记录）+ 81（线程不增）+ 34（单实例）完整覆盖，继续强测的崩溃风险 > 边际收益。遗留 1.0.0 后在系统稳定环境补做 |
 | 39 | System Time Change（前调/后调）：不崩溃，GPU Energy 不异常 | PASS | 单测 test_clock_behavior.test_wall_forward_jump_no_fake_energy + test_wall_backward_no_negative_interval + test_reliability.test_wall_clock_forward_does_not_create_huge_energy（397 套件 ×10 过）；实机多次重启/时间变化无崩溃 |
 
 ## 8. Time Rollover（items 40-41）
@@ -245,34 +245,34 @@
 
 | # | 项 | 状态 | 证据/备注 |
 |---|---|---|---|
-| 115 | pytest ×10 连续全过（async/thread flaky 重点） | IN PROGRESS | 0.16.2：unittest discover（400 tests，含 RC-002/RC-003 回归）×10 连续 10/10 OK（268~291s，无 flaky；首轮版本 bump 时序 3 个 test_version 差异非 flaky）。**0.16.3：单轮 403 tests OK（276s，含 RC-004 三项 + 死代理修复）**；×10 在 0.16.3 构建后补做（46min，burn-in 期间机器空闲时跑） |
-| 116 | Accelerated Soak：7/30/90 天 FakeClock，无 unrecoverable gap，Observed==Ground Truth | IN PROGRESS | **7d PASS**（seed=42，1235s 实跑）：Ground Truth 1,814,400/604,800；Observed 1,747,263/582,421；Known Lost 67,137/22,379；**Difference = 0/0（恒等式精确闭合）**；1801 counter resets（online 1013/offline 788）全被检测，2036 离线事件=2036 缺口 1:1，3025 采样缺口（790 possible_loss）；3602 核心 reset 事件。**90d PASS**（seed=1，18806s 实跑）：GT 23,328,000/7,776,000；Observed 22,485,342/7,495,114；Known Lost 842,658/280,886；**Difference 0/0（恒等式精确闭合）**；22454 counter resets（online 12624/offline 9830）；12703 monitor restarts；25693 offline 事件=25693 缺口 1:1；38396 采样缺口（9917 possible loss）；28530 核心 reset 事件。**观察（非产品缺陷）**：soak 与测试套件/构建并行时会在同一确定性点 0-CPU 卡死（测试工具自身在 CPU 争用下的问题）；单独顺序运行正常（7d/90d solo 均完成，30d 重跑中）。产品 collector 的故障恢复可靠性由 items 18-33/111-112 独立验证 |
+| 115 | pytest ×10 连续全过（async/thread flaky 重点） | PASS | 0.16.2：unittest discover（400 tests，含 RC-002/RC-003 回归）×10 连续 10/10 OK（268~291s，无 flaky；首轮版本 bump 时序 3 个 test_version 差异非 flaky）。**0.16.3：403 tests（含 RC-004 三项 + 死代理修复）×10 连续 10/10 OK（274~280s，2026-09-21 07:49 起，无 flaky）** |
+| 116 | Accelerated Soak：7/30/90 天 FakeClock，无 unrecoverable gap，Observed==Ground Truth | PASS | **7d PASS**（seed=42，1235s 实跑）：Ground Truth 1,814,400/604,800；Observed 1,747,263/582,421；Known Lost 67,137/22,379；**Difference = 0/0（恒等式精确闭合）**；1801 counter resets（online 1013/offline 788）全被检测，2036 离线事件=2036 缺口 1:1，3025 采样缺口（790 possible_loss）；3602 核心 reset 事件。**90d PASS**（seed=1，18806s 实跑）：GT 23,328,000/7,776,000；Observed 22,485,342/7,495,114；Known Lost 842,658/280,886；**Difference 0/0（恒等式精确闭合）**；22454 counter resets（online 12624/offline 9830）；12703 monitor restarts；25693 offline 事件=25693 缺口 1:1；38396 采样缺口（9917 possible loss）；28530 核心 reset 事件。**30d PASS**（seed=7，5917s 重跑）：GT 7,776,000/2,592,000；Observed 7,482,219/2,494,073；Known Lost 293,781/97,927；**Difference 0/0**；7658 resets；8671 offline=8671 缺口 1:1。**7d/30d/90d 三档全部 PASS，observed+known_lost==truth 恒等式在三档均精确闭合**。**观察（非产品缺陷）**：soak 与测试套件/构建并行时会在同一确定性点 0-CPU 卡死（测试工具自身在 CPU 争用下的问题）；单独顺序运行正常。产品 collector 的故障恢复可靠性由 items 18-33/111-112 独立验证 |
 | 117 | Migration Matrix 全过 | PASS | test_migration（v0 legacy→v4 数据完整 / v2→v4 / v3→v4 / fresh / 中断回滚重试）+ test_newer_schema_guard（Pre-Migration Backup 验证、轮换排除、新版 schema 只读守卫）13 tests OK |
-| 116.1 | （观察）安装器升级 MoveFile code 5 | 观察（非产品缺陷，已定位） | 0.16.2→0.16.3 安装过程中多次**中途杀掉安装器**，标准目录残留 `is-*.tmp` + 半解包主 exe（Inno 先解 tmp 再 MoveFile rename）；后续无 `/DIR` 升级命中该脏目录 → 主 exe `MoveFile: in use (5)` 重试后 A/R/I 弹窗（静默下卡住）。**对照实验**：装全新目录（C:\LMtest / LlamaMonitor2）均 exit 0；显式 `/DIR=<标准目录>`（清脏后）exit 0 且 EXE OK。根因 = 半安装脏状态 + 升级复用旧 InstallLocation，非安装器本体缺陷。正常升级路径（item 62：0.16.0→0.16.1→0.16.2 顺序升级）历史 PASS。处置：清目录 + 显式 /DIR 完成 0.16.3 安装，自启值恢复，0.16.3 实机在线。若要在产品层面加固（升级前先探测并清理残留 is-*.tmp / 半解包文件）列为 1.0.0 打磨 |
+| 116.1 | （观察）安装器升级 MoveFile code 5 | 观察（非产品缺陷，已定位） | 0.16.2→0.16.3 安装过程中多次**中途杀掉安装器**，标准目录残留 `is-*.tmp` + 半解包主 exe（Inno 先解 tmp 再 MoveFile rename）；后续无 `/DIR` 升级命中该脏目录 → 主 exe `MoveFile: in use (5)` 重试后 A/R/I 弹窗（静默下卡住）。**对照实验**：装全新目录（C:\LMtest / LlamaMonitor2）均 exit 0；显式 `/DIR=<标准目录>`（清脏后）exit 0 且 EXE OK。根因 = 半安装脏状态 + 升级复用旧 InstallLocation，非安装器本体缺陷。正常升级路径（item 62：0.16.0→0.16.1→0.16.2 顺序升级）历史 PASS。处置：清目录 + 显式 /DIR 完成 0.16.3 安装，自启值恢复，0.16.3 实机在线。**360 排查（用户线索，2026-09-21 08:40~09:10，结论：基本排除）**：机器装有 360 安全卫士全套（12 个内核驱动含 360FsFlt 文件过滤 minifilter、"主动防御"服务 Running；不注册标准 AV WMI 类所以早期常规检查漏检）。排查结论：(a) 360 隔离区（Roaming\360safe\isolate）无条目、360 安装目录无 Llama 残留 → 排除查杀/隔离；(b) **360 近 3 天全部日志（log/txt/dat）grep "LlamaMonitor" 零命中** → 360 从未记录处理过我们的文件，基本排除其干扰（若 minifilter 拦过，事件通常落 360evtmgrpb.dat/CloudLog）；(c) 干净目录 + monitor 未运行 + 360 全开重装 0.16.3 → exit 0、EXE OK；(d) 原 MoveFile code 5 复现场景全部叠加"半安装脏目录 + Inno 记住 InstallLocation 复用 + （部分场景）monitor 在运行"——**主因仍是半安装脏状态**（杀安装器产生的 is-*.tmp/半解包残留 + MoveFile 窗口内被占），360 降为低嫌疑背景因素。另确认：burn-in monitor 运行时直接覆盖安装触发 Inno AppMutex "LlamaMonitor is currently running" OK/Cancel 弹窗，静默下卡住（升级前应先优雅停 monitor；产品更新流程 /APPUPDATE_BG 已有此步骤）。若要在产品层面加固（升级前先探测并清理残留 is-*.tmp / 半解包文件 + monitor 运行中时升级先自停）列为 1.0.0 打磨 |
 | 118 | Release Security Validation：Signature/Hash/Size/Version PASS | PASS | 0.16.2 与 0.16.3 双版本均过：validate_release.py 输出 "RELEASE VALIDATION OK (version 0.16.2 / 0.16.3)"（Ed25519 签名 key-2026-09 + SHA256 + size + version 全验证）；GitHub v0.16.2、v0.16.3 各发布 5 assets（installer/zip/manifest/sig/SHA256SUMS），asset digest 与本地 SHA256SUMS 一致 |
 
 ## Release Gate（item 124）
 
-| Gate | 状态 |
-|---|---|
-| 0 open BLOCKER | NOT TESTED |
-| 0 open HIGH | NOT TESTED |
-| pytest ×10 PASS | NOT TESTED |
-| 7-day simulation PASS | NOT TESTED |
-| 30-day simulation PASS | NOT TESTED |
-| 90-day simulation PASS | NOT TESTED |
-| 48~72h real burn-in PASS | NOT TESTED |
-| Token spot-check PASS | NOT TESTED |
-| SQLite quick_check PASS | NOT TESTED |
-| No obvious memory leak | NOT TESTED |
-| No handle leak | NOT TESTED |
-| No thread leak | NOT TESTED |
-| Clean install PASS | NOT TESTED |
-| Upgrade PASS | NOT TESTED |
-| Uninstall/Reinstall PASS | NOT TESTED |
-| Update PASS | NOT TESTED |
-| Security checks PASS | NOT TESTED |
-| Release validation PASS | NOT TESTED |
+| Gate | 状态 | 证据 |
+|---|---|---|
+| 0 open BLOCKER | PASS | Bug Findings：RC-002/RC-003/RC-004 全 FIXED，无 BLOCKER 级 |
+| 0 open HIGH | PASS | RC-002/RC-004（HIGH）均 FIXED+回归+实机验证；open 仅 RC-MED-001（MEDIUM，观察中） |
+| pytest ×10 PASS | PASS | item 115：0.16.3 403 tests ×10 连续 10/10 OK（274~280s，无 flaky） |
+| 7-day simulation PASS | PASS | item 116：Difference 0/0 |
+| 30-day simulation PASS | PASS | item 116：Difference 0/0（5917s 实跑） |
+| 90-day simulation PASS | PASS | item 116：Difference 0/0（18806s 实跑） |
+| 48~72h real burn-in PASS | IN PROGRESS | 72h 自 2026-09-20 19:05 起运行（0.16.2→0.16.3 三段）；13h 采样无泄漏；收尾 ~09-23 19:00 判定（items 105/107） |
+| Token spot-check PASS | PASS | item 109/14：实机推理 delta 63 exact（integer exact）；burn-in 每日复测 |
+| SQLite quick_check PASS | PASS | item 110：burn-in 期间每日 ok（含 soak 14MB 库） |
+| No obvious memory leak | PASS | item 79：11h+ 采样 RSS 187~205MB 带内波动非单调（24h/72h 终值收尾确认） |
+| No handle leak | PASS | item 80：780±10 稳定 |
+| No thread leak | PASS | item 81：恒 22，offline/recover 周期不增 |
+| Clean install PASS | PASS | item 5-7：独立环境首装 + 首次启动 baseline |
+| Upgrade PASS | PASS | item 65：0.16.1 覆盖安装 exit 0 数据完整；item 62 更新链 0.16.0→0.16.1 真实升级 |
+| Uninstall/Reinstall PASS | PASS | item 66-68：卸载保留数据/重删数据/重装均验证 |
+| Update PASS | PASS | item 62-64：完整 Check/Download/Verify/Install/Graceful + RC-003 自启验证（0.16.2/0.16.3 实机） |
+| Security checks PASS | PASS | loopback-only API（/api 非回环 403）、Ed25519 签名验证、篡改 manifest/installer 拒收（item 63 区 + item 118） |
+| Release validation PASS | PASS | item 118：0.16.2/0.16.3 validate_release.py "RELEASE VALIDATION OK" |
 
 ## Bug Findings（RC-XXX）
 
