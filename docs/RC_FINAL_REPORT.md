@@ -105,3 +105,4 @@
 - docs/RC_TEST_REPORT.md（测试矩阵 items 5-128 明细 + 逐 Gate 证据）。
 - docs/RC_FINAL_REPORT.md（本报告）。
 - 签名密钥 key-2026-09（公钥内置 update_keys.py；私钥 %LOCALAPPDATA%\LlamaMonitor\update-keys\）。
+- 测试工具（tools/）：runtime_stress_test.py（加速压测 A/B/C/E/F/时钟边缘）、ui_stress_test.py（D UI 生命周期）、burnin_ops.py（H/I 真实 burn-in 编排）、soak_test.py（7/30/90/365d 模拟）。
