@@ -32,3 +32,5 @@ keys/private*
 update-keys/
 *.pem
 !assets/*.pem
+
+.venv-rc/

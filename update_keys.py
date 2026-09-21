@@ -24,8 +24,13 @@ import base64
 DEFAULT_KEY_ID = "key-2026-09"
 
 # key_id -> Base64(32 字节 Ed25519 原始公钥)
+# key-2026-09 第二次生成：RC item 67（/TASKS=removedata）测试删除了
+# %LOCALAPPDATA%\LlamaMonitor\update-keys（私钥随数据目录一起删），按
+# UPDATE_SECURITY.md 轮换流程重生成同 key_id 的密钥对（2026-09-20）。
+# 0.16.0/0.16.1 内置的旧公钥已无法验新签名 -> 更新链在 0.16.1 上手动
+# 升级一次到 0.16.2 即可恢复自助更新（见 docs/RC_TEST_REPORT.md item 67）。
 TRUSTED_UPDATE_KEYS: dict[str, str] = {
-    "key-2026-09": "BLzHjwHvDlNyo9BadmEjlcMV8nNJ1pcpckemBfxCv98=",
+    "key-2026-09": "eLHVkIl+gQgI0QQIKUuwnQl5NHR5m8I16XWRrdfLOqU=",
 }
 
 

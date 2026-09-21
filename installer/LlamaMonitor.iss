@@ -107,7 +107,7 @@ Filename: "{app}\LlamaMonitor.exe"; Description: "Launch {#AppName}"; Flags: now
 ; /APPUPDATE[_BG] 启动安装器）。普通手工 /SILENT 安装不受影响（无 /APPUPDATE 参数，
 ; skipifsilent 条目照旧不启动；以下两条只在对应 Check 为真时出现在 Finish 页）。
 Filename: "{app}\LlamaMonitor.exe"; Description: "Start LlamaMonitor after update"; Flags: nowait postinstall; Check: IsAppUpdateInstall
-Filename: "{app}\LlamaMonitor.exe --background"; Description: "Start LlamaMonitor (background) after update"; Flags: nowait postinstall; Check: IsAppUpdateBg
+Filename: "{app}\LlamaMonitor.exe"; Parameters: "--background"; Description: "Start LlamaMonitor (background) after update"; Flags: nowait postinstall; Check: IsAppUpdateBg
 
 [Code]
 // 说明：本 [Code] 只用 Inno 内置函数（RegQueryStringValue / RegWriteStringValue /

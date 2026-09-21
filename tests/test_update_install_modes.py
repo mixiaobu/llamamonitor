@@ -16,6 +16,7 @@ Phase 13 测试：安装流程（Pre-Update Backup + pending marker + Installer 
 
 import asyncio
 import json
+import re
 import sqlite3
 import sys
 import tempfile
@@ -385,6 +386,59 @@ class CleanupTests(_Base):
         self.assertFalse(v1.exists(), "最旧版本目录必须清理")
         self.assertTrue(v2.exists())
         self.assertTrue(v3.exists())
+
+
+class InnoScriptRunSectionTests(unittest.TestCase):
+    """RC-003 回归：installer [Run] 段更新后自动启动 background 实例。
+
+    Inno [Run] 的 Filename 字段只放可执行文件路径，命令行参数必须放
+    Parameters 字段。旧实现把 `--background` 写进 Filename（
+    `Filename: "{app}\\LlamaMonitor.exe --background"`），Inno 把整串当
+    文件路径 -> CreateProcess error 2（文件找不到）-> 更新完成后新版
+    不自动启动，用户需手动启动。本测试静态校验 [Run] 段 background
+    启动项的参数位置正确。
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        iss = Path(__file__).resolve().parent.parent / "installer" / "LlamaMonitor.iss"
+        cls.text = iss.read_text(encoding="utf-8")
+
+    def _run_section_lines(self):
+        """提取 [Run] 段的所有 Filename 行。"""
+        lines = self.text.splitlines()
+        in_run = False
+        run_lines = []
+        for ln in lines:
+            s = ln.strip()
+            if s.startswith("[") and s.endswith("]"):
+                in_run = (s == "[Run]")
+                continue
+            if in_run and s.startswith("Filename:"):
+                run_lines.append(ln)
+        return run_lines
+
+    def test_background_run_uses_parameters_not_filename(self):
+        bg = [l for l in self._run_section_lines() if "IsAppUpdateBg" in l]
+        self.assertEqual(len(bg), 1, "应恰好有一条 IsAppUpdateBg 自动启动项")
+        line = bg[0]
+        # --background 不得出现在 Filename 值里
+        m = re.search(r'Filename:\s*"([^"]+)"', line)
+        self.assertTrue(m, "应有 Filename 字段")
+        self.assertNotIn("--background", m.group(1),
+                         "--background 不得写进 Filename（Inno 会把整串当文件路径）")
+        # --background 必须在 Parameters 里
+        self.assertIn("Parameters:", line)
+        self.assertIn("--background", line.split("Parameters:", 1)[1])
+
+    def test_run_filenames_have_no_trailing_args(self):
+        """所有 [Run] 项的 Filename 值都应是纯路径（不含空格分隔的额外参数）。"""
+        for ln in self._run_section_lines():
+            m = re.search(r'Filename:\s*"([^"]+)"', ln)
+            self.assertTrue(m, f"无法解析 Filename: {ln!r}")
+            path = m.group(1)
+            self.assertNotIn(" --", path,
+                             f"Filename 含命令行参数（应为 Parameters）: {ln!r}")
 
 
 if __name__ == "__main__":
