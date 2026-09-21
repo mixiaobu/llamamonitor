@@ -377,7 +377,12 @@
       if (data.success) {
         ui.toast("实时历史已清空（" + data.deleted + " 条样本）。", "ok");
         refreshDataInfo();
-        if (LM.app) LM.app.refreshLiveNow();
+        if (LM.app) {
+          LM.app.refreshLiveNow();     // 性能页吞吐图
+          LM.app.refreshDailyNow();    // 用量页每日图表/表格（含今日行）
+          LM.app.refreshSummaryNow();  // 今日/总计卡片
+          LM.app.refreshMonthNow();    // 本月卡片
+        }
       } else {
         ui.toast("清空失败：" + ((data.error && data.error.message) || "未知"), "err");
       }
@@ -408,7 +413,13 @@
       if (data.success) {
         ui.toast("统计已重置。计数从现在开始。", "ok");
         refreshDataInfo();
-        if (LM.app) LM.app.refreshSummaryNow();
+        if (LM.app) {
+          LM.app.refreshLiveNow();     // 性能页吞吐图
+          LM.app.refreshDailyNow();    // 用量页每日图表/表格
+          LM.app.refreshSummaryNow();  // 今日/总计卡片
+          LM.app.refreshMonthNow();    // 本月卡片（强制失效缓存）
+          LM.app.refreshMtpNow();      // MTP 统计
+        }
       } else {
         ui.toast("重置失败：" + ((data.error && data.error.message) || "未知"), "err");
       }
@@ -624,8 +635,8 @@
 
     // 全局 InfoBar（Overview 顶部横幅由 app.js 处理；这里管状态文本即可）
     if (st.state === "UPDATE_AVAILABLE" && st.available_version && LM.app) {
-      LM.app.setUpdateBanner(true, "LlamaMonitor " + st.available_version + " is available (current " +
-        st.current_version + ").");
+      LM.app.setUpdateBanner(true, "LlamaMonitor " + st.available_version + " 可用（当前 " +
+        st.current_version + "）");
     } else if (LM.app) {
       LM.app.setUpdateBanner(false);
     }
@@ -650,7 +661,10 @@
           }
           return loadUpdateStatus();
         })
-        .catch(function (e) { ui.toast("更新 " + action + " 失败：" + (e.message || e), "err"); });
+        .catch(function (e) {
+          var actName = { check: "检查", download: "下载", install: "安装", cancel: "取消" }[action] || action;
+          ui.toast("更新" + actName + "失败：" + (e.message || e), "err");
+        });
     }
     if (confirmText) {
       ui.modal({
@@ -750,11 +764,11 @@
     bind("btnUpdateDownload", "click", function () { updateAction("download"); });
     bind("btnUpdateInstall", "click", function () {
       var st = updateStatus || {};
-      var to = st.available_version || "the new version";
+      var to = st.available_version || "新版本";
       updateAction("install",
-        "Install LlamaMonitor " + to + "?\n\n" +
-        "LlamaMonitor will create a pre-update backup (database + config), then exit gracefully " +
-        "and the installer will replace the program files. A verified update is required first.");
+        "安装 LlamaMonitor " + to + "？\n\n" +
+        "LlamaMonitor 将先创建更新前备份（数据库 + 配置），然后正常退出，" +
+        "由安装程序替换程序文件。需要先完成一次已验证的更新下载。");
     });
     bind("btnUpdateCancel", "click", function () { updateAction("cancel"); });
     bind("btnUpdateOpenFolder", "click", function () { openFolderTarget("updates"); });

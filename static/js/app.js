@@ -213,7 +213,7 @@
       if (cc) {
         var label = cc.has_errors ? "错误" : (cc.using_defaults ? "默认" : "正常");
         elCfg.textContent = "配置：" + label;
-        elCfg.className = "stat-hint " + (label === "Error" ? "bad" : label === "Default" ? "warn" : "ok");
+        elCfg.className = "stat-hint " + (label === "错误" ? "bad" : label === "默认" ? "warn" : "ok");
         elCfg.title = (cc.path || "") + "（重启后生效）";
       } else {
         elCfg.textContent = "";
@@ -266,7 +266,8 @@
     if (el) el.title = F.formatTokenCountFull(v);
   }
 
-  function renderMonthCard() {
+  function renderMonthCard(force) {
+    if (force) state.monthMonth = null; // 数据变更（重置/清空）后强制重取
     var now = new Date();
     var key = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
     if (state.monthMonth !== key || !state.monthRows) {
@@ -850,6 +851,9 @@
     setUpdateBanner: setUpdateBanner,
     refreshLiveNow: function () { refreshLive(); },
     refreshSummaryNow: function () { refreshSummary(); },
+    refreshDailyNow: function () { refreshDaily(); },
+    refreshMonthNow: function () { renderMonthCard(true); },
+    refreshMtpNow: function () { refreshMtp(); },
   };
 
   // DOM ready
