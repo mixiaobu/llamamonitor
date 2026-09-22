@@ -698,8 +698,8 @@
   /* ================= About ================= */
 
   async function loadAbout() {
-    // 品牌图标（Phase 16C §23）
-    try { var lg = $("aboutLogo"); if (lg && LM.icons && !lg.innerHTML) lg.innerHTML = LM.icons.brand || LM.icons.get("about"); } catch (e) {}
+    // 品牌图标（Phase 16C §23；注意 brand 是函数，必须调用取 SVG 字符串）
+    try { var lg = $("aboutLogo"); if (lg && LM.icons && !lg.innerHTML) lg.innerHTML = LM.icons.brand(); } catch (e) {}
     var ver = "--";
     try {
       var d = await api.get("/api/version");
@@ -838,6 +838,8 @@
     bind("btnOpenBackups", "click", function () { openFolderTarget("backups"); });
     bind("btnExitApp", "click", exitApp);
     bind("btnCopyVersion", "click", copyVersionInfo);
+    // Phase 16C 审计：About 页"打开数据目录"按钮此前无任何处理器（死按钮）
+    bind("btnAboutOpenData", "click", function () { openFolderTarget("data"); });
     bind("btnUpdateCheck", "click", function () { updateAction("check"); });
     bind("btnUpdateDownload", "click", function () { updateAction("download"); });
     bind("btnUpdateInstall", "click", function () {

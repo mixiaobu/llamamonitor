@@ -944,8 +944,6 @@
     // （走 ui.setEmptyState，修复 [hidden] 被 display:flex 压过的问题）。
     ui.setEmptyState(empty, events.length === 0);
     list.innerHTML = "";
-    var moreBtn = list.querySelector ? list.querySelector(".events-more") : null;
-    if (moreBtn && moreBtn.parentNode) moreBtn.parentNode.removeChild(moreBtn);
 
     var shown = eventsExpanded ? events : events.slice(0, EVENTS_PAGE_SIZE);
     shown.forEach(function (ev) {
@@ -1076,6 +1074,15 @@
     // 导航点击
     document.querySelectorAll(".nav-item").forEach(function (b) {
       b.addEventListener("click", function () { LM.nav.showPage(b.getAttribute("data-page")); });
+    });
+    // 概览行动链接（Phase 16B §2 data-goto：16C 审计发现点击无响应——
+    // 16B 重写 HTML 时丢失了处理器，这里用事件委托统一接管）
+    document.querySelectorAll("a.link[data-goto]").forEach(function (a) {
+      a.addEventListener("click", function (ev) {
+        ev.preventDefault();
+        var p = a.getAttribute("data-goto");
+        if (p && document.getElementById("page-" + p)) LM.nav.showPage(p);
+      });
     });
     LM.nav.initCompact();
     // Settings 事件绑定（保存/重置/测试连接/dirty 标记/主题切换/自动启动/危险操作/更新）
