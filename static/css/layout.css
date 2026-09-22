@@ -50,6 +50,37 @@
   overflow: hidden;
 }
 
+/* 手动折叠/展开按钮（品牌行右侧；compact 下占据品牌行并反向指向展开） */
+.nav-collapse-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  margin-left: auto;
+  background: none;
+  border: none;
+  border-radius: var(--radius-control);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background-color var(--transition-fast), color var(--transition-fast);
+}
+.nav-collapse-btn:hover {
+  background: var(--bg-subtle-hover);
+  color: var(--text-primary);
+}
+.nav-collapse-btn svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform var(--transition-normal);
+}
+
 .nav-items {
   display: flex;
   flex-direction: column;
@@ -141,6 +172,12 @@
 .app.compact .nav-brand .brand-name,
 .app.compact .nav-item .nav-label {
   display: none;
+}
+.app.compact .nav-collapse-btn {
+  margin-left: 0;
+}
+.app.compact .nav-collapse-btn svg {
+  transform: rotate(180deg);
 }
 .app.compact .nav-item {
   justify-content: center;

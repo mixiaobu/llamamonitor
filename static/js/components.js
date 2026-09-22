@@ -193,7 +193,11 @@
     inputEl.placeholder = need ? "输入 " + need + " 以确认" : "";
 
     okBtn.textContent = opts.okLabel || "确定";
-    okBtn.className = "btn " + (opts.danger ? "danger" : "primary");
+    // 只用 classList 切换样式类，保留 .modal-ok 定位类
+    // （整体覆盖 className 会在第一次打开后把 .modal-ok 冲掉，
+    //   导致第二次 querySelector(".modal-ok") 返回 null、模态永远打不开）
+    okBtn.classList.remove("primary", "danger");
+    okBtn.classList.add(opts.danger ? "danger" : "primary");
     okBtn.disabled = !!need;
 
     modalState.lastFocus = document.activeElement;

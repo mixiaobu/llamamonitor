@@ -50,15 +50,61 @@
   // Phase 15：python 侧窗口可见性桥（UI-024；WebView2 hide 不保证 visibilitychange）
   window.__lmSetVisible = null; // app.js 设置
 
-  /* ---------- Compact 模式（单一 ResizeObserver） ---------- */
+  /* ---------- Compact 模式（单一 ResizeObserver + 手动折叠） ----------
+     手动状态优先级：null=跟随窗口宽度自动；true/false=用户手动选择。
+     手动选择记忆到 localStorage，刷新后保持。 */
+  var manualCompact = null;
+
   function initCompact() {
     var app = document.querySelector(".app");
-    if (!app || typeof ResizeObserver === "undefined") return;
-    var ro = new ResizeObserver(function (entries) {
-      var w = entries[0].contentRect.width;
-      app.classList.toggle("compact", w < 1100);
-    });
-    ro.observe(app);
+    if (!app) return;
+    try {
+      var saved = localStorage.getItem("lm_nav_manual");
+      if (saved === "1") manualCompact = true;
+      else if (saved === "0") manualCompact = false;
+    } catch (e) { /* 存储不可用时忽略 */ }
+
+    var btn = document.getElementById("btnNavToggle");
+    var lastWidth = app.clientWidth;
+
+    function apply() {
+      var effective = manualCompact === null
+        ? lastWidth < 1100
+        : manualCompact;
+      app.classList.toggle("compact", effective);
+      if (btn) {
+        var label = effective ? "展开侧边栏" : "收起侧边栏";
+        btn.title = label;
+        btn.setAttribute("aria-label", label);
+      }
+    }
+
+    if (btn) {
+      btn.addEventListener("click", function () {
+        var isCompact = app.classList.contains("compact");
+        manualCompact = !isCompact;
+        try {
+          localStorage.setItem("lm_nav_manual", manualCompact ? "1" : "0");
+        } catch (e) { /* 忽略 */ }
+        apply();
+      });
+    }
+
+    if (typeof ResizeObserver !== "undefined") {
+      var ro = new ResizeObserver(function (entries) {
+        if (entries[0] && entries[0].contentRect) {
+          lastWidth = entries[0].contentRect.width;
+        }
+        apply();
+      });
+      ro.observe(app);
+    } else {
+      window.addEventListener("resize", function () {
+        lastWidth = app.clientWidth;
+        apply();
+      });
+    }
+    apply();
   }
 
   window.LM = window.LM || {};
