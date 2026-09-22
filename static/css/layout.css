@@ -169,15 +169,25 @@
   /* 保留可访问性：tooltip 显示名称 */
 }
 
-/* ============ 内容区（spec §56/§58：唯一滚动区，限宽） ============ */
+/* ============ 内容区（Phase 16B spec §2：超宽屏不再留巨大空白） ============
+   默认 1560px（概览/用量/性能/GPU/历史）；Settings 1280px；About 900px。
+   4K 屏下按 1.5× 放宽，仍有边界但留白合理。 */
 .content {
   overflow-y: auto;
   overflow-x: hidden;
   min-width: 0;
 }
 .content-inner {
-  max-width: 1720px;
+  max-width: 1560px;
+  margin: 0 auto;
   padding: var(--spacing-2xl) var(--spacing-3xl) var(--spacing-3xl);
+}
+.page-settings { max-width: 1280px; margin-left: auto; margin-right: auto; }
+.page-about { max-width: 900px; margin-left: auto; margin-right: auto; }
+@media (min-width: 2560px) {
+  .content-inner { max-width: 1980px; }
+  .page-settings { max-width: 1520px; }
+  .page-about { max-width: 1080px; }
 }
 
 /* 页面（spec §10：Title + Subtitle；100-150ms fade） */

@@ -139,9 +139,11 @@ class ApiTests(unittest.TestCase):
             self.assertEqual(row["prompt_tokens"], 50)
             self.assertEqual(row["compute_tokens"], 50)
             self.assertEqual(row["logical_tokens"], 50)
-            # 参数校验
+            # 参数校验（16B：days 上限 3650，all=true 返回全历史）
             self.assertEqual(client.get("/api/daily", params={"days": 0}).status_code, 422)
-            self.assertEqual(client.get("/api/daily", params={"days": 400}).status_code, 422)
+            self.assertEqual(client.get("/api/daily", params={"days": 3651}).status_code, 422)
+            r_all = client.get("/api/daily", params={"all": "true"})
+            self.assertEqual(r_all.status_code, 200)
             self.assertEqual(client.get("/api/live", params={"minutes": 0}).status_code, 422)
             self.assertEqual(client.get("/api/live", params={"minutes": 2881}).status_code, 422)
         finally:

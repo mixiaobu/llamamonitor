@@ -258,7 +258,11 @@
       box.appendChild(none);
       return;
     }
+    // BUG-G 修复（spec §61）：每卡一行——checkbox + 型号第一行，UUID 缩进第二行。
+    // 不再把 checkbox/名称/长 UUID 挤在同一行。
     detected.forEach(function (g) {
+      var row = document.createElement("div");
+      row.className = "gpu-detected-row";
       var label = document.createElement("label");
       var cb = document.createElement("input");
       cb.type = "checkbox";
@@ -266,15 +270,21 @@
       cb.checked = selectedUuids.indexOf(g.uuid) !== -1;
       cb.addEventListener("change", markDirty);
       label.appendChild(cb);
-      label.appendChild(document.createTextNode(" GPU " + (g.index == null ? "?" : g.index) + " " + (g.name || "")));
-      var uuid = document.createElement("span");
-      uuid.className = "uuid";
-      uuid.textContent = " " + g.uuid;
-      label.appendChild(uuid);
-      box.appendChild(label);
+      label.appendChild(document.createTextNode(
+        " GPU " + (g.index == null ? "?" : g.index) + " · " + (g.name || "未知型号")));
+      row.appendChild(label);
+      if (g.uuid) {
+        var uuid = document.createElement("div");
+        uuid.className = "gpu-row-uuid";
+        uuid.textContent = g.uuid;
+        uuid.title = g.uuid;
+        row.appendChild(uuid);
+      }
+      box.appendChild(row);
     });
     var hint = document.createElement("div");
     hint.className = "caption";
+    hint.style.marginTop = "var(--spacing-sm)";
     hint.textContent = "不勾选 = 监控所有检测到的 GPU。";
     box.appendChild(hint);
   }
@@ -380,9 +390,9 @@
         if (LM.app) {
           LM.app.refreshLiveNow();     // 性能页吞吐图
           LM.app.refreshDailyNow();    // 用量页每日图表/表格（含今日行）
-          LM.app.refreshSummaryNow();  // 今日/总计卡片
-          LM.app.refreshMonthNow();    // 本月卡片
+          LM.app.refreshSummaryNow();  // 今日/范围摘要卡片
           LM.app.refreshDataQualityNow(); // 历史页数据质量/缺口（今日覆盖率基于实时样本，立即失效重取）
+          LM.app.refreshEventsNow();   // 历史页监控事件
         }
       } else {
         ui.toast("清空失败：" + ((data.error && data.error.message) || "未知"), "err");
@@ -417,10 +427,10 @@
         if (LM.app) {
           LM.app.refreshLiveNow();     // 性能页吞吐图
           LM.app.refreshDailyNow();    // 用量页每日图表/表格
-          LM.app.refreshSummaryNow();  // 今日/总计卡片
-          LM.app.refreshMonthNow();    // 本月卡片（强制失效缓存）
+          LM.app.refreshSummaryNow();  // 今日/范围摘要卡片（BUG-A：month 由后端重算）
           LM.app.refreshMtpNow();      // MTP 统计
           LM.app.refreshDataQualityNow(); // 历史页数据质量/最近缺口（缺口已随重置清除）
+          LM.app.refreshEventsNow();   // 历史页监控事件（新 counter_reset 事件）
         }
       } else {
         ui.toast("重置失败：" + ((data.error && data.error.message) || "未知"), "err");
@@ -726,17 +736,27 @@
     })();
   }
 
-  /* ================= 分区定位（托盘桥 goToSection） ================= */
+  /* ================= 分区定位（Phase 16B spec §55：内部二级导航 rail） =================
+     托盘桥与更新横幅通过 goToSection 定位到分类；rail 按钮同步高亮。
+     data-sec 分组：data 分类 = 存储+备份+日志+数据管理+危险区。 */
   var activeSection = "server";
 
-  function goToSection(name) {
+  function showSection(name) {
     activeSection = name;
-    var sec = $("sec-" + name);
-    if (!sec) return;
-    var content = document.querySelector(".content");
-    if (!content) return;
-    var top = sec.getBoundingClientRect().top - content.getBoundingClientRect().top + content.scrollTop - 16;
-    content.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+    var pane = document.querySelector(".settings-pane");
+    if (pane) {
+      pane.querySelectorAll(".settings-card").forEach(function (c) {
+        c.hidden = c.getAttribute("data-sec") !== name;
+      });
+    }
+    document.querySelectorAll(".settings-rail .rail-item").forEach(function (b) {
+      b.setAttribute("aria-current", b.getAttribute("data-sec") === name ? "true" : "false");
+    });
+  }
+
+  function goToSection(name) {
+    if (!name || !document.querySelector('.rail-item[data-sec="' + name + '"]')) name = "server";
+    showSection(name);
   }
 
   /* ================= 初始化 ================= */
@@ -802,6 +822,14 @@
     });
     var gpuBox = $("gpuDetected");
     if (gpuBox) gpuBox.addEventListener("change", markDirty);
+
+    // 内部二级导航 rail（Phase 16B spec §55）：点击切换分类 pane
+    document.querySelectorAll(".settings-rail .rail-item").forEach(function (b) {
+      b.addEventListener("click", function () {
+        goToSection(b.getAttribute("data-sec"));
+      });
+    });
+    showSection("server");
   }
 
   window.LM = window.LM || {};

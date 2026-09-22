@@ -137,6 +137,20 @@
     }
   }
 
+  /* ---------- 单点数据可见性（BUG-E spec §127：1 点必须显示点） ----------
+     ECharts 默认 showSymbol=false 时，单点折线不可见。
+     非空值 <=1 时强制显示 symbol。 */
+  function nonNullCount(values) {
+    var n = 0;
+    for (var i = 0; i < (values || []).length; i++) if (values[i] != null) n++;
+    return n;
+  }
+  function singlePointOpts(n) {
+    return n <= 1
+      ? { showSymbol: true, symbolSize: 6 }
+      : { showSymbol: false };
+  }
+
   /* ---------- 通用 tooltip 样式 ---------- */
   function baseTooltip() {
     var p = pal();
@@ -198,7 +212,13 @@
         textStyle: { color: p.axis, fontSize: 12 },
         top: 0, right: 0, icon: "rect", itemWidth: 10, itemHeight: 10, itemGap: 14,
       },
-      grid: { left: 8, right: 8, top: 32, bottom: 4, containLabel: true },
+      // 长范围（>31 天，如"本月/全部"）启用 dataZoom（spec §113）
+      dataZoom: rows.length > 31 ? [
+        { type: "inside", start: 0, end: 100 },
+        { type: "slider", height: 14, bottom: 2, borderColor: "transparent",
+          backgroundColor: "transparent" },
+      ] : undefined,
+      grid: { left: 8, right: 8, top: 32, bottom: rows.length > 31 ? 24 : 4, containLabel: true },
       xAxis: {
         type: "category",
         data: rows.map(function (r) { return r.date; }),
@@ -244,22 +264,35 @@
     if (!c) return;
     var p = pal(), col = colors();
     var pts = samples || [];
-    setEmpty(containerId, pts.length === 0, "等待数据",
-      "服务器报告推理活动后即显示 TPS 曲线。");
+    // BUG-C（spec §124）：区分"无采样"与"采样了但没有推理活动"
+    var actPts = pts.filter(function (s) {
+      return s.prompt_tps != null || s.decode_tps != null;
+    });
+    if (pts.length === 0) {
+      setEmpty(containerId, true, "等待数据",
+        "监控采集到实时采样后显示 TPS 曲线。");
+    } else if (actPts.length === 0) {
+      setEmpty(containerId, true, "暂无推理活动",
+        "服务器当前没有推理请求。推理开始时显示 TPS 曲线。");
+    } else {
+      setEmpty(containerId, false);
+    }
     if (!pts.length) return;
     function series(name, field, color) {
-      return {
+      var vals = pts.map(function (s) {
+        return s[field] == null ? null : Number(s[field]);
+      });
+      return Object.assign({
         name: name, type: "line",
-        showSymbol: false,          // 默认无点（spec §36）
-        symbol: "circle", symbolSize: 5,
+        symbol: "circle",
         emphasis: { focus: "series" },
         lineStyle: { width: 2, color: color },
         itemStyle: { color: color },
         connectNulls: false,
-        data: pts.map(function (s) {
-          return [Math.round(s.timestamp * 1000), s[field] == null ? null : Number(s[field])];
+        data: pts.map(function (s, i) {
+          return [Math.round(s.timestamp * 1000), vals[i]];
         }),
-      };
+      }, singlePointOpts(nonNullCount(vals)));
     }
     c.setOption({
       animation: false,
@@ -326,14 +359,14 @@
         axisLabel: baseAxisLabel(p, { formatter: function (v) { return v + "%"; } }),
         splitLine: { lineStyle: { color: p.split } },
       },
-      series: [{
+      series: [Object.assign({
         name: "接受率", type: "line",
-        showSymbol: false, symbol: "circle", symbolSize: 5,
+        symbol: "circle",
         lineStyle: { width: 2, color: col.mtp },
         itemStyle: { color: col.mtp },
         connectNulls: false,
         data: data.map(function (d) { return d[1]; }),
-      }],
+      }, singlePointOpts(data.length))],
     }, true);
   }
 
@@ -410,22 +443,34 @@
   function _gpuSeries(gpu, field, col, opts) {
     var idx = gpu.index == null ? "?" : gpu.index;
     var color = (opts && opts.color) || col.gpu[Number(idx) % col.gpu.length];
+    var vals = (gpu.points || []).map(function (pt) {
+      return pt[field] == null ? null : Number(pt[field]);
+    });
     var s = {
       name: "GPU " + idx + (opts && opts.suffix ? " " + opts.suffix : ""),
-      type: "line", showSymbol: false, symbol: "circle", symbolSize: 4,
+      type: "line", symbol: "circle", symbolSize: 4,
       lineStyle: { width: 2, color: color },
       itemStyle: { color: color },
       connectNulls: false,
-      data: gpu.points.map(function (pt) {
-        return [Math.round(pt.timestamp * 1000), pt[field] == null ? null : Number(pt[field])];
+      data: (gpu.points || []).map(function (pt, i) {
+        return [Math.round(pt.timestamp * 1000), vals[i]];
       }),
     };
     if (opts && opts.dashed) s.lineStyle.type = "dashed";
-    return s;
+    // BUG-E：单点数据必须显示点
+    return Object.assign(s, singlePointOpts(nonNullCount(vals)));
   }
 
   function _hasGpuPoints(data) {
     return (data && data.gpus || []).some(function (g) { return (g.points || []).length > 0; });
+  }
+
+  /* BUG-D（spec §38）：字段级空态——某传感器全部为 null（不支持）
+     与"有数据"区分，避免把 N/A 画成 0 或留一张看似有数据的空图。 */
+  function _hasGpuField(data, field) {
+    return (data && data.gpus || []).some(function (g) {
+      return (g.points || []).some(function (pt) { return pt[field] != null; });
+    });
   }
 
   function renderGpuUtilChart(containerId, id, data, visible) {
@@ -433,7 +478,8 @@
     if (!c) return;
     var p = pal(), col = colors();
     var gpus = (data && data.gpus || []).filter(function (g) { return !visible || visible[g.uuid] !== false; });
-    setEmpty(containerId, !_hasGpuPoints({ gpus: gpus }), "无 GPU 样本",
+    var subset = { gpus: gpus };
+    setEmpty(containerId, !_hasGpuField(subset, "utilization_percent"), "无 GPU 样本",
       "GPU 监控采集到样本后显示利用率与显存历史。");
     if (!gpus.length) return;
     var series = [];
@@ -464,8 +510,9 @@
     if (!c) return;
     var p = pal(), col = colors();
     var gpus = (data && data.gpus || []).filter(function (g) { return !visible || visible[g.uuid] !== false; });
-    setEmpty(containerId, !_hasGpuPoints({ gpus: gpus }), "无功耗数据",
-      "GPU 报告功耗传感器后显示功耗历史。");
+    var subset = { gpus: gpus };
+    setEmpty(containerId, !_hasGpuField(subset, "power_draw_w"), "无功耗数据",
+      "GPU 未报告功耗传感器（不支持）或尚未采集到功耗样本。");
     if (!gpus.length) return;
     var series = gpus.map(function (g) {
       return _gpuSeries(g, "power_draw_w", col, {});
@@ -493,8 +540,9 @@
     if (!c) return;
     var p = pal(), col = colors();
     var gpus = (data && data.gpus || []).filter(function (g) { return !visible || visible[g.uuid] !== false; });
-    setEmpty(containerId, !_hasGpuPoints({ gpus: gpus }), "无温度数据",
-      "GPU 报告温度传感器后显示温度历史。");
+    var subset = { gpus: gpus };
+    setEmpty(containerId, !_hasGpuField(subset, "temperature_c"), "无温度数据",
+      "GPU 未报告温度传感器（不支持）或尚未采集到温度样本。");
     if (!gpus.length) return;
     var series = gpus.map(function (g) {
       return _gpuSeries(g, "temperature_c", col, {});

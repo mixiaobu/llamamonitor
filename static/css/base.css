@@ -27,14 +27,24 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* 数字统一 tabular-nums（spec §2/§68：避免数字跳动） */
+/* 数字统一 tabular-nums（spec §2/§68/§125：所有数字类避免跳动） */
 .stat-value,
 td.num,
 .th-num,
 .tabular,
 button.seg,
 input,
-select {
+select,
+.ms-value,
+.gm-metric .v,
+.gpu-device .gd-primary .v,
+.gpu-kv .v,
+.hero-num,
+.tb-value,
+.pc-value,
+.ev-time,
+table.table-full td,
+table.table-full th {
   font-variant-numeric: tabular-nums;
 }
 

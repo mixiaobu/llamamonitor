@@ -412,3 +412,349 @@
   color: var(--text-secondary);
   border: 1px solid var(--border-subtle);
 }
+
+/* ============================================================
+   Phase 16B — 信息架构重构组件
+   ============================================================ */
+
+/* ---------- 状态条（spec §7：地址移入左列；倒计时降级为次要信息） ---------- */
+.status-strip .ss-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.status-strip .ss-name {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+.status-strip .ss-url {
+  font-size: var(--font-size-caption);
+  color: var(--text-disabled);
+  font-variant-numeric: tabular-nums;
+}
+.status-strip .ss-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+.status-strip .ss-right .stat-hint {
+  margin-top: 0;
+}
+
+/* ---------- 即时指标条（spec §25：一行 5 项，不做 5 张大卡） ---------- */
+.metric-strip {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--spacing-lg);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-large);
+  box-shadow: var(--shadow-card);
+  padding: var(--spacing-lg) var(--spacing-xl);
+  margin-bottom: var(--spacing-lg);
+}
+.metric-strip .ms-item {
+  min-width: 0;
+  padding: 0 var(--spacing-md);
+  border-left: 1px solid var(--border-subtle);
+}
+.metric-strip .ms-item:first-child { border-left: none; padding-left: 0; }
+.metric-strip .ms-key {
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+  margin-bottom: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.metric-strip .ms-value {
+  font-size: var(--font-size-metric);
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.metric-strip .ms-value.dim { color: var(--text-disabled); }
+@media (max-width: 1100px) {
+  .metric-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .metric-strip .ms-item { border-left: none; padding: 0; }
+}
+
+/* ---------- 概览：GPU 迷你卡（spec §11：仅 4 项关键指标） ---------- */
+.gpu-mini-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
+}
+.gpu-mini-head .gm-title {
+  font-size: var(--font-size-subtitle);
+  font-weight: var(--font-weight-semibold);
+}
+.gpu-mini-head .gm-count {
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+}
+.gpu-mini-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--spacing-lg);
+}
+.gpu-mini {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-large);
+  box-shadow: var(--shadow-card);
+  padding: var(--spacing-md) var(--spacing-lg);
+  min-width: 0;
+}
+.gpu-mini-head2 {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-sm);
+  min-width: 0;
+}
+.gpu-mini-head2 .gm-idx {
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-semibold);
+  flex: none;
+}
+.gpu-mini-head2 .gm-name {
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gm-metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing-sm) var(--spacing-md);
+}
+.gm-metric .k {
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+  margin-bottom: 1px;
+}
+.gm-metric .v {
+  font-size: var(--font-size-metric);
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+.gm-metric .v.dim { color: var(--text-disabled); font-weight: var(--font-weight-regular); }
+@media (max-width: 900px) {
+  .gpu-mini-grid { grid-template-columns: 1fr; }
+}
+
+/* ---------- 概览：性能/运行 双卡（宽屏两列，窄屏单列） ---------- */
+.ov-perf-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing-lg);
+}
+@media (max-width: 900px) {
+  .ov-perf-grid { grid-template-columns: 1fr; }
+}
+
+/* ---------- GPU 页：筛选行 + 双图并排 ---------- */
+.gpu-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  flex-wrap: wrap;
+  margin-bottom: var(--spacing-lg);
+}
+.charts-2col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing-lg);
+}
+@media (max-width: 1200px) {
+  .charts-2col { grid-template-columns: 1fr; }
+}
+
+/* ---------- GPU 卡（spec §36-§39）：320-400px 动态网格 + VRAM 进度条 ---------- */
+.gpu-grid {
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+}
+.gpu-device .gd-primary {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--spacing-md);
+  padding: var(--spacing-xs) 0;
+  font-size: var(--font-size-body);
+}
+.gpu-device .gd-primary .k { color: var(--text-secondary); }
+.gpu-device .gd-primary .v {
+  font-size: var(--font-size-metric);
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+.gpu-device .gd-primary .v.dim { color: var(--text-disabled); font-weight: var(--font-weight-regular); }
+.gpu-device .gd-secondary {
+  margin-top: var(--spacing-sm);
+  padding-top: var(--spacing-sm);
+  border-top: 1px solid var(--border-subtle);
+}
+.gpu-device .gd-secondary .k { font-size: var(--font-size-caption); }
+.vram-bar {
+  height: 4px;
+  background: var(--bg-subtle-active);
+  border-radius: 2px;
+  overflow: hidden;
+  margin: var(--spacing-xs) 0 var(--spacing-sm);
+}
+.vram-bar .fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+/* ---------- 事件列表（History 页 spec §50） ---------- */
+.events-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 420px;
+  overflow-y: auto;
+}
+.event-row {
+  display: grid;
+  grid-template-columns: 96px 84px minmax(0, 1fr);
+  gap: var(--spacing-md);
+  align-items: baseline;
+  padding: var(--spacing-sm) 0;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: var(--font-size-secondary);
+}
+.event-row:last-child { border-bottom: none; }
+.event-row .ev-time {
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--font-size-caption);
+}
+.event-row .ev-type {
+  font-weight: var(--font-weight-semibold);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.event-row .ev-type.sev-warning { color: var(--warning); }
+.event-row .ev-type.sev-error { color: var(--error); }
+.event-row .ev-detail {
+  color: var(--text-secondary);
+  font-size: var(--font-size-caption);
+  word-break: break-word;
+}
+@media (max-width: 700px) {
+  .event-row { grid-template-columns: 84px minmax(0, 1fr); }
+  .event-row .ev-detail { grid-column: 1 / -1; }
+}
+
+/* ---------- Settings 内部二级导航（spec §55/§98） ---------- */
+.settings-shell {
+  display: grid;
+  grid-template-columns: 184px minmax(0, 1fr);
+  gap: var(--spacing-2xl);
+  align-items: start;
+}
+.settings-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  position: sticky;
+  top: 0;
+}
+.settings-rail .rail-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: var(--spacing-sm) var(--spacing-md);
+  min-height: 34px;
+  background: none;
+  border: none;
+  border-radius: var(--radius-control);
+  color: var(--text-secondary);
+  font-size: var(--font-size-body);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background-color var(--transition-fast), color var(--transition-fast);
+}
+.settings-rail .rail-item:hover {
+  background: var(--bg-subtle-hover);
+  color: var(--text-primary);
+}
+.settings-rail .rail-item[aria-current="true"] {
+  background: var(--bg-subtle-active);
+  color: var(--text-primary);
+  font-weight: var(--font-weight-semibold);
+}
+.settings-pane {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+  min-width: 0;
+}
+.settings-pane .settings-card[hidden] { display: none; }
+@media (max-width: 900px) {
+  .settings-shell { grid-template-columns: 1fr; }
+  .settings-rail {
+    position: static;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: var(--spacing-xs);
+  }
+}
+
+/* GPU 设备选择行（spec §61：checkbox+型号在上，UUID 缩进在下） */
+.gpu-detected-row {
+  display: block;
+  padding: var(--spacing-sm) 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.gpu-detected-row:last-child { border-bottom: none; }
+.gpu-detected-row label {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  cursor: pointer;
+  color: var(--text-primary);
+  font-size: var(--font-size-body);
+}
+.gpu-detected-row .gpu-row-uuid {
+  margin-left: 24px;
+  color: var(--text-secondary);
+  font-size: var(--font-size-caption);
+  word-break: break-all;
+  margin-top: 2px;
+}
+.gpu-detected-row input { accent-color: var(--accent); width: auto; }
+
+/* 危险区（spec §63：与常规设置视觉分离） */
+.danger-zone {
+  border: 1px solid var(--error-subtle-border, var(--border-default));
+  border-radius: var(--radius-large);
+  background: var(--bg-card);
+  padding: var(--spacing-lg) var(--spacing-lg);
+}
+.danger-zone h2 {
+  color: var(--error);
+  font-size: var(--font-size-subtitle);
+  font-weight: var(--font-weight-semibold);
+  margin: 0 0 var(--spacing-xs);
+}
+.btn.danger {
+  color: var(--error);
+  border-color: var(--border-default);
+}
+.btn.danger:hover {
+  background: var(--error-subtle);
+  border-color: var(--error);
+}

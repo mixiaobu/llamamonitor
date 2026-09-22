@@ -1134,6 +1134,29 @@ def build_app(
             "recent_gaps": [_gap_view(g) for g in db.get_gaps(limit=20)],
         }
 
+    @app.get("/api/events")
+    async def api_events(limit: int = Query(30, ge=1, le=100)) -> dict:
+        """
+        最近监控事件（时间倒序，最多 limit 条；Phase 16B History 页"最近事件"）。
+
+        数据源为 monitor_events（应用生命周期审计：离线/恢复/重启/备份/
+        Counter Reset/数据库事件等——只记状态转换与异常，不是采样日志）。
+        只读，不受 reset-statistics 影响（与 data_gaps 的保留策略不同）。
+        """
+        rows = db.get_events(limit=limit)
+        return {
+            "events": [
+                {
+                    "timestamp": r["timestamp"],
+                    "event_type": r["event_type"],
+                    "severity": r["severity"],
+                    "source": r["source"],
+                    "details": r.get("details") or {},
+                }
+                for r in rows
+            ],
+        }
+
     @app.post("/api/data/check-database", dependencies=[Depends(_require_loopback)])
     async def api_check_database() -> Response:
         """
@@ -1407,24 +1430,39 @@ def build_app(
     @app.get("/api/summary")
     async def api_summary() -> dict:
         """
-        今日与累计总量（daily_usage 按本机系统日期归集）。
+        今日 / 本月 / 累计总量（daily_usage 按本机系统日期归集）。
 
         compute_tokens = prompt + output
         logical_tokens = prompt + cached + output
+
+        Phase 16B（BUG-A 修复）：month 改由后端计算。此前前端用浏览器本地
+        'YYYY-MM' 字符串前缀匹配 /api/daily 返回的行，日期来源与 daily_usage
+        的归集日期（collector 采集时刻的 local_date）分离，且仅在页面首次加载
+        时取一次快照（月内不更新）——跨月/重置/时钟边界等场景下"今日 > 0 但
+        本月 = 0"。现在 month 与 today 同源：同一批行、同一个 local_date()
+        前缀判定，无时区/双日期源问题。
         """
+        now = collector.clock.now()
+        today_str = local_date(now)
+        month_key = today_str[:7]  # 'YYYY-MM'，与 local_date 完全同源
         rows = db.get_daily_usage()
-        today = next((r for r in rows if r["date"] == local_date()), None)
+        today = next((r for r in rows if r["date"] == today_str), None)
         today_sum = _summary_shape(
             (today or {}).get("prompt_tokens", 0) or 0,
             (today or {}).get("cached_tokens", 0) or 0,
             (today or {}).get("output_tokens", 0) or 0,
+        )
+        month_sum = _summary_shape(
+            sum(r["prompt_tokens"] for r in rows if r["date"].startswith(month_key)),
+            sum(r["cached_tokens"] for r in rows if r["date"].startswith(month_key)),
+            sum(r["output_tokens"] for r in rows if r["date"].startswith(month_key)),
         )
         total_sum = _summary_shape(
             sum(r["prompt_tokens"] for r in rows),
             sum(r["cached_tokens"] for r in rows),
             sum(r["output_tokens"] for r in rows),
         )
-        return {"today": today_sum, "total": total_sum}
+        return {"today": today_sum, "month": month_sum, "total": total_sum, "month_key": month_key}
 
     def _day_quality(date: str, day_samples: list | None = None) -> dict:
         """
@@ -1475,17 +1513,20 @@ def build_app(
         }
 
     @app.get("/api/daily")
-    async def api_daily(days: int = Query(30, ge=1, le=365)) -> dict:
+    async def api_daily(days: int = Query(30, ge=1, le=3650), all: bool = False) -> dict:
         """
-        最近 N 个自然日的统计（日期升序）。
+        最近 N 个自然日的统计（日期升序）；all=true 时返回全部历史（无上限）。
 
         只返回实际有数据的天（无使用量的天没有行，空档由前端补齐）；
         每行含原始字段 + compute_tokens / logical_tokens 派生字段
         + Phase 11 数据质量字段（monitoring_coverage_percent / gap_count /
         possible_token_loss）。
         """
-        cutoff = local_date(collector.clock.now() - (days - 1) * 86400)
-        rows = [r for r in db.get_daily_usage() if r["date"] >= cutoff]
+        if all:
+            rows = db.get_daily_usage()
+        else:
+            cutoff = local_date(collector.clock.now() - (days - 1) * 86400)
+            rows = [r for r in db.get_daily_usage() if r["date"] >= cutoff]
         # AUDIT-DB-003：live 样本一次取全、按日分组（原实现在循环内每天全量扫一次）
         try:
             all_live = db.get_live_samples(hours=None)

@@ -39,7 +39,7 @@ def read_msg(ws):
         if n == 126:
             n = struct.unpack(">H", _recv_exact(ws, 2))[0]
         elif n == 127:
-            n = struct.unpack(">Q", _recv_exact(ws, 2))[0]
+            n = struct.unpack(">Q", _recv_exact(ws, 8))[0]
         mask = _recv_exact(ws, 4) if masked else None
         data = _recv_exact(ws, n) if n else b""
         if mask:

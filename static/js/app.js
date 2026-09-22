@@ -26,7 +26,8 @@
     lastSuccessTs: null,   // 最近一次 server_online===true 的 last_update（epoch s）
     config: null,          // /api/status 的 config 块
     dailyData: [],         // /api/daily 行（当前范围）
-    dailyRange: 30,        // Usage 页当前范围（1/7/30/365=All）
+    dailyRange: 30,        // Usage 页当前范围天数（all 模式不使用）
+    dailyRangeMode: "30d", // Phase 16B：today | 7d | 30d | month | all
     liveSamples: [],       // /api/live 60 分钟
     gpuStatus: null,       // /api/gpu/status
     gpuLive: null,         // /api/gpu/live（当前范围）
@@ -37,40 +38,51 @@
     mtpPositions: [],
     quality: null,         // /api/data/quality
     health: null,          // /api/health
-    monthRows: null,       // 本月 daily 行（This Month 卡用）
-    monthMonth: "",
+    events: [],            // /api/events（History 页监控事件）
     lastUpdateTs: null,    // 最近一次采样的 last_update（epoch s）
     lastStatusRefresh: 0,  // 最近一次 /api/status 轮询完成时刻（epoch ms）— 倒计时基准
     statusBackendOk: true, // 后端（非 llama）是否可达
-    ovTrendRows: [],       // 概览"近 7 天趋势"图表的行（来自最近 7 个自然日）
-    ovSummary: null,       // 最近一次 /api/summary（累计区用 total）
-    ovDataInfo: null,      // 最近一次 /api/data/info（数据跨度用）
+    ovSummary: null,       // 最近一次 /api/summary（Overview 今日卡）
+    lossBar: null,         // possible_token_loss InfoBar 实例
   };
 
-  /* ---- "x 秒后刷新" 1s 倒计时 ticker（用户要求：前台实时跳动，不依赖轮询返回） ----
-     基准：最近一次 /api/status 轮询完成时刻 + 配置的刷新间隔。
-     后端不可达时显示错误提示（与 refreshStatus catch 行为一致）。 */
+  /* ---- 状态条 1s ticker（Phase 16B spec §7：信息层级调整） ----
+     主信息：在线 → "最后更新 X 秒前"（来自 lastUpdateTs）；
+             离线 → "最后成功采样: X 分钟前"（lastSuccessTs）。
+     次要信息：倒计时 "x 秒后刷新"（text-disabled 色，降级为辅助信息）。
+     后端不可达：主信息提示后端不可达。 */
   function updateLastUpdateText() {
     var el = document.getElementById("ovLastUpdate");
+    var next = document.getElementById("ovNextRefresh");
     if (!el) return;
     if (!state.statusBackendOk) {
       el.textContent = "后端不可达，正在重试...";
       el.className = "stat-hint bad";
+      if (next) next.textContent = "";
       return;
     }
     var intervalSec = Math.max(1, cfgUi.refreshIntervalSeconds || 5);
-    if (!state.lastStatusRefresh) {
-      el.textContent = "等待刷新...";
-      el.className = "stat-hint";
-      return;
-    }
-    var remaining = Math.ceil((state.lastStatusRefresh + intervalSec * 1000 - Date.now()) / 1000);
-    if (remaining <= 0) {
-      el.textContent = "即将刷新...";
+    // 主信息
+    if (state.online === false) {
+      var ref = state.lastSuccessTs || state.lastUpdateTs;
+      el.textContent = ref ? "最后成功采样：" + F.formatAgo(Math.floor(Date.now() / 1000) - ref) : "离线";
+      el.className = "stat-hint warn";
+    } else if (state.lastUpdateTs) {
+      var age = Math.max(0, Math.floor(Date.now() / 1000) - state.lastUpdateTs);
+      el.textContent = "最后更新 " + F.formatAgo(age);
       el.className = "stat-hint";
     } else {
-      el.textContent = remaining + " 秒后刷新";
+      el.textContent = "等待首次采样...";
       el.className = "stat-hint";
+    }
+    // 次要信息：倒计时
+    if (next) {
+      if (!state.lastStatusRefresh) {
+        next.textContent = "";
+      } else {
+        var remaining = Math.ceil((state.lastStatusRefresh + intervalSec * 1000 - Date.now()) / 1000);
+        next.textContent = remaining > 0 ? remaining + " 秒后刷新" : "即将刷新";
+      }
     }
   }
   setInterval(updateLastUpdateText, 1000);
@@ -106,7 +118,6 @@
   function chartRenderers() {
     return {
       chartUsage: function () { charts.renderUsageChart("chartUsageBox", "chartUsage", state.dailyData); },
-      chartOvTrend: function () { charts.renderUsageChart("chartOvTrendBox", "chartOvTrend", state.ovTrendRows); },
       chartTps: function () { charts.renderTpsChart("chartTpsBox", "chartTps", state.liveSamples); },
       chartMtp: function () { charts.renderMtpChart("chartMtpBox", "chartMtp", state.dailyData); },
       chartMtpPos: function () { charts.renderMtpPosChart("chartMtpPosBox", "chartMtpPos", state.mtpPositions); },
@@ -250,42 +261,31 @@
     setStatValue("ovDecodeTps", on && data.decode_tps != null ? F.formatTokenCount(data.decode_tps) + " t/s" : F.NA);
     setStatValue("ovContext", on ? F.formatTokenCount(data.context_max) : F.NA);
     setStatValue("ovRequests", on ? F.formatInt(data.requests_processing) + " / " + F.formatInt(data.requests_deferred) : F.NA);
+    // Performance 页指标条 + 运行卡（spec §25/§26）
+    setStatValue("perfPromptTps", on && data.prompt_tps != null ? F.formatTokenCount(data.prompt_tps) + " t/s" : F.NA);
+    setStatValue("perfDecodeTps", on && data.decode_tps != null ? F.formatTokenCount(data.decode_tps) + " t/s" : F.NA);
+    setStatValue("rtContextMax", data.context_max != null ? F.formatTokenCount(data.context_max) : F.NA);
 
     if (state.online === true && state.lastUpdateTs) state.lastSuccessTs = state.lastUpdateTs;
   }
 
   var lastConfigUrl = "";
 
-  /* ================= Today / Month / Total（Usage 页，spec §12） ================= */
+  /* ================= Summary（Overview 今日卡 + Usage 范围摘要；BUG-A 修复） =================
+     /api/summary 现由后端计算 today 与 month（同一 local_date 来源），
+     前端不再做浏览器本地月份前缀过滤。 */
   function renderSummaryCards(summary) {
-    var t = summary.today || {}, s = summary.total || {};
+    state.ovSummary = summary;
+    var t = summary.today || {};
     // Overview 今日摘要（同一数据，摘要级数字）
     setStatValue("ovTodayLogical", F.formatTokenCount(t.logical_tokens));
     setStatValue("ovTodayCompute", F.formatTokenCount(t.compute_tokens));
     setStatValue("ovTodayPrompt", F.formatTokenCount(t.prompt_tokens));
     setStatValue("ovTodayCached", F.formatTokenCount(t.cached_tokens));
     setStatValue("ovTodayOutput", F.formatTokenCount(t.output_tokens));
-    setStatValue("sumTodayLogical", F.formatTokenCount(t.logical_tokens));
-    setStatValue("sumTodayCompute", F.formatTokenCount(t.compute_tokens));
-    setStatValue("sumTodayPrompt", F.formatTokenCount(t.prompt_tokens));
-    setStatValue("sumTodayCached", F.formatTokenCount(t.cached_tokens));
-    setStatValue("sumTodayOutput", F.formatTokenCount(t.output_tokens));
 
-    setStatValue("sumTotalLogical", F.formatTokenCount(s.logical_tokens));
-    setStatValue("sumTotalCompute", F.formatTokenCount(s.compute_tokens));
-    setStatValue("sumTotalPrompt", F.formatTokenCount(s.prompt_tokens));
-    setStatValue("sumTotalCached", F.formatTokenCount(s.cached_tokens));
-    setStatValue("sumTotalOutput", F.formatTokenCount(s.output_tokens));
-    var denom = (s.prompt_tokens || 0) + (s.cached_tokens || 0);
-    setStatValue("sumCacheRatio", denom > 0 ? F.formatPercent((s.cached_tokens || 0) / denom * 100) : F.NA);
-
-    // tooltip 原始值（spec §66：卡片紧凑，hover 看精确值）
-    setFullTip("sumTodayLogical", t.logical_tokens);
-    setFullTip("sumTotalLogical", s.logical_tokens);
-
-    // Overview 累计区（0.16.12）：总量 / 日均 / 缓存命中率 / 数据跨度
-    state.ovSummary = summary;
-    renderOverviewCumulative();
+    // Usage 范围摘要卡
+    renderRangeSummary();
   }
 
   function setFullTip(id, v) {
@@ -293,93 +293,60 @@
     if (el) el.title = F.formatTokenCountFull(v);
   }
 
-  /* ---- Overview 累计区（0.16.12）：总量 / 日均 / 缓存命中率 / 数据跨度 ---- */
-  function renderOverviewCumulative() {
-    var s = (state.ovSummary && state.ovSummary.total) || {};
-    var logicalTotal = s.logical_tokens || 0;
-    setStatValue("ovTotalLogical", logicalTotal ? F.formatTokenCount(logicalTotal) : F.NA);
-
-    // 日均：总量 / 已记录天数（dataInfo 优先，回退到当前 daily 行数）
-    var info = state.ovDataInfo || {};
-    var days = info.recorded_days;
-    if (!days && state.dailyData && state.dailyData.length) days = state.dailyData.length;
-    if (days > 0 && logicalTotal > 0) {
-      setStatValue("ovAvgDaily", F.formatTokenCount(Math.round(logicalTotal / days)));
-    } else {
-      setStatValue("ovAvgDaily", F.NA);
+  /* Usage 范围摘要：按当前 dailyRangeMode 选择数据源
+     today   -> summary.today
+     month   -> summary.month（BUG-A 修复：后端计算，month_key 一致）
+     all     -> summary.total
+     7d/30d  -> 对当前已加载的 daily 行求和 */
+  function renderRangeSummary() {
+    var labelEl = $("sumRangeLabel"), badge = $("sumCumulativeBadge");
+    if (!labelEl) return;
+    var s = state.ovSummary || {}, rows = state.dailyData || [];
+    var src = null, label = "";
+    var mode = state.dailyRangeMode || "30d";
+    if (mode === "today") { src = s.today || {}; label = "今日"; }
+    else if (mode === "month") {
+      src = s.month || {}; label = "本月";
+      if (s.month_key) label = "本月（" + s.month_key + "）";
     }
-
-    // 缓存命中率：cached / (prompt + cached)
-    var p = s.prompt_tokens || 0, c = s.cached_tokens || 0;
-    var denom = p + c;
-    setStatValue("ovCacheHit", denom > 0 ? F.formatPercent(c / denom * 100) : F.NA);
-
-    // 数据跨度：首记录日 -> 末记录日（dataInfo 优先，回退 daily 首末）
-    var first = info.first_recorded_date, last = info.last_recorded_date;
-    if ((!first || !last) && state.dailyData && state.dailyData.length) {
-      first = state.dailyData[0].date;
-      last = state.dailyData[state.dailyData.length - 1].date;
-    }
-    var spanEl = $("ovDataSpan"), spanHint = $("ovDataSpanHint");
-    if (first && last) {
-      spanEl.textContent = (first === last ? first : first + " \u2192 " + last);
-      spanHint.textContent = "共 " + (days || (state.dailyData || []).length || 1) + " 天";
-    } else {
-      spanEl.textContent = F.NA;
-      spanHint.textContent = "尚无记录";
-    }
-  }
-
-  /* ---- Overview 近 7 天趋势（复用 renderUsageChart，仅最近 7 个自然日） ---- */
-  function refreshOverviewTrend() {
-    api.get("/api/daily?days=7")
-      .then(function (d) {
-        state.ovTrendRows = d.days || [];
-        if (LM.nav.currentPage() === "overview") {
-          charts.ensurePageCharts(["chartOvTrend"]);
-          charts.renderUsageChart("chartOvTrendBox", "chartOvTrend", state.ovTrendRows);
-        }
-        renderOverviewCumulative(); // 刷新数据跨度/日均（daily 行数变化）
-      })
-      .catch(function (e) { console.warn("overview trend failed:", e.message || e); });
-  }
-
-  function renderMonthCard(force) {
-    if (force) state.monthMonth = null; // 数据变更（重置/清空）后强制重取
-    var now = new Date();
-    var key = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
-    if (state.monthMonth !== key || !state.monthRows) {
-      api.get("/api/daily?days=31")
-        .then(function (d) {
-          state.monthRows = (d.days || []);
-          state.monthMonth = key;
-          fillMonth();
-        })
-        .catch(function (e) { console.warn("month daily failed:", e.message || e); });
-      return;
-    }
-    fillMonth();
-  }
-
-  function fillMonth() {
-    var key = state.monthMonth;
-    var logical = 0, compute = 0, has = false;
-    (state.monthRows || []).forEach(function (r) {
-      if (String(r.date).indexOf(key) === 0) {
-        has = true;
-        logical += r.logical_tokens || 0;
-        compute += r.compute_tokens || 0;
+    else if (mode === "all") { src = s.total || {}; label = "全部（累计）"; }
+    else {
+      var span = mode === "7d" ? 7 : 30;
+      var logical = 0, compute = 0, prompt = 0, cached = 0, output = 0, n = 0;
+      for (var i = 0; i < rows.length; i++) {
+        var r = rows[i];
+        logical += r.logical_tokens || 0; compute += r.compute_tokens || 0;
+        prompt += r.prompt_tokens || 0; cached += r.cached_tokens || 0;
+        output += r.output_tokens || 0; n++;
       }
-    });
-    setStatValue("sumMonthLogical", has ? F.formatTokenCount(logical) : F.NA);
-    setStatValue("sumMonthCompute", has ? F.formatTokenCount(compute) : F.NA);
+      src = { logical_tokens: logical, compute_tokens: compute, prompt_tokens: prompt,
+              cached_tokens: cached, output_tokens: output };
+      label = (mode === "7d" ? "近 7 天" : "近 30 天") + "（" + n + " 天有数据）";
+    }
+    labelEl.textContent = label;
+    if (badge) badge.hidden = mode !== "all";
+    setStatValue("sumRangeLogical", F.formatTokenCount(src.logical_tokens));
+    setStatValue("sumRangeCompute", F.formatTokenCount(src.compute_tokens));
+    setStatValue("sumRangePrompt", F.formatTokenCount(src.prompt_tokens));
+    setStatValue("sumRangeCached", F.formatTokenCount(src.cached_tokens));
+    setStatValue("sumRangeOutput", F.formatTokenCount(src.output_tokens));
+    var denom = (src.prompt_tokens || 0) + (src.cached_tokens || 0);
+    setStatValue("sumCacheRatio", denom > 0 ? F.formatPercent((src.cached_tokens || 0) / denom * 100) : F.NA);
+    setFullTip("sumRangeLogical", src.logical_tokens);
+    // 隐藏的旧卡片（HTML 占位保留 id 兼容）
+    setStatValue("sumTodayLogical", F.formatTokenCount((s.today || {}).logical_tokens));
+    setStatValue("sumTodayCompute", F.formatTokenCount((s.today || {}).compute_tokens));
+    setStatValue("sumTodayPrompt", F.formatTokenCount((s.today || {}).prompt_tokens));
+    setStatValue("sumTodayCached", F.formatTokenCount((s.today || {}).cached_tokens));
+    setStatValue("sumTodayOutput", F.formatTokenCount((s.today || {}).output_tokens));
   }
 
-  /* ================= Runtime（Overview 摘要 + Performance 页） ================= */
+  /* ================= Runtime（Performance 页 + Overview 摘要） ================= */
   function applyRuntime(d) {
     setStatValue("rtProcessing", F.formatInt(d.requests_processing));
     setStatValue("rtQueued", F.formatInt(d.requests_deferred));
     setStatValue("rtBusySlots", F.formatInt(d.busy_slots));
+    // "最大 Token 记录"（n_tokens_max）——不是上下文使用量（spec §26 命名）
     setStatValue("rtTokenMax", F.formatTokenCount(d.n_tokens_max));
     var kv = d.kv_cache_usage_ratio;
     var kvText = kv == null ? F.NA : F.formatPercent(kv * 100);
@@ -389,6 +356,9 @@
       elKv.classList.toggle("dim", kv == null);
     }
     setStatValue("ovKvCache", kvText); // Overview 运行状态卡（0.16.12）
+    // 指标条（spec §25：一行即时指标）
+    setStatValue("perfProcessing", F.formatInt(d.requests_processing));
+    setStatValue("perfQueued", F.formatInt(d.requests_deferred));
   }
 
   /* ================= Data Quality（Overview 摘要 + History 页；UI-010 并行） ================= */
@@ -451,7 +421,28 @@
         ? "历史中存在 Token 丢失缺口" : "无 Token 丢失缺口";
       if ($("hqLastSample")) $("hqLastSample").textContent = F.formatAgo(t.last_valid_sample_seconds_ago);
       renderGapsTable();
+      renderTokenLossBar();
     }
+  }
+
+  /* possible_token_loss：Win11 InfoBar（spec §7：提示级，不整页变红） */
+  function renderTokenLossBar() {
+    var box = $("ovTokenLossBar");
+    if (!box) return;
+    var loss = state.quality && state.quality.today && state.quality.today.possible_token_loss;
+    if (!loss) {
+      if (state.lossBar) { state.lossBar.close(); state.lossBar = null; }
+      box.innerHTML = "";
+      return;
+    }
+    if (state.lossBar) { state.lossBar.close(); state.lossBar = null; }
+    state.lossBar = ui.createInfoBar({
+      type: "warning",
+      title: "历史 Token 统计可能不完整",
+      message: "今日存在监控缺口，期间产生的 Token 可能未被统计。缺口详情见 历史 页。",
+      dismissible: true,
+    });
+    box.appendChild(state.lossBar.el);
   }
 
   var GAP_REASON_LABELS = {
@@ -468,11 +459,20 @@
     if (!tbody) return;
     var gaps = (state.quality && state.quality.recent_gaps) || [];
     var wrap = $("gapsTableWrap");
+    var empty = $("gapsEmpty");
     if (!gaps.length) {
-      tbody.innerHTML = "<tr><td colspan='6' class='na'>无缺口记录。</td></tr>";
-      if (wrap) wrap.style.display = "";
+      // 真空态（spec §45）：✓ 暂无已知监控缺口
+      tbody.innerHTML = "";
+      if (wrap) wrap.style.display = "none";
+      if (empty) {
+        var ic = empty.querySelector(".empty-icon");
+        if (ic && !ic.innerHTML) ic.innerHTML = LM.icons.get("check");
+        empty.hidden = false;
+      }
       return;
     }
+    if (empty) empty.hidden = true;
+    if (wrap) wrap.style.display = "";
     tbody.innerHTML = gaps.map(function (g) {
       var start = F.formatDateTime(g.start);
       var end = g.end ? F.formatDateTime(g.end) : "进行中";
@@ -538,21 +538,50 @@
       head.appendChild(name);
       card.appendChild(head);
 
-      var kv = document.createElement("div");
-      kv.className = "gpu-kv";
+      // 主指标（spec §36：利用率/显存/温度/功耗，大字号）
       var vram = (g.memory_used_mb == null || g.memory_total_mb == null) ? F.NA :
-        (g.memory_used_mb / 1024).toFixed(1) + " / " + (g.memory_total_mb / 1024).toFixed(1) + " GiB" +
-        (g.memory_usage_percent != null ? " (" + Math.round(g.memory_usage_percent) + "%)" : "");
-      [
+        (g.memory_used_mb / 1024).toFixed(1) + " / " + (g.memory_total_mb / 1024).toFixed(1) + " GiB";
+      var primary = [
         ["利用率", g.utilization_percent == null ? F.NA : F.formatPercent(g.utilization_percent, 0)],
         ["显存", vram],
         ["温度", F.formatTemp(g.temperature_c)],
         ["功耗", F.formatPower(g.power_draw_w)],
+      ];
+      primary.forEach(function (r) {
+        var row = document.createElement("div");
+        row.className = "gd-primary";
+        var k = document.createElement("span");
+        k.className = "k";
+        k.textContent = r[0];
+        var v = document.createElement("span");
+        v.className = "v" + (r[1] === F.NA ? " dim" : "");
+        v.textContent = r[1];
+        row.appendChild(k);
+        row.appendChild(v);
+        card.appendChild(row);
+      });
+
+      // VRAM 进度条（spec §37：仅 VRAM 显示进度条）
+      if (g.memory_usage_percent != null) {
+        var bar = document.createElement("div");
+        bar.className = "vram-bar";
+        var fill = document.createElement("div");
+        fill.className = "fill";
+        fill.style.width = Math.max(0, Math.min(100, g.memory_usage_percent)) + "%";
+        bar.appendChild(fill);
+        card.appendChild(bar);
+      }
+
+      // 次要指标（spec §38：风扇/时钟/PCIe 小字一行）
+      var secondary = [
         ["风扇", g.fan_percent == null ? F.NA : F.formatPercent(g.fan_percent, 0)],
-        ["SM 时钟", g.sm_clock_mhz == null ? F.NA : g.sm_clock_mhz + " MHz"],
+        ["SM", g.sm_clock_mhz == null ? F.NA : g.sm_clock_mhz + " MHz"],
         ["显存时钟", g.memory_clock_mhz == null ? F.NA : g.memory_clock_mhz + " MHz"],
         ["PCIe", (g.pcie_generation == null || g.pcie_width == null) ? F.NA : "Gen" + g.pcie_generation + " x" + g.pcie_width],
-      ].forEach(function (r) {
+      ];
+      var kv = document.createElement("div");
+      kv.className = "gpu-kv gd-secondary";
+      secondary.forEach(function (r) {
         var k = document.createElement("span");
         k.className = "k";
         k.textContent = r[0];
@@ -569,30 +598,72 @@
     renderGpuOverviewSummary(d);
   }
 
-  /* Overview 页 GPU 摘要（与 GPU 页同一数据源） */
+  /* Overview 页 GPU 摘要（Phase 16B §11：迷你卡 4 指标 + 详情链接；
+     与 GPU 页同一数据源 /api/gpu/status） */
   function renderGpuOverviewSummary(d) {
     var stateEl = $("ovGpuState");
     var lineEl = $("ovGpuLine");
+    var grid = $("ovGpuMini");
     if (!stateEl || !lineEl) return;
     if (!d.available) {
       ui.setStatusBadge(stateEl, "offline", "不可用");
       lineEl.textContent = d.reason || "nvidia-smi 不可用";
+      if (grid) grid.innerHTML = "";
       return;
     }
     var gpus = d.gpus || [];
     ui.setStatusBadge(stateEl, "online", gpus.length + " 个 GPU");
     if (!gpus.length) {
       lineEl.textContent = "可用，暂无样本。";
+      if (grid) grid.innerHTML = "";
       return;
     }
-    lineEl.textContent = gpus.map(function (g) {
-      var u = g.utilization_percent == null ? F.NA : F.formatPercent(g.utilization_percent, 0);
-      var t = g.temperature_c == null ? F.NA : F.formatTemp(g.temperature_c);
-      var p = g.power_draw_w == null ? F.NA : F.formatPower(g.power_draw_w);
-      var v = (g.memory_used_mb == null || g.memory_total_mb == null) ? F.NA :
+    lineEl.textContent = "";
+    if (!grid) return;
+    grid.innerHTML = "";
+    gpus.forEach(function (g) {
+      var card = document.createElement("div");
+      card.className = "gpu-mini";
+      var head = document.createElement("div");
+      head.className = "gpu-mini-head2";
+      var idx = document.createElement("span");
+      idx.className = "gm-idx";
+      idx.textContent = "GPU " + (g.index == null ? "?" : g.index);
+      var name = document.createElement("span");
+      name.className = "gm-name";
+      name.textContent = g.name || "";
+      name.title = g.name || "";
+      head.appendChild(idx);
+      head.appendChild(name);
+      card.appendChild(head);
+
+      // BUG-D：N/A 传感器显示 "--"（不画 0）
+      var vramText = (g.memory_used_mb == null || g.memory_total_mb == null) ? F.NA :
         (g.memory_used_mb / 1024).toFixed(1) + " / " + (g.memory_total_mb / 1024).toFixed(1) + " GiB";
-      return "GPU " + (g.index == null ? "?" : g.index) + "：利用率 " + u + "，显存 " + v + "，" + t + "，" + p;
-    }).join("  \u00B7  ");
+      var items = [
+        ["利用率", g.utilization_percent == null ? F.NA : F.formatPercent(g.utilization_percent, 0)],
+        ["显存", vramText],
+        ["温度", F.formatTemp(g.temperature_c)],
+        ["功耗", F.formatPower(g.power_draw_w)],
+      ];
+      var metrics = document.createElement("div");
+      metrics.className = "gm-metrics";
+      items.forEach(function (it) {
+        var m = document.createElement("div");
+        m.className = "gm-metric";
+        var k = document.createElement("div");
+        k.className = "k";
+        k.textContent = it[0];
+        var v = document.createElement("div");
+        v.className = "v" + (it[1] === F.NA ? " dim" : "");
+        v.textContent = it[1];
+        m.appendChild(k);
+        m.appendChild(v);
+        metrics.appendChild(m);
+      });
+      card.appendChild(metrics);
+      grid.appendChild(card);
+    });
   }
 
   function renderGpuPick(detected) {
@@ -602,7 +673,7 @@
     if (sig === state.gpuPickSig && box.children.length) return; // UI-002：未变不重建
     state.gpuPickSig = sig;
     box.innerHTML = "";
-    if (!detected || detected.length < 2) {
+    if (!detected || !detected.length) {
       box.style.display = "none";
       return;
     }
@@ -690,16 +761,17 @@
     setStatValue("mtpAccepted", F.formatTokenCount(d.accepted_tokens));
     setStatValue("mtpSeqs", F.formatInt(d.num_drafts));
     setStatValue("ovMtpRate", F.formatPercent(d.accept_rate));
+    setStatValue("perfMtpRate", F.formatPercent(d.accept_rate)); // 指标条
     charts.renderMtpPosChart("chartMtpPosBox", "chartMtpPos", state.mtpPositions);
   }
 
-  /* ================= Usage 页：图表 + 每日表（spec §133/§67） ================= */
+  /* ================= Usage 页：图表 + 每日表（Phase 16B §10） ================= */
   function renderDailyTable() {
     var tbody = $("dailyTbody");
     if (!tbody) return;
     var rows = state.dailyData;
     if (!rows.length) {
-      tbody.innerHTML = "<tr><td colspan='8' class='na'>暂无数据。</td></tr>";
+      tbody.innerHTML = "<tr><td colspan='9' class='na'>该范围内暂无数据。</td></tr>";
       return;
     }
     tbody.innerHTML = rows.map(function (r) {
@@ -709,24 +781,52 @@
       var gaps = r.gap_count || 0;
       var loss = r.possible_token_loss;
       var gapsTd = "<td class='" + (gaps === 0 ? "cell-ok" : loss ? "cell-bad" : "cell-warn") + "'>" + gaps + "</td>";
+      var p = r.prompt_tokens || 0, c = r.cached_tokens || 0;
+      var crDenom = p + c;
+      var cacheTd = crDenom > 0
+        ? "<td>" + F.formatPercent(c / crDenom * 100) + "</td>" : "<td>" + F.NA + "</td>";
       return "<tr><td>" + r.date + "</td>" +
         "<td>" + F.formatTokenCount(r.prompt_tokens) + "</td>" +
         "<td>" + F.formatTokenCount(r.cached_tokens) + "</td>" +
         "<td>" + F.formatTokenCount(r.output_tokens) + "</td>" +
-        "<td>" + F.formatTokenCount(r.logical_tokens) + "</td>" +
-        "<td>" + F.formatTokenCount(r.compute_tokens) + "</td>" + covTd + gapsTd + "</tr>";
+        "<td>" + F.formatTokenCount(r.compute_tokens) + "</td>" +
+        "<td>" + F.formatTokenCount(r.logical_tokens) + "</td>" + cacheTd + covTd + gapsTd + "</tr>";
     }).join("");
   }
 
+  /* Phase 16B 时间范围模式 -> /api/daily 查询参数 */
+  function dailyQuery() {
+    switch (state.dailyRangeMode) {
+      case "today": return "/api/daily?days=1";
+      case "7d": return "/api/daily?days=7";
+      case "30d": return "/api/daily?days=30";
+      case "month": return "/api/daily?days=31"; // 31 天覆盖整月，前端按月份前缀过滤
+      case "all":
+      default: return "/api/daily?all=true";
+    }
+  }
+
   function refreshDaily() {
-    return api.get("/api/daily?days=" + state.dailyRange)
+    return api.get(dailyQuery())
       .then(function (d) {
-        state.dailyData = d.days || [];
+        var rows = d.days || [];
+        if (state.dailyRangeMode === "month") {
+          var d2 = new Date();
+          var key = d2.getFullYear() + "-" + String(d2.getMonth() + 1).padStart(2, "0");
+          rows = rows.filter(function (r) { return String(r.date).indexOf(key) === 0; });
+        }
+        state.dailyData = rows;
         charts.renderUsageChart("chartUsageBox", "chartUsage", state.dailyData);
         charts.renderMtpChart("chartMtpBox", "chartMtp", state.dailyData);
         renderDailyTable();
+        renderRangeSummary();
       })
       .catch(function (e) { console.warn("daily failed:", e.message || e); });
+  }
+
+  function setDailyRangeMode(mode) {
+    state.dailyRangeMode = mode;
+    refreshDaily();
   }
 
   function refreshLive() {
@@ -772,13 +872,75 @@
       });
   }
 
-  function refreshDataInfo() {
-    return api.get("/api/data/info")
+  /* 监控事件（History 页 spec §50：/api/events，最近 30 条） */
+  var EVENT_TYPE_LABELS = {
+    monitor_start: "监控启动",
+    monitor_stop: "监控停止",
+    monitor_restart_gap: "监控重启",
+    server_online: "服务器上线",
+    server_offline: "服务器离线",
+    metrics_valid: "指标有效",
+    invalid_metrics: "无效指标",
+    database_protective_mode: "数据库保护模式",
+    database_recovery: "数据库恢复",
+    database_write_failure: "数据库写入失败",
+    database_integrity_error: "数据库完整性错误",
+    counter_reset: "计数器重置",
+    backup_created: "备份完成",
+    update_check: "更新检查",
+    update_check_failed: "更新检查失败",
+    update_available: "发现新版本",
+    update_download_started: "更新下载开始",
+    update_download_complete: "更新下载完成",
+    update_download_cancelled: "更新下载取消",
+    update_verification_failed: "更新校验失败",
+    update_install_started: "更新安装开始",
+    update_install_aborted: "更新安装中止",
+    update_backup_failed: "更新备份失败",
+  };
+
+  function refreshEvents() {
+    return api.get("/api/events?limit=30")
       .then(function (d) {
-        state.ovDataInfo = d;
-        renderOverviewCumulative();
+        state.events = d.events || [];
+        renderEventsList();
       })
-      .catch(function (e) { console.warn("data info failed:", e.message || e); });
+      .catch(function (e) { console.warn("events failed:", e.message || e); });
+  }
+
+  function renderEventsList() {
+    var list = $("eventsList");
+    var empty = $("eventsEmpty");
+    if (!list) return;
+    var events = state.events || [];
+    if (empty) empty.hidden = events.length > 0;
+    list.innerHTML = "";
+    events.forEach(function (ev) {
+      var row = document.createElement("div");
+      row.className = "event-row";
+      var t = document.createElement("span");
+      t.className = "ev-time";
+      t.textContent = F.formatDateTime(ev.timestamp);
+      t.title = F.formatDateTime(ev.timestamp);
+      var type = document.createElement("span");
+      type.className = "ev-type" + (ev.severity === "warning" ? " sev-warning" : ev.severity === "error" ? " sev-error" : "");
+      type.textContent = EVENT_TYPE_LABELS[ev.event_type] || ev.event_type;
+      type.title = ev.event_type;
+      row.appendChild(t);
+      row.appendChild(type);
+      var detail = "";
+      try {
+        detail = ev.details && typeof ev.details === "object" ? JSON.stringify(ev.details) : (ev.details || "");
+      } catch (e) { detail = String(ev.details || ""); }
+      if (detail) {
+        var dd = document.createElement("span");
+        dd.className = "ev-detail";
+        dd.textContent = detail;
+        dd.title = detail;
+        row.appendChild(dd);
+      }
+      list.appendChild(row);
+    });
   }
 
   function refreshGpuStatus() {
@@ -814,22 +976,21 @@
       lastConfigUrl = (c.llama_server && c.llama_server.url) || "";
       var _su = $("ovServerUrl"); if (lastConfigUrl && _su) _su.textContent = lastConfigUrl.replace(/^https?:\/\//, "");
       setThemeMode(cfgUi.theme);
-      state.dailyRange = cfgUi.dailyDefaultDays;
-      // Usage 页 range 控件初始值（1/7/30/365 档位；配置值映射到最近档位）
+      // Usage 页时间范围（Phase 16B §10：今天/7天/30天/本月/全部，驱动摘要+图表+表格）
+      var defDays = cfgUi.dailyDefaultDays || 30;
+      state.dailyRangeMode = defDays <= 1 ? "today" : defDays <= 7 ? "7d" :
+        defDays <= 30 ? "30d" : defDays <= 62 ? "month" : "all";
       var rangeEl = $("usageRange");
       if (rangeEl && LM.nav) {
-        var options = [
-          { value: 1, label: "今日" },
-          { value: 7, label: "7 天" },
-          { value: 30, label: "30 天" },
-          { value: 365, label: "全部" },
+        var modeOptions = [
+          { value: "today", label: "今天" },
+          { value: "7d", label: "7 天" },
+          { value: "30d", label: "30 天" },
+          { value: "month", label: "本月" },
+          { value: "all", label: "全部" },
         ];
-        var nearest = options.reduce(function (a, b) {
-          return Math.abs(b.value - state.dailyRange) < Math.abs(a.value - state.dailyRange) ? b : a;
-        });
-        ui.segmented(rangeEl, options, nearest.value, function (v) {
-          state.dailyRange = v;
-          refreshDaily();
+        ui.segmented(rangeEl, modeOptions, state.dailyRangeMode, function (v) {
+          setDailyRangeMode(v);
         });
       }
       var gpuRangeEl = $("gpuRange");
@@ -870,18 +1031,19 @@
     // Settings 事件绑定（保存/重置/测试连接/dirty 标记/主题切换/自动启动/危险操作/更新）
     if (LM.settings && LM.settings.init) LM.settings.init();
 
-    // 页面钩子（spec §46：startPage/stopPage 语义）
+    // 页面钩子（Phase 16B：进入页面时加载该页数据；隐藏页不跑其专属轮询）
     LM.nav.registerPage("overview", function () {
-      charts.ensurePageCharts(["chartOvTrend"]);
-      refreshStatus(); refreshSummary(); renderMonthCard(); refreshRuntime();
-      refreshDataQuality(); refreshOverviewTrend(); refreshDataInfo();
+      refreshStatus(); refreshSummary(); refreshRuntime();
+      refreshDataQuality(); refreshGpuStatus();
     });
     LM.nav.registerPage("usage", function () {
       charts.ensurePageCharts(["chartUsage"]);
-      refreshDaily(); refreshSummary(); renderMonthCard();
+      refreshDaily(); refreshSummary();
     });
     LM.nav.registerPage("performance", function () {
       charts.ensurePageCharts(["chartTps", "chartMtp", "chartMtpPos"]);
+      // MTP 趋势图数据来自 /api/daily（BUG-B 修复：单点也显示；无数据时空态）
+      charts.renderMtpChart("chartMtpBox", "chartMtp", state.dailyData);
       refreshLive(); refreshMtp(); refreshRuntime();
     });
     LM.nav.registerPage("gpu", function () {
@@ -889,7 +1051,7 @@
       refreshGpuStatus(); refreshGpuLive(); refreshGpuDaily();
     });
     LM.nav.registerPage("history", function () {
-      refreshDataQuality(); refreshDaily();
+      refreshDataQuality(); refreshEvents();
     });
     LM.nav.registerPage("settings", function () {
       if (!LM.settings.isLoaded()) LM.settings.loadSettings();
@@ -899,28 +1061,42 @@
       LM.settings.loadAbout();
     });
 
-    // 轮询任务注册（spec §47 中央调度器；间隔来自 config）
+    // 轮询任务注册（Phase 16B spec §119：页面作用域——
+    // 状态类 ~5s（config 间隔）；图表 10-15s；用量/历史 30-60s 且仅在对应页前台时运行）
     var R = Math.max(1, cfgUi.refreshIntervalSeconds) * 1000;
+    // 状态类（全局：状态条/离线横幅依赖，任何页可见时都跑）
     LM.poll.register("status", { intervalMs: R, visibleOnly: true, run: refreshStatus });
     LM.poll.register("runtime", { intervalMs: R, visibleOnly: true, run: refreshRuntime });
     LM.poll.register("gpuStatus", { intervalMs: R, visibleOnly: true, run: refreshGpuStatus });
-    LM.poll.register("gpuLive", { intervalMs: 15000, visibleOnly: true, run: refreshGpuLive });
-    // visibleIntervalMs：窗口可见（前台）时的快刷新间隔，保证"实时感"；
-    // 隐藏时回落到 intervalMs 省资源（spec §47 语义：隐藏约 30s 有效频率）
+    // 摘要/质量（Overview + Usage/History 共用，30s 基线、前台 10s）
     LM.poll.register("summary", { intervalMs: 30000, visibleIntervalMs: 10000, visibleOnly: false, run: refreshSummary });
-    LM.poll.register("live", { intervalMs: 30000, visibleIntervalMs: 10000, visibleOnly: false, run: refreshLive });
     LM.poll.register("dataQuality", { intervalMs: 30000, visibleIntervalMs: 10000, visibleOnly: false, run: refreshDataQuality });
-    LM.poll.register("gpuDaily", { intervalMs: 60000, visibleIntervalMs: 30000, visibleOnly: false, run: refreshGpuDaily });
-    LM.poll.register("mtp", { intervalMs: 60000, visibleIntervalMs: 30000, visibleOnly: false, run: refreshMtp });
-    LM.poll.register("daily", { intervalMs: 120000, visibleIntervalMs: 30000, visibleOnly: false, run: refreshDaily });
-    // Overview 专有（0.16.12）：近 7 天趋势图 + 数据跨度/日均——仅在概览页前台时轮询，避免其他页浪费请求
-    LM.poll.register("ovTrend", {
-      intervalMs: 120000, visibleIntervalMs: 30000, visibleOnly: true,
-      run: function () { if (LM.nav.currentPage() === "overview") return refreshOverviewTrend(); },
+    // 页面专属（hidden page 不轮询，避免跨页重复请求）
+    LM.poll.register("live", {
+      intervalMs: 60000, visibleIntervalMs: 15000, visibleOnly: true,
+      run: function () { if (LM.nav.currentPage() === "performance") return refreshLive(); },
     });
-    LM.poll.register("ovDataInfo", {
-      intervalMs: 300000, visibleIntervalMs: 120000, visibleOnly: true,
-      run: function () { if (LM.nav.currentPage() === "overview") return refreshDataInfo(); },
+    LM.poll.register("mtp", {
+      intervalMs: 60000, visibleIntervalMs: 30000, visibleOnly: false, run: refreshMtp,
+    });
+    LM.poll.register("daily", {
+      intervalMs: 60000, visibleIntervalMs: 30000, visibleOnly: true,
+      run: function () {
+        var p = LM.nav.currentPage();
+        if (p === "usage" || p === "history") return refreshDaily();
+      },
+    });
+    LM.poll.register("gpuLive", {
+      intervalMs: 60000, visibleIntervalMs: 15000, visibleOnly: true,
+      run: function () { if (LM.nav.currentPage() === "gpu") return refreshGpuLive(); },
+    });
+    LM.poll.register("gpuDaily", {
+      intervalMs: 120000, visibleIntervalMs: 60000, visibleOnly: true,
+      run: function () { if (LM.nav.currentPage() === "gpu") return refreshGpuDaily(); },
+    });
+    LM.poll.register("events", {
+      intervalMs: 120000, visibleIntervalMs: 60000, visibleOnly: true,
+      run: function () { if (LM.nav.currentPage() === "history") return refreshEvents(); },
     });
     // Updates：30s 全局（驱动横幅）+ 1s 仅在 Updates 分区（下载进度，UI-023 统一进调度器）
     LM.poll.register("updates", { intervalMs: 30000, visibleOnly: false, run: LM.settings.loadUpdateStatus });
@@ -937,7 +1113,7 @@
       await loadConfig();
       LM.poll.bindBrowserVisibility();
       // 初始加载：Overview 是默认页——其数据刷新由 showPage 的 onShow 钩子统一触发
-      // （避免双重 fetch）；这里只预热 Usage 图（daily）与更新状态横幅。
+      // （避免双重 fetch）；这里只预热 Usage 图表数据与更新状态横幅。
       refreshDaily();
       LM.settings.loadUpdateStatus();
       LM.nav.showPage("overview");
@@ -953,9 +1129,9 @@
     refreshLiveNow: function () { refreshLive(); },
     refreshSummaryNow: function () { refreshSummary(); },
     refreshDailyNow: function () { refreshDaily(); },
-    refreshMonthNow: function () { renderMonthCard(true); },
     refreshMtpNow: function () { refreshMtp(); },
     refreshDataQualityNow: function () { refreshDataQuality(); },
+    refreshEventsNow: function () { refreshEvents(); },
   };
 
   // DOM ready

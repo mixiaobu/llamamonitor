@@ -11,15 +11,19 @@
    ============================================================ */
 
 :root {
-  /* ---------- Font ---------- */
+  /* ---------- Font（Phase 16B spec §5：整体字号上调） ----------
+     Page Title 22 / Section 17 / Card Title 15 / Body 14 /
+     Secondary 13 / Caption 12 / Primary Metric 34 / Secondary Metric 20 */
   --font-family: "Segoe UI Variable Text", "Segoe UI Variable Display",
     "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", Arial, sans-serif;
   --font-size-caption: 12px;
   --font-size-body: 14px;
-  --font-size-subtitle: 16px;
-  --font-size-title: 20px;
-  --font-size-display: 28px;
-  --font-size-hero: 36px;
+  --font-size-secondary: 13px;
+  --font-size-subtitle: 17px;
+  --font-size-title: 22px;
+  --font-size-display: 34px;
+  --font-size-hero: 34px;
+  --font-size-metric: 20px;
   --font-weight-regular: 400;
   --font-weight-semibold: 600;
   --line-height: 1.45;
