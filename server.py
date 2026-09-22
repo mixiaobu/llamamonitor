@@ -1210,12 +1210,13 @@ def build_app(
     async def api_reset_statistics(payload: dict) -> Response:
         """
         重置历史统计（Phase 9 扩展）：同一事务删除
-        daily_usage + live_samples + gpu_samples + gpu_daily + mtp_position_daily，
+        daily_usage + live_samples + gpu_samples + gpu_daily + mtp_position_daily
+        + data_gaps（已知监控缺口，0.16.12 起随重置清除——历史页随之干净），
         **保留 state（Counter baseline，含 per-position MTP baseline）**——
         重置后只统计新增 delta，旧 Token 不会重新计入；GPU 从 0 开始新的 daily。
         必须显式 {"confirm": "RESET"}，否则 400。
         Phase 11：数据库 corrupt/unavailable 时拒绝（409 DB_UNHEALTHY）；
-        data_gaps / monitor_events（可靠性元数据）不受重置影响。
+        monitor_events（应用生命周期审计日志）不受重置影响。
         """
         if _db_healthy_guard():
             return JSONResponse(status_code=409, content=_err(
@@ -1225,9 +1226,9 @@ def build_app(
         deleted = db.reset_statistics()
         logger.info(
             "Statistics reset: %d daily row(s), %d live sample(s), %d gpu sample(s), %d gpu daily row(s), "
-            "%d mtp position row(s) deleted (state baseline preserved)",
+            "%d mtp position row(s), %d gap record(s) deleted (state baseline + monitor_events preserved)",
             deleted["daily_deleted"], deleted["live_deleted"], deleted["gpu_samples_deleted"],
-            deleted["gpu_daily_deleted"], deleted["mtp_position_deleted"],
+            deleted["gpu_daily_deleted"], deleted["mtp_position_deleted"], deleted.get("gaps_deleted", 0),
         )
         return JSONResponse(status_code=200, content={"success": True, **deleted})
 

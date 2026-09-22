@@ -408,6 +408,46 @@ class DataManagementTests(unittest.TestCase):
         finally:
             client.__exit__(None, None, None)
 
+    def test_reset_also_clears_data_gaps_keeps_monitor_events(self):
+        """0.16.12：重置统计一并清除 data_gaps（历史页"最近缺口"数据源），
+        保留 monitor_events（应用生命周期审计日志，非用量历史）。"""
+        client, _collector, _db = self._start()
+        try:
+            self._round(client, _collector, TEXT_B)
+            # 直接插入一条已知缺口 + 一条监控事件（WAL 并发写）
+            conn = sqlite3.connect(self.tmp / "dm.db")
+            try:
+                conn.execute(
+                    "INSERT INTO data_gaps(start_timestamp, end_timestamp, duration_seconds, "
+                    "source, reason, token_recoverable, possible_token_loss, resolved) "
+                    "VALUES(1700000000, 1700000060, 60.0, 'llama', 'server_offline', 1, 0, 1)"
+                )
+                conn.execute(
+                    "INSERT INTO monitor_events(timestamp, event_type, severity, source, details_json) "
+                    "VALUES(1700000000, 'monitor_start', 'info', 'collector', '{}')"
+                )
+                conn.commit()
+            finally:
+                conn.close()
+            self.assertEqual(self._read_db("SELECT COUNT(*) FROM data_gaps")[0][0], 1)
+            events_before = self._read_db("SELECT COUNT(*) FROM monitor_events")[0][0]
+            self.assertGreaterEqual(events_before, 1)
+
+            r = client.post("/api/data/reset-statistics", json={"confirm": "RESET"})
+            self.assertEqual(r.status_code, 200)
+            data = r.json()
+            self.assertTrue(data["success"])
+            self.assertEqual(data["gaps_deleted"], 1)
+            # 缺口已清；监控事件（应用生命周期审计日志）保留、数量不变
+            self.assertEqual(self._read_db("SELECT COUNT(*) FROM data_gaps")[0][0], 0)
+            self.assertEqual(self._read_db("SELECT COUNT(*) FROM monitor_events")[0][0], events_before)
+            # 历史页数据源 /api/data/quality 的 recent_gaps 随之清空
+            quality = client.get("/api/data/quality").json()
+            self.assertEqual(quality["recent_gaps"], [])
+            self.assertEqual(quality["total"]["gap_count"], 0)
+        finally:
+            client.__exit__(None, None, None)
+
     # ---------- 6) 写锁 ----------
 
     def test_database_has_write_lock(self):

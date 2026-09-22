@@ -1124,10 +1124,13 @@ class Database:
     def reset_statistics(self) -> dict:
         """
         重置历史统计：同一事务内 DELETE
-        daily_usage + live_samples + gpu_samples + gpu_daily + mtp_position_daily。
+        daily_usage + live_samples + gpu_samples + gpu_daily + mtp_position_daily
+        + data_gaps（已知监控缺口——历史页"最近缺口"的数据源，用户重置后
+        期望历史页干净；0.16.12 起随重置一并清除）。
 
         **保留 state 表（当前 Counter baseline 不动，含 per-position MTP baseline）**：
         重置后 Collector 继续从上次保存的 Counter 值计算增量，旧 Token 不会被重新计入。
+        **保留 monitor_events（应用/数据库生命周期审计日志，非用量历史）**。
         GPU 数据不是累计 Counter，重置后直接从 0 开始新的 GPU daily。
         返回各表删除行数字典。
         """
@@ -1141,6 +1144,7 @@ class Database:
                     ("gpu_samples_deleted", "gpu_samples"),
                     ("gpu_daily_deleted", "gpu_daily"),
                     ("mtp_position_deleted", "mtp_position_daily"),
+                    ("gaps_deleted", "data_gaps"),
                 ):
                     out[key] = conn.execute(f"DELETE FROM {table}").rowcount
         return out

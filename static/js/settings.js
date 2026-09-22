@@ -382,6 +382,7 @@
           LM.app.refreshDailyNow();    // 用量页每日图表/表格（含今日行）
           LM.app.refreshSummaryNow();  // 今日/总计卡片
           LM.app.refreshMonthNow();    // 本月卡片
+          LM.app.refreshDataQualityNow(); // 历史页数据质量/缺口（今日覆盖率基于实时样本，立即失效重取）
         }
       } else {
         ui.toast("清空失败：" + ((data.error && data.error.message) || "未知"), "err");
@@ -419,6 +420,7 @@
           LM.app.refreshSummaryNow();  // 今日/总计卡片
           LM.app.refreshMonthNow();    // 本月卡片（强制失效缓存）
           LM.app.refreshMtpNow();      // MTP 统计
+          LM.app.refreshDataQualityNow(); // 历史页数据质量/最近缺口（缺口已随重置清除）
         }
       } else {
         ui.toast("重置失败：" + ((data.error && data.error.message) || "未知"), "err");
@@ -433,7 +435,7 @@
   function resetStats() {
     ui.modal({
       title: "重置所有统计",
-      text: "这将永久删除所有 Token 用量历史与实时样本。\n\n配置与当前 llama.cpp 计数器基线会保留。",
+      text: "这将永久删除所有 Token 用量历史、实时样本与已知监控缺口记录。\n\n配置与当前 llama.cpp 计数器基线会保留。",
       okLabel: "重置",
       danger: true,
       needsInput: true,

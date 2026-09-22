@@ -72,7 +72,7 @@
             <span class="ss-name">llama.cpp</span>
             <span id="ovServerState" class="status-badge paused"><span class="dot"></span><span class="status-text">启动中</span></span>
           </div>
-          <span class="ss-hint" id="ovLastUpdate">等待首个采样...</span>
+          <span class="ss-hint" id="ovLastUpdate">等待刷新...</span>
         </div>
 
         <!-- 今日大数字卡 -->
@@ -96,18 +96,54 @@
           </div>
         </div>
 
+        <!-- 近期趋势（复用 /api/daily 最近 7 天，堆叠提示/缓存/输出） -->
+        <div class="section-label">近 7 天趋势</div>
+        <div class="card page-section chart-box" id="chartOvTrendBox">
+          <div class="chart" id="chartOvTrend" data-chart="chartOvTrend"></div>
+          <div class="chart-empty-overlay"></div>
+        </div>
+
         <!-- 性能双卡 -->
         <div class="section-label">性能</div>
         <div class="perf-grid">
           <div class="perf-card">
-            <div class="perf-card-title">解码速度</div>
+            <div class="perf-card-title">Token 速率</div>
+            <div class="pc-row"><span class="pc-key">提示处理</span><span class="pc-value" id="ovPromptTps">--</span></div>
             <div class="pc-row"><span class="pc-key">解码</span><span class="pc-value" id="ovDecodeTps">--</span></div>
-            <div class="pc-row"><span class="pc-key">请求</span><span class="pc-value small" id="ovRequests">--</span></div>
+            <div class="pc-row"><span class="pc-key">MTP 接受率</span><span class="pc-value" id="ovMtpRate">--</span></div>
           </div>
           <div class="perf-card">
-            <div class="perf-card-title">提示 / 投机解码</div>
-            <div class="pc-row"><span class="pc-key">提示</span><span class="pc-value" id="ovPromptTps">--</span></div>
-            <div class="pc-row"><span class="pc-key">MTP</span><span class="pc-value" id="ovMtpRate">--</span></div>
+            <div class="perf-card-title">运行状态</div>
+            <div class="pc-row"><span class="pc-key">处理中 / 排队</span><span class="pc-value" id="ovRequests">--</span></div>
+            <div class="pc-row"><span class="pc-key">上下文上限</span><span class="pc-value" id="ovContext">--</span></div>
+            <div class="pc-row"><span class="pc-key">KV 缓存</span><span class="pc-value" id="ovKvCache">--</span></div>
+          </div>
+        </div>
+
+        <!-- 累计 -->
+        <div class="section-label">累计</div>
+        <div class="card page-section">
+          <div class="stat-grid">
+            <div class="stat">
+              <div class="stat-label">逻辑 Token 总量</div>
+              <div class="stat-value mid" id="ovTotalLogical">--</div>
+              <div class="stat-hint">自首次记录以来</div>
+            </div>
+            <div class="stat">
+              <div class="stat-label">日均逻辑</div>
+              <div class="stat-value mid" id="ovAvgDaily">--</div>
+              <div class="stat-hint">按已记录天数</div>
+            </div>
+            <div class="stat">
+              <div class="stat-label">缓存命中率</div>
+              <div class="stat-value mid" id="ovCacheHit">--</div>
+              <div class="stat-hint">缓存 /（提示+缓存）</div>
+            </div>
+            <div class="stat">
+              <div class="stat-label">数据跨度</div>
+              <div class="stat-value small" id="ovDataSpan">--</div>
+              <div class="stat-hint" id="ovDataSpanHint"></div>
+            </div>
           </div>
         </div>
 

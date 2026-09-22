@@ -34,6 +34,9 @@
     var t = {
       name: name,
       intervalMs: Math.max(1000, Number(opts.intervalMs) || 10000),
+      // 前台自适应：窗口可见时用更短的 visibleIntervalMs（可选），
+      // 隐藏时回到 intervalMs——前台数据"实时感"，后台不浪费请求
+      visibleIntervalMs: opts.visibleIntervalMs ? Math.max(1000, Number(opts.visibleIntervalMs)) : null,
       run: opts.run,
       visibleOnly: !!opts.visibleOnly,
       timer: 0,
@@ -42,6 +45,12 @@
     };
     tasks.set(name, t);
     return t;
+  }
+
+  /** 任务当前应使用的间隔：前台（窗口可见）优先短间隔。 */
+  function currentInterval(t) {
+    if (t.visibleIntervalMs && isAppVisible()) return t.visibleIntervalMs;
+    return t.intervalMs;
   }
 
   function start(name) {
@@ -59,27 +68,43 @@
     clearTimeout(t.timer);
     t.timer = setTimeout(function () {
       tick(t);
-      schedule(t); // 固定间隔自调度（某次失败不影响后续轮次）
-    }, t.intervalMs);
+      schedule(t); // 自调度（某次失败不影响后续轮次；间隔每次按可见性重算）
+    }, currentInterval(t));
+  }
+
+  /** 可见性翻转：重排所有未 in-flight 任务的下次 tick（间隔随之切换）。 */
+  function rescheduleAll() {
+    tasks.forEach(function (t) {
+      if (!t.started || t.inFlight) return;
+      clearTimeout(t.timer);
+      schedule(t);
+    });
   }
 
   function tick(t) {
     if (t.visibleOnly && !isAppVisible()) return; // 隐藏：跳过本轮
     if (t.inFlight) return;                        // 不重叠（spec §45）
     t.inFlight = true;
+    // 完成时重排：若可见性在本轮运行期间翻转，rescheduleAll 会跳过 in-flight 任务，
+    // 自调度又按"发起时"的间隔续期 => 前台/后台间隔错配，直到下次翻转才纠正。
+    // 这里完成后按**当前**可见性重排，立即纠正（幂等：rescheduleAll 已排过的再排一次无副作用）。
+    function _done() {
+      t.inFlight = false;
+      if (t.started) schedule(t);
+    }
     try {
       var r = t.run();
       if (r && typeof r.then === "function") {
         r.catch(function (e) {
           // 调用方 run 内部已处理保留上次数据；这里兜底防 unhandled rejection（spec §99）
           console.warn("poll task failed:", t.name, e && e.message ? e.message : e);
-        }).then(function () { t.inFlight = false; });
+        }).then(_done);
       } else {
-        t.inFlight = false;
+        _done();
       }
     } catch (e) {
       console.warn("poll task threw:", t.name, e && e.message ? e.message : e);
-      t.inFlight = false;
+      _done();
     }
   }
 
@@ -117,6 +142,13 @@
     var was = isAppVisible();
     appVisible = !!v;
     if (!was && isAppVisible()) onVisibilityChanged();
+    // 可见性翻转（双向）都要重排：前台切快间隔、后台切回长间隔
+    if (was !== isAppVisible()) rescheduleAll();
+  }
+
+  function onBrowserVisibility() {
+    onVisibilityChanged();
+    rescheduleAll();
   }
 
   /* 初始化 browser 侧监听（一次） */
@@ -124,7 +156,7 @@
   function bindBrowserVisibility() {
     if (browserBound) return;
     browserBound = true;
-    document.addEventListener("visibilitychange", onVisibilityChanged);
+    document.addEventListener("visibilitychange", onBrowserVisibility);
     // Python 桥（UI-024）
     window.__lmSetVisible = setAppVisible;
   }
