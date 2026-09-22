@@ -50,35 +50,20 @@
   overflow: hidden;
 }
 
-/* 手动折叠/展开按钮（品牌行右侧；compact 下占据品牌行并反向指向展开） */
-.nav-collapse-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  flex: none;
-  margin-left: auto;
-  background: none;
+/* 品牌图标 = 折叠/展开入口：hover 高亮提示可点击，点击切换侧边栏收起/展开 */
+.nav-brand .brand-icon {
   border: none;
-  border-radius: var(--radius-control);
-  color: var(--text-secondary);
+  background: none;
   cursor: pointer;
-  transition: background-color var(--transition-fast), color var(--transition-fast);
+  border-radius: var(--radius-control);
+  padding: 0;
+  transition: background-color var(--transition-fast);
 }
-.nav-collapse-btn:hover {
+.nav-brand .brand-icon:hover {
   background: var(--bg-subtle-hover);
-  color: var(--text-primary);
 }
-.nav-collapse-btn svg {
-  width: 16px;
-  height: 16px;
-  stroke: currentColor;
-  fill: none;
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  transition: transform var(--transition-normal);
+.nav-brand .brand-icon:active {
+  background: var(--bg-subtle-active);
 }
 
 .nav-items {
@@ -173,11 +158,8 @@
 .app.compact .nav-item .nav-label {
   display: none;
 }
-.app.compact .nav-collapse-btn {
-  margin-left: 0;
-}
-.app.compact .nav-collapse-btn svg {
-  transform: rotate(180deg);
+.app.compact .nav-brand .brand-icon {
+  margin: 0 auto;
 }
 .app.compact .nav-item {
   justify-content: center;

@@ -64,7 +64,8 @@
       else if (saved === "0") manualCompact = false;
     } catch (e) { /* 存储不可用时忽略 */ }
 
-    var btn = document.getElementById("btnNavToggle");
+    // 折叠入口 = 品牌图标（hover 高亮提示可点；点击切换收起/展开）
+    var brand = document.getElementById("brandIcon");
     var lastWidth = app.clientWidth;
 
     function apply() {
@@ -72,15 +73,15 @@
         ? lastWidth < 1100
         : manualCompact;
       app.classList.toggle("compact", effective);
-      if (btn) {
+      if (brand) {
         var label = effective ? "展开侧边栏" : "收起侧边栏";
-        btn.title = label;
-        btn.setAttribute("aria-label", label);
+        brand.title = label;
+        brand.setAttribute("aria-label", label);
       }
     }
 
-    if (btn) {
-      btn.addEventListener("click", function () {
+    if (brand) {
+      brand.addEventListener("click", function () {
         var isCompact = app.classList.contains("compact");
         manualCompact = !isCompact;
         try {
