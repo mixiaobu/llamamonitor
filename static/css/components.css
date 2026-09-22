@@ -599,6 +599,12 @@
   gap: var(--spacing-sm);
   min-height: 160px;
 }
+/* Phase 16C（HISTORY-001/002 根因）：author 的 display:flex 会压过 UA 的
+   [hidden]{display:none}，导致 .hidden=true 的空态仍可见。
+   统一空态开关 ui.setEmptyState 用这两个类锁定显隐。 */
+.empty-state.force-show { display: flex !important; }
+.empty-state.force-hide { display: none !important; }
+.empty-state[hidden] { display: none; }
 .empty-state .empty-icon {
   width: 40px;
   height: 40px;

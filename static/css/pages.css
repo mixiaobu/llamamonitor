@@ -500,7 +500,9 @@
 }
 .gpu-mini-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  /* Phase 16C §1：2 卡均匀占满（限宽防拉伸），3~4 卡自动换行 */
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  max-width: 960px;
   gap: var(--spacing-lg);
 }
 .gpu-mini {
@@ -757,4 +759,175 @@
 .btn.danger:hover {
   background: var(--error-subtle);
   border-color: var(--error);
+}
+
+/* ============================================================
+   Phase 16C 修正样式（UI freeze 前最后一轮）
+   ============================================================ */
+
+/* §2 概览行动链接：Win11 轻量 Action Link（统一字号/颜色/箭头/hover，
+   不再呈现传统下划线超链接） */
+a.link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-semibold);
+  color: var(--accent);
+  text-decoration: none;
+  background: none;
+  border: none;
+  padding: 4px 8px;
+  margin: -4px -8px;
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  transition: background-color var(--transition-fast);
+}
+a.link:hover { background: var(--accent-subtle, var(--bg-subtle-hover)); text-decoration: none; }
+a.link:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+a.link .arr {
+  display: inline-block;
+  transition: transform var(--transition-fast);
+}
+a.link:hover .arr { transform: translateX(2px); }
+
+/* GPU-002：VRAM 进度条现在嵌在"显存"行内（flex 行），
+   用 flex-basis:100% 独占一行、紧跟数值下方 */
+.gpu-device .gd-primary { flex-wrap: wrap; row-gap: 0; }
+.gpu-device .gd-primary .vram-bar {
+  flex: 0 0 100%;
+  margin: 3px 0 2px;
+}
+
+/* §12 GPU 过滤：Fluent Check Chip（原生 checkbox 视觉隐藏但保留语义/键盘） */
+.check-chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: 5px 12px 5px 10px;
+  margin: 0 6px 6px 0;
+  border: 1px solid var(--border-default);
+  border-radius: 999px;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+  user-select: none;
+  transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+}
+.check-chip:hover { border-color: var(--accent); }
+.check-chip input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  pointer-events: none; /* label 转发点击；键盘焦点落在 input 上 */
+}
+.check-chip input:focus-visible + .chip-tick {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-radius: 50%;
+}
+.check-chip .chip-tick {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border-default);
+  background: none;
+  color: transparent;
+  font-size: 10px;
+  line-height: 1;
+  flex: none;
+  transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+}
+.check-chip.on {
+  background: var(--accent-subtle, var(--bg-subtle-active));
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+.check-chip.on .chip-tick {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+/* §19 事件列表：取消嵌套滚动，由页面承担纵向滚动 */
+.events-list {
+  max-height: none;
+  overflow-y: visible;
+}
+.events-more-wrap {
+  display: flex;
+  justify-content: center;
+  padding: var(--spacing-md) 0 var(--spacing-xs);
+}
+
+/* §21 设置：服务器连接状态（轻量，复用已有状态/测试结果） */
+.conn-status {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  background: var(--bg-subtle);
+  margin-bottom: var(--spacing-md);
+  font-size: var(--font-size-caption);
+}
+.conn-status .cs-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--text-disabled);
+}
+.conn-status.online .cs-dot { background: var(--success); }
+.conn-status.offline .cs-dot { background: var(--error); }
+.conn-status .cs-text { color: var(--text-primary); font-weight: var(--font-weight-semibold); }
+.conn-status .cs-sub { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+
+/* §23 About：轻量品牌头部 + 说明 */
+.about-hero {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-lg);
+  padding: var(--spacing-lg) 0 var(--spacing-md);
+  border-bottom: 1px solid var(--border-subtle);
+  margin-bottom: var(--spacing-md);
+}
+.about-hero .ah-logo {
+  width: 56px;
+  height: 56px;
+  flex: none;
+  border-radius: var(--radius-large);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-subtle, var(--bg-subtle-active));
+  color: var(--accent);
+}
+.about-hero .ah-logo svg { width: 32px; height: 32px; }
+.about-hero .ah-name {
+  font-size: var(--font-size-title);
+  font-weight: var(--font-weight-bold);
+}
+.about-hero .ah-ver {
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  margin-top: 2px;
+}
+.about-note {
+  margin-top: var(--spacing-md);
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-size: var(--font-size-caption);
+  line-height: 1.6;
 }

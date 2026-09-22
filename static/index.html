@@ -106,7 +106,7 @@
             <div><div class="tb-label">输出</div><div class="tb-value" id="ovTodayOutput">--</div></div>
           </div>
           <div class="card-section-gap" style="padding-top:var(--spacing-md);border-top:1px solid var(--border-subtle)">
-            <a class="link" href="#" data-goto="usage">查看用量历史与每日明细 →</a>
+            <a class="link" href="#" data-goto="usage">查看用量历史与每日明细 <span class="arr">→</span></a>
           </div>
         </div>
 
@@ -127,7 +127,7 @@
           </div>
         </div>
         <div class="card-section-gap">
-          <a class="link" href="#" data-goto="performance">查看吞吐量趋势与 MTP 详情 →</a>
+          <a class="link" href="#" data-goto="performance">查看吞吐量趋势与 MTP 详情 <span class="arr">→</span></a>
         </div>
 
         <!-- GPU 摘要（spec §11：迷你卡 4 指标 + 详情链接） -->
@@ -137,7 +137,7 @@
             <span id="ovGpuState" class="status-badge paused"><span class="dot"></span><span class="status-text">--</span></span>
             <span class="ss-hint" id="ovGpuLine" style="margin-left:var(--spacing-sm)">--</span>
           </span>
-          <a class="link" id="ovGpuLink" href="#" data-goto="gpu">查看 GPU 详情 →</a>
+          <a class="link" id="ovGpuLink" href="#" data-goto="gpu">查看 GPU 详情 <span class="arr">→</span></a>
         </div>
         <div class="gpu-mini-grid" id="ovGpuMini"></div>
 
@@ -167,7 +167,7 @@
             </div>
           </div>
           <div class="card-section-gap">
-            <a class="link" id="dqLink" href="#" data-goto="history">查看历史与缺口详情 →</a>
+            <a class="link" id="dqLink" href="#" data-goto="history">查看历史与缺口详情 <span class="arr">→</span></a>
           </div>
         </div>
       </section>
@@ -182,11 +182,12 @@
           <div class="seg" id="usageRange" role="group" aria-label="时间范围"></div>
         </div>
 
-        <!-- 范围摘要卡（所选范围合计；"全部"= 累计） -->
+        <!-- 范围摘要卡（Phase 16C §3/USAGE-001：卡片恒为所选范围汇总；
+             标题即具体范围名（今日/近 7 天/本月（2026-09）/全部…），
+             不再用"累计"徽标——30 天汇总是范围汇总，不是全生命周期累计） -->
         <div class="card page-section">
-          <div class="card-title" style="display:flex;align-items:center;gap:var(--spacing-sm)">
+          <div class="card-title">
             <span id="sumRangeLabel">所选范围</span>
-            <span class="gap-reason-tag" id="sumCumulativeBadge" hidden>累计</span>
           </div>
           <div class="stat" style="margin-bottom:var(--spacing-md)">
             <div class="stat-label">逻辑 Token <span class="info-tip-slot" data-tip="提示 + 缓存提示 + 生成输出。"></span></div>
@@ -290,14 +291,15 @@
           <p class="page-subtitle">推理速度、请求与 MTP（投机解码）活动。</p>
         </div>
 
-        <!-- 即时指标条（spec §25：一行 5 项，不做 5 张大卡） -->
+        <!-- 即时指标条（Phase 16C §5：Prompt TPS/Decode TPS/处理中/排队/Busy Slots；
+             MTP 接受率不再重复——下方 MTP 卡已有完整 Summary） -->
         <div class="metric-strip">
           <div class="ms-item">
-            <div class="ms-key">提示处理</div>
+            <div class="ms-key">Prompt TPS</div>
             <div class="ms-value" id="perfPromptTps">--</div>
           </div>
           <div class="ms-item">
-            <div class="ms-key">解码</div>
+            <div class="ms-key">Decode TPS</div>
             <div class="ms-value" id="perfDecodeTps">--</div>
           </div>
           <div class="ms-item">
@@ -309,8 +311,8 @@
             <div class="ms-value" id="perfQueued">--</div>
           </div>
           <div class="ms-item">
-            <div class="ms-key">MTP 接受率</div>
-            <div class="ms-value" id="perfMtpRate">--</div>
+            <div class="ms-key">Busy Slots</div>
+            <div class="ms-value" id="perfBusySlots">--</div>
           </div>
         </div>
 
@@ -505,6 +507,12 @@
           <div class="settings-card" id="sec-server" data-sec="server">
             <h2>服务器</h2>
             <p class="settings-desc">llama-server 基础地址。监控只 GET metrics 端点，绝不触碰服务器本身。</p>
+            <!-- Phase 16C §21：轻量连接状态（复用已有状态/测试结果，不额外高频探测） -->
+            <div class="conn-status" id="serverConnStatus">
+              <span class="cs-dot"></span>
+              <span class="cs-text">未测试</span>
+              <span class="cs-sub"></span>
+            </div>
             <div class="setting-row">
               <div class="setting-info">
                 <div class="setting-title">llama-server 地址</div>
@@ -801,17 +809,22 @@
         </div>
       </section>
 
-      <!-- ================= About（Phase 16B §68：max-width 900px 由 .page-about 控制） ================= -->
+      <!-- ================= About（Phase 16C §23/§24：品牌头部 + 信息表 + 说明；
+           max-width 900px 由 .page-about 控制） ================= -->
       <section class="page page-about" id="page-about">
-        <div class="page-header">
-          <h1 class="page-title">关于</h1>
-          <p class="page-subtitle">llama.cpp 的本地只读监控。</p>
-        </div>
         <div class="card page-section">
+          <div class="about-hero">
+            <div class="ah-logo" id="aboutLogo"></div>
+            <div>
+              <div class="ah-name">LlamaMonitor</div>
+              <div class="ah-ver"><span id="aboutVersion">--</span> · llama.cpp 的本地只读监控工具</div>
+            </div>
+          </div>
           <div class="kv-list">
             <span class="k">应用</span><span class="v" id="aboutName">LlamaMonitor</span>
-            <span class="k">版本</span><span class="v" id="aboutVersion">--</span>
+            <span class="k">版本</span><span class="v" id="aboutVersionRow">--</span>
             <span class="k">数据库 Schema</span><span class="v" id="aboutSchema">--</span>
+            <span class="k">平台</span><span class="v" id="aboutPlatform">Windows x64</span>
             <span class="k">数据目录</span><span class="v" id="aboutDataDir">--</span>
           </div>
           <div class="btn-row" style="margin-top:var(--spacing-md)">
@@ -819,6 +832,9 @@
             <button class="btn subtle" id="btnAboutOpenData">打开数据目录</button>
             <span class="inline-result" id="aboutCopyResult"></span>
           </div>
+          <p class="about-note">
+            LlamaMonitor 通过读取 llama.cpp 的 /metrics 端点进行监控，不代理或修改推理请求。
+          </p>
         </div>
       </section>
 

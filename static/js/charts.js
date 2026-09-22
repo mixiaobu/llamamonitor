@@ -130,6 +130,9 @@
       var overlay = box.querySelector(".chart-empty-overlay");
       if (overlay) {
         overlay.innerHTML = "";
+        // Phase 16C：ui.showEmpty 有 dataset.empty 早退守卫——清空后必须复位，
+        // 否则在两个不同空态间切换（如"等待数据"→"暂无吞吐数据"）会留下空白 overlay。
+        delete overlay.dataset.empty;
         LM.ui.showEmpty(overlay, { icon: "emptyChart", title: title || "暂无数据", desc: desc || "" });
       }
     } else {
@@ -264,20 +267,19 @@
     if (!c) return;
     var p = pal(), col = colors();
     var pts = samples || [];
-    // BUG-C（spec §124）：区分"无采样"与"采样了但没有推理活动"
+    // PERF-001（Phase 16C §6）：以"有效 TPS 样本"（prompt/decode 至少一个非 null）
+    // 作为判定依据。此前守卫是 !pts.length（全部样本数）——只要窗口里有
+    // idle 样本（tps=null）就画出一整副空坐标系而空态被 setEmpty(false) 关掉。
+    // 真实 0 TPS 样本（tps===0）仍算有效，允许显示 0。
     var actPts = pts.filter(function (s) {
       return s.prompt_tps != null || s.decode_tps != null;
     });
-    if (pts.length === 0) {
-      setEmpty(containerId, true, "等待数据",
-        "监控采集到实时采样后显示 TPS 曲线。");
-    } else if (actPts.length === 0) {
-      setEmpty(containerId, true, "暂无推理活动",
-        "服务器当前没有推理请求。推理开始时显示 TPS 曲线。");
-    } else {
-      setEmpty(containerId, false);
+    if (actPts.length === 0) {
+      setEmpty(containerId, true, "暂无吞吐数据",
+        "最近 60 分钟没有检测到有效的 Token 生成活动。开始一次推理后，这里将显示 Prompt TPS 和 Decode TPS。");
+      return;
     }
-    if (!pts.length) return;
+    setEmpty(containerId, false);
     function series(name, field, color) {
       var vals = pts.map(function (s) {
         return s[field] == null ? null : Number(s[field]);
@@ -446,6 +448,9 @@
     var vals = (gpu.points || []).map(function (pt) {
       return pt[field] == null ? null : Number(pt[field]);
     });
+    // GPU-001（Phase 16C §11）：该 GPU 不支持此传感器（全 null）时
+    // 不建 series——否则 ECharts 会在 legend 留一条永远没有数据的项。
+    if (nonNullCount(vals) === 0) return null;
     var s = {
       name: "GPU " + idx + (opts && opts.suffix ? " " + opts.suffix : ""),
       type: "line", symbol: "circle", symbolSize: 4,
@@ -484,9 +489,12 @@
     if (!gpus.length) return;
     var series = [];
     gpus.forEach(function (g) {
-      series.push(_gpuSeries(g, "utilization_percent", col, { suffix: "利用率" }));
-      series.push(_gpuSeries(g, "memory_usage_percent", col, { suffix: "显存", dashed: true }));
+      var u = _gpuSeries(g, "utilization_percent", col, { suffix: "利用率" });
+      var m = _gpuSeries(g, "memory_usage_percent", col, { suffix: "显存", dashed: true });
+      if (u) series.push(u);
+      if (m) series.push(m);
     });
+    if (!series.length) { setEmpty(containerId, true, "无 GPU 样本", "GPU 监控采集到样本后显示利用率与显存历史。"); return; }
     c.setOption({
       animation: false,
       tooltip: Object.assign(baseTooltip(), {
@@ -514,9 +522,9 @@
     setEmpty(containerId, !_hasGpuField(subset, "power_draw_w"), "无功耗数据",
       "GPU 未报告功耗传感器（不支持）或尚未采集到功耗样本。");
     if (!gpus.length) return;
-    var series = gpus.map(function (g) {
-      return _gpuSeries(g, "power_draw_w", col, {});
-    });
+    var series = [];
+    gpus.forEach(function (g) { var s = _gpuSeries(g, "power_draw_w", col, {}); if (s) series.push(s); });
+    if (!series.length) { setEmpty(containerId, true, "无功耗数据", "GPU 未报告功耗传感器（不支持）或尚未采集到功耗样本。"); return; }
     c.setOption({
       animation: false,
       tooltip: Object.assign(baseTooltip(), {
@@ -544,9 +552,9 @@
     setEmpty(containerId, !_hasGpuField(subset, "temperature_c"), "无温度数据",
       "GPU 未报告温度传感器（不支持）或尚未采集到温度样本。");
     if (!gpus.length) return;
-    var series = gpus.map(function (g) {
-      return _gpuSeries(g, "temperature_c", col, {});
-    });
+    var series = [];
+    gpus.forEach(function (g) { var s = _gpuSeries(g, "temperature_c", col, {}); if (s) series.push(s); });
+    if (!series.length) { setEmpty(containerId, true, "无温度数据", "GPU 未报告温度传感器（不支持）或尚未采集到温度样本。"); return; }
     c.setOption({
       animation: false,
       tooltip: Object.assign(baseTooltip(), {

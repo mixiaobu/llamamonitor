@@ -44,6 +44,7 @@
     statusBackendOk: true, // 后端（非 llama）是否可达
     ovSummary: null,       // 最近一次 /api/summary（Overview 今日卡）
     lossBar: null,         // possible_token_loss InfoBar 实例
+    serverUrlText: "",     // Phase 16C §21：当前服务器地址（设置页连接状态复用）
   };
 
   /* ---- 状态条 1s ticker（Phase 16B spec §7：信息层级调整） ----
@@ -238,7 +239,8 @@
     var elUrl = $("ovServerUrl");
     if (elUrl) {
       var url = (LM.settings && lastConfigUrl) || data.llama_server_url || "";
-      elUrl.textContent = url ? url.replace(/^https?:\/\//, "") : "--";
+      state.serverUrlText = url ? url.replace(/^https?:\/\//, "") : "";
+      elUrl.textContent = state.serverUrlText || "--";
     }
 
     // 配置状态（Config: OK / Default / Error，spec §110 数据库/配置问题明确化）
@@ -299,7 +301,7 @@
      all     -> summary.total
      7d/30d  -> 对当前已加载的 daily 行求和 */
   function renderRangeSummary() {
-    var labelEl = $("sumRangeLabel"), badge = $("sumCumulativeBadge");
+    var labelEl = $("sumRangeLabel");
     if (!labelEl) return;
     var s = state.ovSummary || {}, rows = state.dailyData || [];
     var src = null, label = "";
@@ -324,7 +326,7 @@
       label = (mode === "7d" ? "近 7 天" : "近 30 天") + "（" + n + " 天有数据）";
     }
     labelEl.textContent = label;
-    if (badge) badge.hidden = mode !== "all";
+    // USAGE-001：标题即范围名，无独立徽标
     setStatValue("sumRangeLogical", F.formatTokenCount(src.logical_tokens));
     setStatValue("sumRangeCompute", F.formatTokenCount(src.compute_tokens));
     setStatValue("sumRangePrompt", F.formatTokenCount(src.prompt_tokens));
@@ -356,9 +358,11 @@
       elKv.classList.toggle("dim", kv == null);
     }
     setStatValue("ovKvCache", kvText); // Overview 运行状态卡（0.16.12）
-    // 指标条（spec §25：一行即时指标）
+    // 指标条（Phase 16C §5：Prompt TPS/Decode TPS/处理中/排队/Busy Slots，
+    // 顶部不再重复 MTP 接受率——下方 MTP 卡已有完整 Summary）
     setStatValue("perfProcessing", F.formatInt(d.requests_processing));
     setStatValue("perfQueued", F.formatInt(d.requests_deferred));
+    setStatValue("perfBusySlots", F.formatInt(d.busy_slots));
   }
 
   /* ================= Data Quality（Overview 摘要 + History 页；UI-010 并行） ================= */
@@ -460,6 +464,11 @@
     var gaps = (state.quality && state.quality.recent_gaps) || [];
     var wrap = $("gapsTableWrap");
     var empty = $("gapsEmpty");
+    // HISTORY-001（Phase 16C §13/§16）：空态条件只看 gaps.length===0。
+    // 根因：此前仅设 empty.hidden=true，但 author CSS 的 display:flex
+    // 压过 UA 的 [hidden]{display:none}，导致有数据时空态仍显示。
+    // 现统一走 ui.setEmptyState（force-hide/force-show + !important）。
+    ui.setEmptyState(empty, gaps.length === 0);
     if (!gaps.length) {
       // 真空态（spec §45）：✓ 暂无已知监控缺口
       tbody.innerHTML = "";
@@ -467,11 +476,9 @@
       if (empty) {
         var ic = empty.querySelector(".empty-icon");
         if (ic && !ic.innerHTML) ic.innerHTML = LM.icons.get("check");
-        empty.hidden = false;
       }
       return;
     }
-    if (empty) empty.hidden = true;
     if (wrap) wrap.style.display = "";
     tbody.innerHTML = gaps.map(function (g) {
       var start = F.formatDateTime(g.start);
@@ -538,7 +545,8 @@
       head.appendChild(name);
       card.appendChild(head);
 
-      // 主指标（spec §36：利用率/显存/温度/功耗，大字号）
+      // 主指标（spec §36 + Phase 16C §10/GPU-002：显存行内嵌进度条，
+      // 进度条视觉上归属于"显存"，不再游离在主指标与温度/功耗之间）
       var vram = (g.memory_used_mb == null || g.memory_total_mb == null) ? F.NA :
         (g.memory_used_mb / 1024).toFixed(1) + " / " + (g.memory_total_mb / 1024).toFixed(1) + " GiB";
       var primary = [
@@ -559,18 +567,17 @@
         row.appendChild(k);
         row.appendChild(v);
         card.appendChild(row);
+        // GPU-002：VRAM 进度条紧跟在"显存"数值下方（同一行的子元素）
+        if (r[0] === "显存" && g.memory_usage_percent != null) {
+          var bar = document.createElement("div");
+          bar.className = "vram-bar";
+          var fill = document.createElement("div");
+          fill.className = "fill";
+          fill.style.width = Math.max(0, Math.min(100, g.memory_usage_percent)) + "%";
+          bar.appendChild(fill);
+          row.appendChild(bar);
+        }
       });
-
-      // VRAM 进度条（spec §37：仅 VRAM 显示进度条）
-      if (g.memory_usage_percent != null) {
-        var bar = document.createElement("div");
-        bar.className = "vram-bar";
-        var fill = document.createElement("div");
-        fill.className = "fill";
-        fill.style.width = Math.max(0, Math.min(100, g.memory_usage_percent)) + "%";
-        bar.appendChild(fill);
-        card.appendChild(bar);
-      }
 
       // 次要指标（spec §38：风扇/时钟/PCIe 小字一行）
       var secondary = [
@@ -680,16 +687,31 @@
     box.style.display = "";
     detected.forEach(function (g) {
       if (state.gpuVisible[g.uuid] === undefined) state.gpuVisible[g.uuid] = true;
+      // Phase 16C §12：Fluent Check Chip——保留原生 checkbox 语义/键盘访问，
+      // 视觉为可点击 chip；完整名称+UUID 走 title tooltip。
       var label = document.createElement("label");
+      label.className = "check-chip" + (state.gpuVisible[g.uuid] ? " on" : "");
       var cb = document.createElement("input");
       cb.type = "checkbox";
       cb.checked = state.gpuVisible[g.uuid];
       cb.addEventListener("change", function () {
         state.gpuVisible[g.uuid] = cb.checked;
+        label.classList.toggle("on", cb.checked);
         redrawGpuCharts();
       });
       label.appendChild(cb);
-      label.appendChild(document.createTextNode(" GPU " + (g.index == null ? "?" : g.index) + " " + (g.name || "")));
+      var tick = document.createElement("span");
+      tick.className = "chip-tick";
+      tick.textContent = "\u2713"; // 视觉勾选（原生 checkbox 提供语义）
+      label.appendChild(tick);
+      var txt = document.createElement("span");
+      txt.className = "chip-text";
+      txt.textContent = "GPU " + (g.index == null ? "?" : g.index) + (g.name ? " \u00B7 " + g.name : "");
+      label.appendChild(txt);
+      var tipParts = ["GPU " + (g.index == null ? "?" : g.index)];
+      if (g.name) tipParts.push(g.name);
+      if (g.uuid) tipParts.push("UUID " + g.uuid);
+      label.title = tipParts.join("\n");
       box.appendChild(label);
     });
   }
@@ -761,7 +783,7 @@
     setStatValue("mtpAccepted", F.formatTokenCount(d.accepted_tokens));
     setStatValue("mtpSeqs", F.formatInt(d.num_drafts));
     setStatValue("ovMtpRate", F.formatPercent(d.accept_rate));
-    setStatValue("perfMtpRate", F.formatPercent(d.accept_rate)); // 指标条
+    // 指标条不再有 MTP（Phase 16C §5）
     charts.renderMtpPosChart("chartMtpPosBox", "chartMtpPos", state.mtpPositions);
   }
 
@@ -908,14 +930,25 @@
       .catch(function (e) { console.warn("events failed:", e.message || e); });
   }
 
+  /* Phase 16C §19：事件列表默认显示前 N 条，超出部分用"查看更多"展开；
+     取消内部嵌套滚动，由页面本身承担纵向滚动。 */
+  var EVENTS_PAGE_SIZE = 15;
+  var eventsExpanded = false;
+
   function renderEventsList() {
     var list = $("eventsList");
     var empty = $("eventsEmpty");
     if (!list) return;
     var events = state.events || [];
-    if (empty) empty.hidden = events.length > 0;
+    // HISTORY-002（Phase 16C §14/§15）：events.length>0 时彻底隐藏空态
+    // （走 ui.setEmptyState，修复 [hidden] 被 display:flex 压过的问题）。
+    ui.setEmptyState(empty, events.length === 0);
     list.innerHTML = "";
-    events.forEach(function (ev) {
+    var moreBtn = list.querySelector ? list.querySelector(".events-more") : null;
+    if (moreBtn && moreBtn.parentNode) moreBtn.parentNode.removeChild(moreBtn);
+
+    var shown = eventsExpanded ? events : events.slice(0, EVENTS_PAGE_SIZE);
+    shown.forEach(function (ev) {
       var row = document.createElement("div");
       row.className = "event-row";
       var t = document.createElement("span");
@@ -928,19 +961,36 @@
       type.title = ev.event_type;
       row.appendChild(t);
       row.appendChild(type);
-      var detail = "";
+      // Phase 16C §17/§18：展示层 humanize；原 details 保留在 tooltip
+      var detail = ui.humanizeEventDetails(ev);
+      var rawDetail = "";
       try {
-        detail = ev.details && typeof ev.details === "object" ? JSON.stringify(ev.details) : (ev.details || "");
-      } catch (e) { detail = String(ev.details || ""); }
+        rawDetail = ev.details && typeof ev.details === "object" ? JSON.stringify(ev.details) : (ev.details || "");
+      } catch (e) { rawDetail = String(ev.details || ""); }
       if (detail) {
         var dd = document.createElement("span");
         dd.className = "ev-detail";
         dd.textContent = detail;
-        dd.title = detail;
+        dd.title = rawDetail || detail;
         row.appendChild(dd);
       }
       list.appendChild(row);
     });
+    // "查看更多"（仅当还有未显示的行）
+    if (!eventsExpanded && events.length > EVENTS_PAGE_SIZE) {
+      var wrap = document.createElement("div");
+      wrap.className = "events-more-wrap";
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = "btn small subtle events-more";
+      b.textContent = "查看更多（还有 " + (events.length - EVENTS_PAGE_SIZE) + " 条）";
+      b.addEventListener("click", function () {
+        eventsExpanded = true;
+        renderEventsList();
+      });
+      wrap.appendChild(b);
+      list.appendChild(wrap);
+    }
   }
 
   function refreshGpuStatus() {
@@ -1132,6 +1182,14 @@
     refreshMtpNow: function () { refreshMtp(); },
     refreshDataQualityNow: function () { refreshDataQuality(); },
     refreshEventsNow: function () { refreshEvents(); },
+    // Phase 16C §21：设置页"服务器"卡复用已有 /api/status 轮询状态
+    // （不额外高频探测）。返回 {status:'unknown'|'online'|'offline', url}
+    serverConnectionState: function () {
+      return {
+        status: state.online === true ? "online" : state.online === false ? "offline" : "unknown",
+        url: state.serverUrlText || "",
+      };
+    },
   };
 
   // DOM ready

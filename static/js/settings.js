@@ -24,6 +24,7 @@
   var lastPaths = null;
   var gpuPickSignature = null;   // UI-002：detected 列表签名，未变不重建
   var updateStatus = null;
+  var lastTestConn = null;       // Phase 16C §21：最近一次"测试连接"结果
 
   /* ================= 表单 ================= */
 
@@ -206,18 +207,22 @@
         out.className = "inline-result ok";
         out.textContent = "成功 - " + data.latency_ms + " ms" + (data.metrics_detected ? "" : "（未检测到 llamacpp 指标）");
         ui.toast("连接成功：" + data.latency_ms + " ms", "ok");
+        lastTestConn = { at: Date.now(), ok: true, latencyMs: data.latency_ms };
       } else {
         out.className = "inline-result bad";
         out.textContent = "失败：" + data.error;
         ui.toast("连接失败：" + data.error, "err");
+        lastTestConn = { at: Date.now(), ok: false, error: data.error };
       }
     } catch (e) {
       out.className = "inline-result bad";
       out.textContent = "失败：" + (e.message || e);
       ui.toast("连接失败：" + (e.message || e), "err");
+      lastTestConn = { at: Date.now(), ok: false, error: e.message || "网络错误" };
     }
     btn.textContent = oldLabel;
     btn.disabled = false;
+    updateServerConnStatus();
   }
 
   /* ================= GPU 探测（Settings 勾选用） ================= */
@@ -693,19 +698,26 @@
   /* ================= About ================= */
 
   async function loadAbout() {
+    // 品牌图标（Phase 16C §23）
+    try { var lg = $("aboutLogo"); if (lg && LM.icons && !lg.innerHTML) lg.innerHTML = LM.icons.brand || LM.icons.get("about"); } catch (e) {}
+    var ver = "--";
     try {
       var d = await api.get("/api/version");
       $("aboutName").textContent = d.name || "LlamaMonitor";
-      $("aboutVersion").textContent = d.version || "--";
+      ver = d.version || "--";
       $("aboutSchema").textContent = String(d.schema_version == null ? "--" : d.schema_version);
     } catch (e) {
-      $("aboutVersion").textContent = "--";
+      ver = "--";
       $("aboutSchema").textContent = "--";
     }
+    $("aboutVersion").textContent = ver;
+    var row = $("aboutVersionRow"); if (row) row.textContent = ver;
     try {
       var c = await api.get("/api/config");
       if (c.paths) $("aboutDataDir").textContent = c.paths.database || "--";
     } catch (e) { /* 保留占位 */ }
+    // 平台（静态）
+    var pf = $("aboutPlatform"); if (pf) pf.textContent = "Windows x64";
   }
 
   function copyVersionInfo() {
@@ -741,6 +753,49 @@
      data-sec 分组：data 分类 = 存储+备份+日志+数据管理+危险区。 */
   var activeSection = "server";
 
+  /* Phase 16C §21：服务器连接状态（轻量；复用 LM.app.serverConnectionState()
+     —— 它来自 /api/status 既有轮询与用户点击"测试连接"的结果，
+     不额外高频探测）。测试连接成功/失败后也刷新此块。 */
+  function updateServerConnStatus() {
+    var box = $("serverConnStatus");
+    if (!box) return;
+    var conn = null;
+    if (window.LM && LM.app && LM.app.serverConnectionState) conn = LM.app.serverConnectionState();
+    var textEl = box.querySelector(".cs-text");
+    var subEl = box.querySelector(".cs-sub");
+    box.classList.remove("online", "offline");
+    var tested = lastTestConn && lastTestConn.at; // 用户点过"测试连接"
+    if (tested) {
+      if (lastTestConn.ok) {
+        box.classList.add("online");
+        textEl.textContent = "已连接";
+        subEl.textContent = (conn && conn.url ? conn.url + " · " : "") + "延迟 " + lastTestConn.latencyMs + " ms（测试）";
+      } else {
+        box.classList.add("offline");
+        textEl.textContent = "连接失败";
+        subEl.textContent = (conn && conn.url ? conn.url + " · " : "") + (lastTestConn.error || "最近一次测试失败");
+      }
+      return;
+    }
+    if (conn) {
+      if (conn.status === "online") {
+        box.classList.add("online");
+        textEl.textContent = "已连接";
+        subEl.textContent = conn.url || "";
+      } else if (conn.status === "offline") {
+        box.classList.add("offline");
+        textEl.textContent = "连接失败";
+        subEl.textContent = conn.url || "服务器当前不可达";
+      } else {
+        textEl.textContent = "未测试";
+        subEl.textContent = conn.url || "";
+      }
+    } else {
+      textEl.textContent = "未测试";
+      subEl.textContent = "";
+    }
+  }
+
   function showSection(name) {
     activeSection = name;
     var pane = document.querySelector(".settings-pane");
@@ -752,6 +807,7 @@
     document.querySelectorAll(".settings-rail .rail-item").forEach(function (b) {
       b.setAttribute("aria-current", b.getAttribute("data-sec") === name ? "true" : "false");
     });
+    if (name === "server") updateServerConnStatus();
   }
 
   function goToSection(name) {

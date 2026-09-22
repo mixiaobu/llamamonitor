@@ -288,6 +288,94 @@
     el.innerHTML = el.dataset.emptyHtml || "";
   }
 
+  /* ============ setEmptyState（Phase 16C §15：统一空态开关） ============
+     根因修复：author CSS 的 .empty-state{display:flex} 会压过 UA 的
+     [hidden]{display:none}，导致 JS 设 el.hidden=true 后空态仍显示
+     （HISTORY-001/002）。这里用 !important 锁定：
+     isEmpty=true  -> 强制显示空态（.force-show）
+     isEmpty=false -> 强制隐藏（.force-hide）
+     所有列表型空态（缺口/事件/…）一律走此函数，不再各自拼 .hidden。 */
+  function setEmptyState(el, isEmpty) {
+    if (!el) return;
+    el.classList.toggle("force-show", !!isEmpty);
+    el.classList.toggle("force-hide", !isEmpty);
+    el.hidden = !isEmpty; // 保留语义（无障碍/序列化）
+  }
+
+  /* ============ humanizeEventDetails（Phase 16C §17/§18） ============
+     展示层 Humanize：返回面向用户的短文本。
+     不删除原 details（调用方可保留到 title 作为技术细节）。
+     未知字段走安全 fallback（key: value 列表）。 */
+  function humanizeEventDetails(ev) {
+    var d = ev && ev.details;
+    if (d == null) return "";
+    if (typeof d === "string") return d;
+    if (typeof d !== "object") return String(d);
+    var type = ev.event_type || "";
+    function num(n) { try { return Number(n).toLocaleString("zh-CN"); } catch (e) { return String(n); } }
+    function hostUrl(u) {
+      try { var m = String(u).match(/^https?:\/\/([^/]+)/); return m ? m[1] : String(u); }
+      catch (e) { return String(u); }
+    }
+    // 按事件类型格式化常见字段
+    switch (type) {
+      case "monitor_restart_gap":
+      case "monitor_restart": {
+        var sec = d.duration_seconds;
+        if (sec == null) return "";
+        return "持续 " + fmtDurHm(sec);
+      }
+      case "monitor_start":
+        return d.poll_interval_seconds != null ? "轮询间隔 " + num(d.poll_interval_seconds) + "秒" : "";
+      case "monitor_stop":
+        return d.reason ? String(d.reason) : "";
+      case "server_online":
+      case "server_offline":
+        return d.url ? hostUrl(d.url) : "";
+      case "counter_reset": {
+        var parts = [];
+        if (d.counter_name) parts.push(String(d.counter_name) + ":");
+        if (d.previous != null || d.current != null) {
+          parts.push((d.previous != null ? num(d.previous) : "?") + " → " + (d.current != null ? num(d.current) : "?"));
+        }
+        return parts.join(" ");
+      }
+      case "backup_created":
+        return d.file ? String(d.file) : "备份完成";
+      case "database_protective_mode":
+      case "database_recovery":
+        return d.reason ? String(d.reason) : "";
+      case "update_check":
+        return d.version ? "最新 " + String(d.version) : "";
+      case "update_available":
+        return d.version ? "新版本 " + String(d.version) : "";
+      case "update_download_started":
+      case "update_download_complete":
+      case "update_download_cancelled":
+        return d.version ? String(d.version) : "";
+      default:
+        // 安全 fallback：key: value 列表（截断过长值）
+        var items = [];
+        for (var k in d) {
+          if (!Object.prototype.hasOwnProperty.call(d, k)) continue;
+          var v = d[k];
+          if (v == null) continue;
+          if (typeof v === "object") { try { v = JSON.stringify(v); } catch (e) { v = String(v); } }
+          else v = String(v);
+          if (v.length > 48) v = v.slice(0, 48) + "…";
+          items.push(k + ": " + v);
+        }
+        return items.join("；");
+    }
+  }
+  function fmtDurHm(sec) {
+    sec = Math.max(0, Math.round(Number(sec) || 0));
+    var h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+    if (h) return h + "小时" + (m ? m + "分" : "") + (s ? s + "秒" : "");
+    if (m) return m + "分" + s + "秒";
+    return s + "秒";
+  }
+
   /* ================= InfoTooltip（spec §61-63） =================
      infoTip(text) -> HTMLElement（? 图标 + 定义文本；hover/focus 显示，
      CSS .info-tip 控制）。alignRight 用于靠近右边缘的 label。 */
@@ -360,6 +448,8 @@
     modal: modal,
     showEmpty: showEmpty,
     clearEmpty: clearEmpty,
+    setEmptyState: setEmptyState,
+    humanizeEventDetails: humanizeEventDetails,
     infoTip: infoTip,
     segmented: segmented,
   };
