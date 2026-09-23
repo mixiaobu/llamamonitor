@@ -43,6 +43,16 @@
 >     hideOverlap，category 日期轴按容器宽抽稀（interval）+ 45° 旋转。
 > 18. 静态文件加 `Cache-Control: no-cache`（含首页 HTML，ETag 304 不增流量）：
 >     修复原地升级后浏览器启发式缓存旧 JS 导致 `F.formatClock is not a function`。
+> 19. GPU 过滤 chip 外层去掉 `.seg` 灰底圆角容器（chip 自身已有边框/底色）；
+>     手机端 chip 全宽竖排。
+> 20. 图表时间轴窄屏抽稀到 20 分钟一档 + 日期轴 `MM-DD` 缩短 + 按容器宽
+>     interval 抽稀（CDP 390px 像素级实测：12 个标签均匀分布无重叠）。
+> 21. `.app` 高度 `100vh` → `100dvh` 回退：手机浏览器工具栏动态伸缩时
+>     底部内容不再被推出可视区（"滚不到最下面被遮挡"）。
+> 22. `.seg button` 圆角 4px → 控件标准 8px：手机端 sticky hover/focus
+>     高亮持续显示时不再看起来像直角；补 `.seg button:active`。
+> 23. `F.formatClock` 调用点加 `|| F.formatDateTime` 兜底：即使浏览器
+>     混装新旧 JS 也不再抛未捕获异常。
 
 > **0.16.17 间距与细节审计（本轮追加）**：CDP 实测发现概览/性能/关于三页存在 0px 间距
 > （状态卡/指标条/品牌卡 与紧随其后的 section 贴死，根因是 `.section:last-child{margin-bottom:0}`

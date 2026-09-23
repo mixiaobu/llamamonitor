@@ -576,14 +576,22 @@
   flex-wrap: wrap;
   margin-bottom: var(--section-gap);
 }
-/* 16D 移动端：多卡勾选 chip 竖排（每卡一行），不再横向挤压 */
+/* 16D：GPU 过滤 chip 不需要 .seg 的灰色圆角背景容器——chip 自身已有
+   边框/底色，外层只是布局（桌面横排 wrap，移动端竖排每卡一行）。 */
+.gpu-toolbar #gpuPick {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0;
+  background: transparent;
+  border-radius: 0;
+  overflow-x: visible;
+  max-width: none;
+}
 @media (max-width: 900px) {
   .gpu-toolbar #gpuPick {
-    display: flex;
     flex-direction: column;
-    gap: 6px;
-    overflow-x: visible;
-    max-width: none;
     width: 100%;
   }
   .gpu-toolbar #gpuPick .check-chip {

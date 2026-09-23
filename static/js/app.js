@@ -464,9 +464,10 @@
     if (wrap) wrap.style.display = "";
     // 紧凑单行时间（今天 HH:MM:SS / 跨天 MM-DD HH:MM），完整值进 tooltip
     tbody.innerHTML = gaps.map(function (g) {
-      var start = F.formatClock(g.start);
+      var clock = F.formatClock || F.formatDateTime; // 16D 兜底：浏览器混装新旧 JS 时不抛错
+      var start = clock(g.start);
       var startFull = F.formatDateTime(g.start);
-      var end = g.end ? F.formatClock(g.end) : "进行中";
+      var end = g.end ? clock(g.end) : "进行中";
       var endFull = g.end ? F.formatDateTime(g.end) : "进行中的缺口（尚未结束）";
       var dur = F.formatDuration(g.duration_seconds == null ? 0 : g.duration_seconds);
       var src = GAP_SOURCE_LABELS[g.source] || g.source || "--";
@@ -939,7 +940,8 @@
 
     var shown = eventsExpanded ? events : events.slice(0, EVENTS_PAGE_SIZE);
     tbody.innerHTML = shown.map(function (ev) {
-      var time = F.formatClock(ev.timestamp); // 紧凑单行：今天 HH:MM:SS / 跨天 MM-DD HH:MM
+      var clock = F.formatClock || F.formatDateTime; // 16D 兜底：浏览器混装新旧 JS 时不抛错
+      var time = clock(ev.timestamp); // 紧凑单行：今天 HH:MM:SS / 跨天 MM-DD HH:MM
       var full = F.formatDateTime(ev.timestamp);
       var sev = ev.severity === "warning" ? " cell-warn" : ev.severity === "error" ? " cell-bad" : "";
       var label = EVENT_TYPE_LABELS[ev.event_type] || ev.event_type;

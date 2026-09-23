@@ -8,6 +8,9 @@
   display: grid;
   grid-template-columns: var(--nav-width) minmax(0, 1fr);
   height: 100vh;
+  /* 16D 移动端：手机浏览器工具栏动态伸缩时 100vh 比可视区大，
+     底部内容被推出可视区（"滚不到最下面被遮挡"）。dvh 跟随可视区。 */
+  height: 100dvh;
 }
 
 /* ============ NavigationView（spec §7/§8/§9） ============ */

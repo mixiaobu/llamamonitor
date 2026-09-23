@@ -369,13 +369,18 @@
   color: var(--text-secondary);
   font-size: var(--font-size-caption);
   padding: 3px 12px;
-  border-radius: var(--radius-small);
+  /* 16D：手机端点按后 sticky hover/focus 高亮会持续显示——4px 小圆角看起来像直角，
+     统一到控件标准半径 */
+  border-radius: var(--radius-control);
   cursor: pointer;
   white-space: nowrap;
   transition: background-color var(--transition-fast), color var(--transition-fast);
 }
 .seg button:hover {
   color: var(--text-primary);
+  background: var(--bg-subtle-active);
+}
+.seg button:active {
   background: var(--bg-subtle-active);
 }
 .seg button[aria-pressed="true"] {

@@ -173,17 +173,19 @@
     return l;
   }
 
-  /* 16D 移动端：时间/日期轴防挤压——窄容器自动减少标签并旋转，
+  /* 16D 移动端：时间/日期轴防挤压——窄容器自动缩短标签 + 抽稀，
      不再全部挤成一团。time 轴用 minInterval（ECharts 自动按间隔抽稀）。 */
-  function _isNarrow(containerId) {
+  function _chartWidth(containerId) {
     var dom = typeof document !== "undefined" ? document.getElementById(containerId) : null;
-    return !!(dom && dom.getBoundingClientRect().width < 640);
+    return dom ? Math.round(dom.getBoundingClientRect().width) : 800;
   }
   function timeAxisLabel(p, containerId, extra) {
     var l = baseAxisLabel(p, extra);
-    if (_isNarrow(containerId)) {
-      l.minInterval = 60000;   // time 轴：最小 1 分钟间隔，窄屏自动更稀
-      l.rotate = 30;
+    var w = _chartWidth(containerId);
+    if (w < 640) {
+      // 窄屏：只留 HH:MM + 粗抽稀（20 分钟一档），旋转标签尖端间距 ≥ 25px
+      l.formatter = function (v) { return F.formatHM(v / 1000); };
+      l.minInterval = 20 * 60 * 1000;
       l.hideOverlap = true;
       l.margin = 8;
     }
@@ -191,13 +193,15 @@
   }
   function categoryDateAxisLabel(p, containerId, rowCount) {
     var l = baseAxisLabel(p);
-    var dom = typeof document !== "undefined" ? document.getElementById(containerId) : null;
-    var w = dom ? dom.getBoundingClientRect().width : 800;
-    // 每个日期标签约需 48px（10 字符 @ 11px 略缩）；窄屏按容器宽抽稀 + 旋转
+    var w = _chartWidth(containerId);
+    // 窄屏：日期 "2026-07-18" → "07-18"（省一半宽度），按容器宽抽稀
     if (w < 640) {
-      var fit = Math.max(1, Math.floor(w / 48));      // 最多能放下的标签数
+      l.formatter = function (s) {
+        s = String(s);
+        return s.length > 8 ? s.slice(5) : s; // MM-DD
+      };
+      var fit = Math.max(1, Math.floor(w / 40)); // 每个 MM-DD 标签约 36px
       l.interval = Math.max(0, Math.ceil(rowCount / fit) - 1);
-      if (w < 480) l.rotate = 45;
       l.hideOverlap = true;
       l.margin = 8;
     }
