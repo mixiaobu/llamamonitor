@@ -4,6 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>LlamaMonitor</title>
+<!-- 1.0：默认主题跟随系统。CSS 解析前按系统配色设置 data-theme，避免浅色系统首屏闪深色 -->
+<script>
+  try {
+    document.documentElement.setAttribute(
+      "data-theme",
+      (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches) ? "light" : "dark"
+    );
+  } catch (e) { /* 保持 HTML 回退值 */ }
+</script>
 <!-- Phase 15：Windows 11 Fluent UI。资源全部本地（spec §123）：
      CSS 按 tokens/base/layout/components/pages 分层（spec §121）；
      JS 按职责分模块（spec §122）。无 CDN / 无框架 / 无新依赖。 -->

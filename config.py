@@ -144,7 +144,7 @@ class UpdatesConfig:
 class UIConfig:
     refresh_interval_seconds: float = 5.0     # 1 ~ 3600
     daily_default_days: int = 7               # 1 ~ 3650（16D：默认 7 天）
-    theme: str = "dark"                       # dark / light / system
+    theme: str = "system"                     # dark / light / system（1.0 起默认跟随系统）
 
 
 @dataclass
@@ -224,7 +224,7 @@ DEFAULT_CONFIG: dict = {
     "ui": {
         "refresh_interval_seconds": 5,
         "daily_default_days": 7,
-        "theme": "dark",
+        "theme": "system",
     },
     "logging": {
         "level": "INFO",
@@ -462,7 +462,7 @@ def _build_app_config(merged: dict) -> tuple[AppConfig, list[str]]:
         theme=_check(
             "ui", "theme", ui.get("theme"),
             lambda v: isinstance(v, str) and v in ("dark", "light", "system"),
-            str, "dark",
+            str, "system",
         ),
     )
     logging_config = LoggingConfig(

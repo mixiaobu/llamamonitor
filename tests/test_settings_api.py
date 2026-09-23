@@ -140,9 +140,9 @@ class ConfigApiTests(unittest.TestCase):
             saved = json.loads(self.cfg_file.read_text(encoding="utf-8"))
             self.assertEqual(saved["llama_server"]["url"], "http://192.168.1.100:9091")
             self.assertEqual(saved["collector"]["poll_interval_seconds"], 10)
-            # 未修改字段保留
+            # 未修改字段保留（1.0 起默认主题跟随系统）
             self.assertEqual(saved["web"]["port"], 8765)
-            self.assertEqual(saved["ui"]["theme"], "dark")
+            self.assertEqual(saved["ui"]["theme"], "system")
         finally:
             client.__exit__(None, None, None)
 

@@ -16,7 +16,7 @@
 
   var cfgUi = {
     refreshIntervalSeconds: 5,
-    dailyDefaultDays: 30,
+    dailyDefaultDays: 7,   // 与服务端默认一致（16D：默认 7 天）——
     theme: "system",
   };
 
@@ -1037,14 +1037,14 @@
       var c = LM.api.isLocal() ? await api.get("/api/config") : null;
       if (c && c.ui) {
         cfgUi.refreshIntervalSeconds = c.ui.refresh_interval_seconds || 5;
-        cfgUi.dailyDefaultDays = c.ui.daily_default_days || 30;
+        cfgUi.dailyDefaultDays = c.ui.daily_default_days || 7;
         cfgUi.theme = c.ui.theme || "system";
       }
       lastConfigUrl = (c && c.llama_server && c.llama_server.url) || "";
       var _su = $("ovServerUrl"); if (lastConfigUrl && _su) _su.textContent = lastConfigUrl.replace(/^https?:\/\//, "");
       setThemeMode(cfgUi.theme);
       // 服务器配置到达后同步 Usage 默认范围（set() 只更新选中态，不触发 onChange）
-      var defDays = cfgUi.dailyDefaultDays || 30;
+      var defDays = cfgUi.dailyDefaultDays || 7;
       var serverDefault = defDays <= 1 ? "today" : defDays <= 7 ? "7d" :
         defDays <= 30 ? "30d" : defDays <= 62 ? "month" : "all";
       if (usageSeg && serverDefault !== state.dailyRangeMode) {

@@ -68,7 +68,7 @@ class ConfigFileTests(unittest.TestCase):
         self.assertTrue(cfg.database.wal)
         self.assertEqual(cfg.ui.refresh_interval_seconds, 5.0)
         self.assertEqual(cfg.ui.daily_default_days, 7)
-        self.assertEqual(cfg.ui.theme, "dark")
+        self.assertEqual(cfg.ui.theme, "system")  # 1.0 起默认跟随系统
         self.assertEqual(cfg.logging.level, "INFO")
         self.assertEqual(cfg.logging.max_size_mb, 10.0)
         self.assertEqual(cfg.logging.backup_count, 5)
@@ -132,11 +132,11 @@ class ConfigFileTests(unittest.TestCase):
         self.assertTrue(loaded.has_errors)
         self.assertTrue(any("web.port" in e for e in loaded.errors))
 
-    # 8) 非法 ui.theme 回退默认
+    # 8) 非法 ui.theme 回退默认（1.0 起默认跟随系统）
     def test_invalid_theme_falls_back(self):
         self.cfg_file.write_text(json.dumps({"ui": {"theme": "blue"}}), encoding="utf-8")
         loaded = cfgmod.load_config(self.cfg_file)
-        self.assertEqual(loaded.config.ui.theme, "dark")
+        self.assertEqual(loaded.config.ui.theme, "system")
         self.assertTrue(loaded.has_errors)
 
     # 9) 损坏的 JSON 不覆盖原文件
@@ -369,7 +369,7 @@ class ApiConfigTests(unittest.TestCase):
             self.assertEqual(data["collector"]["live_retention_hours"], 48.0)
             self.assertEqual(data["web"], {"host": "127.0.0.1", "port": 8765})
             self.assertEqual(data["database"], {"path": "", "wal": True})
-            self.assertEqual(data["ui"]["theme"], "dark")
+            self.assertEqual(data["ui"]["theme"], "system")
             self.assertEqual(data["ui"]["daily_default_days"], 7)
             self.assertEqual(data["logging"]["level"], "INFO")
             self.assertEqual(data["paths"]["config"], str(self.tmp / "config.json"))
