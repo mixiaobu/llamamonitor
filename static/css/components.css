@@ -251,15 +251,22 @@
   min-width: 0;
 }
 
-/* 输入框宽度工具类（避免 HTML 内联 style，保持 4px 栅格）。
-   显式宽度类优先于下方 .setting-row 的 180px 默认宽度。 */
-.input.w-s { width: 100px; }
-.input.w-m { width: 160px; }
-.input.w-l { width: 240px; }
-.input.w-xl { width: 320px; }
+/* 输入框宽度工具类（Phase 16D §24 统一宽度规范，避免 HTML 内联 style）。
+   数字/端口 96-120 · select 160-220 · URL/路径 360-420。
+   显式宽度类优先于下方 .setting-row 的默认宽度。 */
+.input.w-s { width: 110px; }   /* 数字类：96-120 */
+.input.w-m { width: 160px; }   /* 短文本 */
+.input.w-l { width: 380px; }   /* URL / 基础地址：360-420 */
+.input.w-xl { width: 400px; }  /* 路径类：360-420 */
+.setting-row .setting-control .select { width: 180px; }  /* select：160-220 */
+@media (max-width: 1200px) {
+  .input.w-l { width: 300px; }
+  .input.w-xl { width: 320px; }
+}
 @media (max-width: 900px) {
   .input.w-l,
   .input.w-xl { width: 100%; }
+  .setting-row .setting-control .select { width: 100%; }
 }
 .input-label {
   font-size: var(--font-size-caption);

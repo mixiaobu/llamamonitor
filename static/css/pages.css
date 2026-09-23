@@ -205,7 +205,7 @@
   justify-content: space-between;
   align-items: center;
   gap: var(--spacing-md);
-  margin-top: var(--spacing-lg);
+  margin-top: var(--section-gap); /* 16D：与分区节奏一致 */
   padding: var(--spacing-md) var(--spacing-lg);
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
@@ -249,13 +249,15 @@
    ============================================================ */
 
 /* 服务器状态条（Phase 16D §18.2：作为独立卡片，与 card 同构；
-   表面/边框/圆角来自 .card，此处只管 flex 布局） */
+   表面/边框/圆角来自 .card，此处只管 flex 布局；
+   16D 间距审计：自身带分区级下边距，避免与后续 section 贴死（0px 间隙 bug） */
 .status-strip {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--spacing-md);
   flex-wrap: wrap;
+  margin-bottom: var(--section-gap);
 }
 .status-strip .ss-left {
   display: flex;
@@ -422,12 +424,14 @@
   margin-top: 0;
 }
 
-/* ---------- 即时指标条（§20.2：一行 5 项，表面来自 .card） ---------- */
+/* ---------- 即时指标条（§20.2：一行 5 项，表面来自 .card；
+   16D 间距审计：自身带分区级下边距，与后续 section 保持 24px） ---------- */
 .metric-strip {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: var(--spacing-lg);
   padding: var(--spacing-lg) var(--spacing-xl);
+  margin-bottom: var(--section-gap);
 }
 .metric-strip .ms-item {
   min-width: 0;
@@ -902,6 +906,10 @@ a.link:hover .arr { transform: translateX(2px); }
   font-size: var(--font-size-caption);
   line-height: 1.6;
 }
+/* 16D 间距审计：note 位于 .card-footer（已有顶部分隔线）下方时，不再重复画线 */
+.card-footer + .about-note {
+  margin-top: var(--spacing-sm);
+}
 
 /* ============================================================
    Phase 16D — 统一设计语言落地组件
@@ -964,7 +972,11 @@ a.link:hover .arr { transform: translateX(2px); }
   .dq-summary .stat-grid { grid-template-columns: 1fr; }
 }
 
-/* About 品牌卡（§27.1：Logo + 名称 + 版本 + 副标题，独立卡片） */
+/* About 品牌卡（§27.1：Logo + 名称 + 版本 + 副标题，独立卡片；
+   16D 间距审计：自身带分区级下边距，与后续 section 保持 24px） */
+.about-hero-card {
+  margin-bottom: var(--section-gap);
+}
 .about-hero-card .about-hero {
   display: flex;
   align-items: center;

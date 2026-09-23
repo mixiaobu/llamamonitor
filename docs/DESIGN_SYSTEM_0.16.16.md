@@ -1,4 +1,12 @@
-# LlamaMonitor 0.16.16 — Phase 16D 统一 UI 交付说明
+# LlamaMonitor 0.16.17 — Phase 16D 统一 UI 交付说明
+
+> **0.16.17 间距与细节审计（本轮追加）**：CDP 实测发现概览/性能/关于三页存在 0px 间距
+> （状态卡/指标条/品牌卡 与紧随其后的 section 贴死，根因是 `.section:last-child{margin-bottom:0}`
+> 吞掉了游离元素与 section 的间距）。修复：这些游离元素自身带 `--section-gap`(24px) 下边距。
+> 审计后 7 页所有相邻元素间距统一 24px。同时落地设置页控件宽度规范
+> （URL 380 / 路径 400 / 数字 110 / select 180 / 短文本 160，≤1200px 收敛，≤900px 全宽）、
+> 设置页底部操作栏间距对齐分区节奏、修复 About 说明与 card-footer 双分隔线。
+> 重新截图于 `docs/screenshots-0.16.16/`。
 
 本版本实现 Phase 16D「最终统一 UI 打磨 + 布局/视觉/组件系统统一 + 页面结构清理 + 桌面 UX 就绪」。
 技术栈不变（HTML/CSS/vanilla JS/ECharts/PyWebView/FastAPI），信息架构不变（概览/用量/性能/GPU/历史/设置/关于），
