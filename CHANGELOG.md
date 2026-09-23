@@ -7,6 +7,33 @@
 > 互相视为"不同系列"：安装器降级保护按数值比较（1.0.0 > 0.13.x），从 1.0.0 安装
 > 0.13.x 会被识别为降级并拒绝（实测行为，非缺陷）。
 
+## [1.0.0] - 2026-09-24
+
+**正式首发版本（Final Release）**。在 0.16.x 稳定线基础上完成 75 项 Release Gate
+（全量测试 ×10、加速可靠性 7/30/90/365 天仿真 + 10 万+ 采集周期、数据库完整性
+矩阵、主题/DPI/分辨率 UI 门、真实 token 精确性、monitor 重启、Windows 4h 燃烧测试、
+Ed25519 信任链 + 篡改矩阵、远程只读面安全），Feature / UI / Schema / API 冻结。
+完整验收记录：[`docs/FINAL_RELEASE_REPORT_1.0.0.md`](docs/FINAL_RELEASE_REPORT_1.0.0.md)。
+
+### 修复（发布阶段）
+- **HIGH（安全）REL-1.0.0-001**：`web.host=0.0.0.0` 时局域网只读客户端可经
+  `/api/status`（`config.path`）与 `/api/data/info`（`database_path`、
+  `last_auto_backup.path`）读到完整 Windows 路径，泄漏用户名 + 数据目录。
+  现只读端点对远程客户端只返回文件名；本机保持完整路径（`server._expose_path`）。
+  回归测试：`tests/test_data_management.py::RemotePathLeakTests`（3 例）。
+- 默认主题 dark → **system**（跟随系统外观，Win11 Fluent 语义）；
+  用量页时间筛选默认 30 天 → **7 天**（前端内置默认与服务端一致）。
+- 远程（非 loopback）隐藏设置导航；远程设置页只读；远程不再请求
+  local-only 端点（消除 403 噪音）。
+
+### 发布工件（GitHub Release v1.0.0）
+- `LlamaMonitor-Setup-1.0.0-win-x64.exe`（Inno Setup 6.7.3，per-user 安装到
+  `%LOCALAPPDATA%\Programs\LlamaMonitor`）
+- `LlamaMonitor-1.0.0-win-x64.zip`（便携版，顶层 `LlamaMonitor/` 目录）
+- `release-manifest.json` + `release-manifest.sig`（Ed25519，key-2026-09）
+- `SHA256SUMS.txt`；验签链说明见
+  [`docs/UPDATE_SECURITY.md`](docs/UPDATE_SECURITY.md)
+
 ## [0.14.0] - 2026-09-19
 
 Pre-1.0 全项目审计修复版（Phase 14，Release Candidate——非 1.0.0）。

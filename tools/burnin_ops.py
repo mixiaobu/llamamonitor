@@ -29,7 +29,9 @@ import urllib.error
 TEMP = os.environ["TEMP"]
 LOG = os.path.join(TEMP, "lm_ops_log.txt")
 DB = os.path.join(os.environ["LOCALAPPDATA"], "LlamaMonitor", "monitor.db")
-EXE = os.path.join(os.environ["LOCALAPPDATA"], "Programs", "LlamaMonitor", "LlamaMonitor.exe")
+# 便携安装：zip 解压带内层 LlamaMonitor/ 目录（Expand-Archive 到 Programs\LlamaMonitor）
+EXE = os.path.join(os.environ["LOCALAPPDATA"], "Programs", "LlamaMonitor",
+                   "LlamaMonitor", "LlamaMonitor.exe")
 MON = "http://127.0.0.1:8765"
 
 LLAMA_CMD = (

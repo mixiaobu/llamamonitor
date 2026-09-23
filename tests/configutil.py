@@ -51,3 +51,21 @@ def loopback_app(app, host: str = "127.0.0.1"):
         await app(scope, receive, send)
 
     return wrapper
+
+
+def remote_app(app, host: str = "192.168.1.50"):
+    """
+    把 ASGI 应用的客户端地址改写为**非本机**（默认 LAN IP）。
+
+    与 loopback_app 相对：模拟 web.host=0.0.0.0 后从局域网访问的只读客户端。
+    只读端点应正常返回，但本地系统路径字段（config.path / database_path）
+    只暴露文件名（见 server._expose_path 的远程泄露防护）；修改类端点应 403。
+    """
+
+    async def wrapper(scope, receive, send):
+        if scope["type"] in ("http", "websocket"):
+            scope = dict(scope)
+            scope["client"] = (host, 12345)
+        await app(scope, receive, send)
+
+    return wrapper

@@ -193,6 +193,25 @@ def _require_loopback(request: Request) -> None:
         raise HTTPException(status_code=403, detail="local-only endpoint")
 
 
+def _client_is_loopback(request: Request) -> bool:
+    """客户端是否本机（127.0.0.1 / ::1）。只读端点据此决定泄露多少本地信息。"""
+    host = request.client.host if request.client else ""
+    return host in ("127.0.0.1", "::1")
+
+
+def _expose_path(request: Request, full: str) -> str:
+    """
+    本地系统路径的远程泄露防护（Phase 10 补强）：
+    - 本机客户端（loopback）-> 返回完整路径（设置页需要显示数据库/配置文件位置）；
+    - 远程只读客户端（web.host=0.0.0.0 后局域网可达）-> 只返回文件名 basename，
+      不泄漏 Windows 用户名 / %LOCALAPPDATA% 目录结构。
+    只读端点（/api/status、/api/data/info）据此收敛，修改类端点仍走 _require_loopback。
+    """
+    if _client_is_loopback(request):
+        return full
+    return Path(full).name
+
+
 def build_app(
     db: Database,
     collector: MetricsCollector,
@@ -440,14 +459,15 @@ def build_app(
         return FileResponse(index_file, media_type="text/html")
 
     @app.get("/api/status")
-    async def api_status() -> dict:
+    async def api_status(request: Request) -> dict:
         """
         当前状态：服务器在线情况 + 最新 gauge + 最近一轮的 TPS / MTP + 配置状态。
 
         - server_online: true/false；启动后尚未完成首次采集时为 null；
         - 离线时数值字段均为 null（last_update 仍为最近一次检查时刻）；
         - last_update: Unix 秒，最近一次采集完成时刻；
-        - config: {path, loaded, using_defaults, has_errors}（配置加载状态）。
+        - config: {path, loaded, using_defaults, has_errors}（配置加载状态）；
+          远程只读客户端的 path 只返回文件名（不泄漏 Windows 用户名/目录）。
         """
         snapshot = collector.last_snapshot
         if snapshot is None:
@@ -489,7 +509,7 @@ def build_app(
             }
         if loaded is not None:
             result["config"] = {
-                "path": str(loaded.path),
+                "path": _expose_path(request, str(loaded.path)),
                 "loaded": loaded.loaded,
                 "using_defaults": loaded.using_defaults,
                 "has_errors": loaded.has_errors,
@@ -833,12 +853,14 @@ def build_app(
     # ---------- 数据管理（Phase 8） ----------
 
     @app.get("/api/data/info")
-    async def api_data_info() -> dict:
+    async def api_data_info(request: Request) -> dict:
         """
         存储信息：数据库路径/大小、WAL 大小、记录日期范围、行数、备份数/总大小、
         数据库健康（Phase 11：health / journal_mode / 最近成功自动备份）。
 
         数据库文件尚不存在（尚未有成功采集）时返回 0 / null，不报 500。
+        远程只读客户端：database_path / last_auto_backup.path 只返回文件名
+        （不泄漏 Windows 用户名 / %LOCALAPPDATA% 目录结构）。
         """
         p = Path(db.path)
         backups = backup_mgr.list_backups()
@@ -848,7 +870,7 @@ def build_app(
         wal_size = wal_p.stat().st_size if wal_p.is_file() else 0
         last_auto = db.get_last_backup("automatic") if p.is_file() else None
         base = {
-            "database_path": str(db.path),
+            "database_path": _expose_path(request, str(db.path)),
             "database_size_bytes": p.stat().st_size if p.is_file() else 0,
             "wal_size_bytes": wal_size,
             "database_health": db.health,
@@ -863,7 +885,8 @@ def build_app(
             "backup_count": backup_count,
             "backup_total_size_bytes": backup_total_size,
             "last_auto_backup": (
-                {"path": last_auto["path"], "timestamp": last_auto["timestamp"]}
+                {"path": _expose_path(request, last_auto["path"]),
+                 "timestamp": last_auto["timestamp"]}
                 if last_auto else None
             ),
         }

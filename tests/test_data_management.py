@@ -35,7 +35,7 @@ from unittest import mock
 from fastapi.testclient import TestClient
 
 from collector import MetricsCollector
-from configutil import loopback_app, make_config
+from configutil import loopback_app, make_config, make_loaded, remote_app
 from db import Database, local_date
 from server import build_app
 
@@ -454,6 +454,96 @@ class DataManagementTests(unittest.TestCase):
         client, _collector, db = self._start()
         try:
             self.assertIsInstance(db._write_lock, type(threading.Lock()))
+        finally:
+            client.__exit__(None, None, None)
+
+
+class RemotePathLeakTests(unittest.TestCase):
+    """1.0.0 Gate #56 回归：远程只读客户端（web.host=0.0.0.0 后局域网可达）
+    不得通过只读端点读到本地 Windows 路径（用户名 / %LOCALAPPDATA% 目录）。
+
+    - 本机（loopback）客户端：完整路径（设置页显示需要）
+    - 远程（LAN IP）客户端：只返回文件名 basename
+    端点：/api/status 的 config.path；/api/data/info 的 database_path +
+    last_auto_backup.path。修改类端点对远程仍 403（local-only）。
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp = Path(self._tmp.name)
+        self._patch = mock.patch.dict(os.environ, {"LOCALAPPDATA": str(self.tmp / "lad")})
+        self._patch.start()
+        cfg = make_config()
+        loaded = make_loaded(cfg, self.tmp)  # path = <tmp>/config.json
+        self.db = Database(self.tmp / "leak.db")
+        self.collector = MetricsCollector(cfg, self.db)
+        self.app = build_app(self.db, self.collector, loaded=loaded)
+
+    def tearDown(self):
+        self._patch.stop()
+        self.db.close()
+        self._tmp.cleanup()
+
+    def _seed(self, client, full_path: str) -> None:
+        # db 连接须在 TestClient 的 portal 线程建立（SQLite 对象绑定创建线程），
+        # 故 schema 创建 + 写入都通过 client.portal.call 在 portal 线程内完成。
+        def _do():
+            self.db.get_schema_version()
+            conn = sqlite3.connect(self.tmp / "leak.db")
+            try:
+                conn.execute(
+                    "INSERT INTO backup_history(timestamp, type, path, size, verified, success) "
+                    "VALUES(1700000000, 'automatic', ?, 123, 1, 1)", (full_path,)
+                )
+                conn.commit()
+            finally:
+                conn.close()
+        client.portal.call(_do)
+
+    def test_local_sees_full_paths(self):
+        full_db = str(self.tmp / "leak.db")
+        full_backup = str(self.tmp / "lad" / "LlamaMonitor" / "backups" / "auto_1.db")
+        client = TestClient(loopback_app(self.app))
+        client.__enter__()
+        try:
+            self._seed(client, full_backup)
+            status = client.get("/api/status").json()
+            self.assertEqual(status["config"]["path"], str(self.tmp / "config.json"))
+            info = client.get("/api/data/info").json()
+            self.assertEqual(info["database_path"], full_db)
+            self.assertEqual(info["last_auto_backup"]["path"], full_backup)
+        finally:
+            client.__exit__(None, None, None)
+
+    def test_remote_sees_basenames_only(self):
+        full_backup = str(self.tmp / "lad" / "LlamaMonitor" / "backups" / "auto_1.db")
+        client = TestClient(remote_app(self.app))
+        client.__enter__()
+        try:
+            self._seed(client, full_backup)
+            # config.path -> 只暴露文件名，不泄漏 <tmp> 目录 / 用户名
+            status = client.get("/api/status").json()
+            self.assertEqual(status["config"]["path"], "config.json")
+            self.assertNotIn("lad", status["config"]["path"])
+            # database_path -> basename
+            info = client.get("/api/data/info").json()
+            self.assertEqual(info["database_path"], "leak.db")
+            self.assertNotIn(str(self.tmp), info["database_path"])
+            # last_auto_backup.path -> basename
+            self.assertEqual(info["last_auto_backup"]["path"], "auto_1.db")
+            self.assertNotIn("backups", info["last_auto_backup"]["path"])
+        finally:
+            client.__exit__(None, None, None)
+
+    def test_remote_cannot_reach_mutation_apis(self):
+        client = TestClient(remote_app(self.app))
+        client.__enter__()
+        try:
+            # 修改类 API 对远程 403（local-only）
+            self.assertEqual(client.get("/api/config").status_code, 403)
+            self.assertEqual(client.post("/api/data/reset-statistics",
+                                         json={"confirm": "RESET"}).status_code, 403)
+            self.assertEqual(client.post("/api/data/backup").status_code, 403)
         finally:
             client.__exit__(None, None, None)
 

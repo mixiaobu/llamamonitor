@@ -84,6 +84,12 @@ Mutation（loopback-only，`*` 注：GET /api/config、/api/app/integration、/a
 - 指标名：Prompt TPS、Decode TPS、MTP Acceptance、Busy Slots、Requests Processing、Requests Deferred
 - `llamacpp:n_tokens_max` 使用中性名称（最大 Token 记录）+ Tooltip 说明来源
 
+## 发布过程中的核心修复（BLOCKER / HIGH，含回归测试）
+
+| ID | 级别 | 模块 | 问题 | 修复 | 回归测试 | 受影响 Gate |
+|---|---|---|---|---|---|---|
+| REL-1.0.0-001 | HIGH（安全） | `server.py` 只读 API | `web.host=0.0.0.0` 时，局域网只读客户端可经 **未做 loopback 限制**的只读端点读到完整 Windows 路径，泄漏用户名 + `%LOCALAPPDATA%` 目录：`/api/status` → `config.path`；`/api/data/info` → `database_path` + `last_auto_backup.path`。本机显示需要完整路径，但远程不需要。 | 新增 `server._expose_path(request, full)`：本机（127.0.0.1/::1）返回完整路径，远程返回 `Path(full).name`（文件名）；仅套用到上述只读字段。修改类 API 仍由 `_require_loopback` 强制 403，未改动。 | `tests/test_data_management.py::RemotePathLeakTests`（3 个：本机看全路径 / 远程只看 basename / 远程 403 修改类 API）+ 新增 `tests/configutil.py::remote_app` 测试工具 | API（只读形状 + local-only 403）、Security（远程只读无路径泄漏 / 无 bypass） |
+
 ## Known Issues / Accepted Risks（发布前登记）
 
 | ID | 级别 | 描述 | 状态 |
