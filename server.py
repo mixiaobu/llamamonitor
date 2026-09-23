@@ -417,6 +417,18 @@ def build_app(
     if _STATIC_DIR.is_dir():
         app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
 
+    # 16D：静态文件强制 revalidate（no-cache + ETag）。
+    # FastAPI StaticFiles 不带 Cache-Control，浏览器会启发式缓存旧 JS/CSS ——
+    # 原地升级便携版后新 app.js 配旧 formatters.js 会报 "F.formatClock is not a function"。
+    # no-cache 不增加流量（ETag 304），只保证导航后必向服务端校验。
+    @app.middleware("http")
+    async def _static_no_cache(request, call_next):
+        response = await call_next(request)
+        if (request.url.path == "/" or request.url.path.startswith("/static/")) and \
+                "cache-control" not in response.headers:
+            response.headers["Cache-Control"] = "no-cache"
+        return response
+
     @app.get("/", include_in_schema=False)
     async def index() -> FileResponse:
         """Dashboard 首页（static/index.html）。"""

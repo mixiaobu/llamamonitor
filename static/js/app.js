@@ -27,7 +27,7 @@
     config: null,          // /api/status 的 config 块
     dailyData: [],         // /api/daily 行（当前范围）
     dailyRange: 30,        // Usage 页当前范围天数（all 模式不使用）
-    dailyRangeMode: "30d", // Phase 16B：today | 7d | 30d | month | all
+    dailyRangeMode: "7d", // Phase 16B：today | 7d | 30d | month | all（16D：默认 7 天）
     liveSamples: [],       // /api/live 60 分钟
     gpuStatus: null,       // /api/gpu/status
     gpuLive: null,         // /api/gpu/live（当前范围）
@@ -54,36 +54,21 @@
      后端不可达：主信息提示后端不可达。 */
   function updateLastUpdateText() {
     var el = document.getElementById("ovLastUpdate");
-    var next = document.getElementById("ovNextRefresh");
     if (!el) return;
+    // 16D：常态（在线）不显示"最后更新 X 秒前 / X 秒后刷新"（5s 轮询信息量低）；
+    // 仅离线/后端不可达时显示说明。
     if (!state.statusBackendOk) {
       el.textContent = "后端不可达，正在重试...";
       el.className = "stat-hint bad";
-      if (next) next.textContent = "";
       return;
     }
-    var intervalSec = Math.max(1, cfgUi.refreshIntervalSeconds || 5);
-    // 主信息
     if (state.online === false) {
       var ref = state.lastSuccessTs || state.lastUpdateTs;
-      el.textContent = ref ? "最后成功采样：" + F.formatAgo(Math.floor(Date.now() / 1000) - ref) : "离线";
+      el.textContent = ref ? "最后成功采样：" + F.formatAgo(Math.floor(Date.now() / 1000) - ref) : "";
       el.className = "stat-hint warn";
-    } else if (state.lastUpdateTs) {
-      var age = Math.max(0, Math.floor(Date.now() / 1000) - state.lastUpdateTs);
-      el.textContent = "最后更新 " + F.formatAgo(age);
-      el.className = "stat-hint";
     } else {
-      el.textContent = "等待首次采样...";
+      el.textContent = "";
       el.className = "stat-hint";
-    }
-    // 次要信息：倒计时
-    if (next) {
-      if (!state.lastStatusRefresh) {
-        next.textContent = "";
-      } else {
-        var remaining = Math.ceil((state.lastStatusRefresh + intervalSec * 1000 - Date.now()) / 1000);
-        next.textContent = remaining > 0 ? remaining + " 秒后刷新" : "即将刷新";
-      }
     }
   }
   setInterval(updateLastUpdateText, 1000);
@@ -363,12 +348,14 @@
   function renderDataQuality() {
     var q = state.quality, h = state.health;
     if (!q && !h) return;
+    // 16D：数值元素只叠加语义色 tone，保留字号类（mid 22px），
+    // 此前整段覆写 className 会把字号类吞掉退化成 12px hint
     if (h) {
       var dbEl = $("dqDb");
       if (dbEl) {
         var tone = h.database === "healthy" ? "ok" : h.database === "warning" ? "warn" : "bad";
         dbEl.textContent = h.database;
-        dbEl.className = "stat-hint " + tone;
+        dbEl.className = "stat-value mid " + tone;
       }
       var hint = $("dqDbHint");
       if (hint) {
@@ -382,32 +369,33 @@
       if (covEl) {
         var cov = t.monitoring_coverage_percent;
         covEl.textContent = cov == null ? F.NA : F.formatPercent(cov);
-        covEl.className = "stat-hint " + (cov == null ? "" : cov >= 99.9 ? "ok" : cov >= 95 ? "warn" : "bad");
+        covEl.className = "stat-value mid" + (cov == null ? "" : " " + (cov >= 99.9 ? "ok" : cov >= 95 ? "warn" : "bad"));
       }
       var gapsEl = $("dqGapsToday");
       if (gapsEl) {
         var gc = t.gap_count || 0;
         gapsEl.textContent = String(gc);
-        gapsEl.className = "stat-hint " + (gc === 0 ? "ok" : t.possible_token_loss ? "bad" : "warn");
+        gapsEl.className = "stat-value mid " + (gc === 0 ? "ok" : t.possible_token_loss ? "bad" : "warn");
       }
       var lossEl = $("dqLossToday");
       if (lossEl) {
         lossEl.textContent = t.possible_token_loss ? "缺口可能存在 Token 丢失" : "无 Token 丢失缺口";
         lossEl.className = "stat-hint " + (t.possible_token_loss ? "bad" : "");
       }
-      var lastEl = $("dqLastSample");
-      if (lastEl) lastEl.textContent = F.formatAgo(t.last_valid_sample_seconds_ago);
-
       var openText = q.open_gap ? "持续缺口，始于 " + F.formatDateTime(q.open_gap.start) +
         (q.open_gap.reason ? "（" + (GAP_REASON_LABELS[q.open_gap.reason] || q.open_gap.reason) + "）" : "") +
         "，进行中" : "";
-      [["dqOpenGap"], ["hqOpenGap"]].forEach(function (pair) {
-        var el = $(pair[0]);
-        if (el) {
-          el.textContent = openText;
-          el.style.display = openText ? "" : "none";
-        }
-      });
+      // 概览数据质量卡：open gap 提示在卡底部（16D 从"最近有效采样"项移出）
+      var dqEl = $("dqOpenGap");
+      if (dqEl) dqEl.textContent = openText;
+      var wrap = $("dqOpenGapWrap");
+      if (wrap) wrap.hidden = !openText;
+      // 历史页（独立元素）
+      var hqEl = $("hqOpenGap");
+      if (hqEl) {
+        hqEl.textContent = openText;
+        hqEl.style.display = openText ? "" : "none";
+      }
       // History 页（同一数据源，独立元素）
       if ($("hqDb")) $("hqDb").textContent = (h && h.database) || "--";
       if ($("hqDbHint")) $("hqDbHint").textContent =
@@ -474,15 +462,23 @@
       return;
     }
     if (wrap) wrap.style.display = "";
+    // 紧凑单行时间（今天 HH:MM:SS / 跨天 MM-DD HH:MM），完整值进 tooltip
     tbody.innerHTML = gaps.map(function (g) {
-      var start = F.formatDateTime(g.start);
-      var end = g.end ? F.formatDateTime(g.end) : "进行中";
+      var start = F.formatClock(g.start);
+      var startFull = F.formatDateTime(g.start);
+      var end = g.end ? F.formatClock(g.end) : "进行中";
+      var endFull = g.end ? F.formatDateTime(g.end) : "进行中的缺口（尚未结束）";
       var dur = F.formatDuration(g.duration_seconds == null ? 0 : g.duration_seconds);
       var src = GAP_SOURCE_LABELS[g.source] || g.source || "--";
       var reason = GAP_REASON_LABELS[g.reason] || g.reason || "未知";
       var loss = g.possible_token_loss ? "<td class='cell-bad'>是</td>" : "<td>否</td>";
-      return "<tr><td>" + start + "</td><td>" + end + "</td><td>" + dur + "</td>" +
-        "<td>" + src + "</td><td>" + reason + "</td>" + loss + "</tr>";
+      return "<tr>" +
+        "<td title='" + startFull + "'>" + start + "</td>" +
+        "<td title='" + endFull + "'>" + end + "</td>" +
+        "<td>" + dur + "</td>" +
+        "<td>" + src + "</td>" +
+        "<td class='cell-wrap' title='" + reason + "'>" + reason + "</td>" +
+        loss + "</tr>";
     }).join("");
   }
 
@@ -930,48 +926,42 @@
   var eventsExpanded = false;
 
   function renderEventsList() {
-    var list = $("eventsList");
+    var tbody = $("eventsTbody");
     var empty = $("eventsEmpty");
-    if (!list) return;
+    var wrapEl = $("eventsTableWrap");
+    if (!tbody) return;
     var events = state.events || [];
     // HISTORY-002（Phase 16C §14/§15）：events.length>0 时彻底隐藏空态
     // （走 ui.setEmptyState，修复 [hidden] 被 display:flex 压过的问题）。
     ui.setEmptyState(empty, events.length === 0);
-    list.innerHTML = "";
+    if (wrapEl) wrapEl.style.display = events.length ? "" : "none";
+    tbody.innerHTML = "";
 
     var shown = eventsExpanded ? events : events.slice(0, EVENTS_PAGE_SIZE);
-    shown.forEach(function (ev) {
-      var row = document.createElement("div");
-      row.className = "event-row";
-      var t = document.createElement("span");
-      t.className = "ev-time";
-      t.textContent = F.formatDateTime(ev.timestamp);
-      t.title = F.formatDateTime(ev.timestamp);
-      var type = document.createElement("span");
-      type.className = "ev-type" + (ev.severity === "warning" ? " sev-warning" : ev.severity === "error" ? " sev-error" : "");
-      type.textContent = EVENT_TYPE_LABELS[ev.event_type] || ev.event_type;
-      type.title = ev.event_type;
-      row.appendChild(t);
-      row.appendChild(type);
+    tbody.innerHTML = shown.map(function (ev) {
+      var time = F.formatClock(ev.timestamp); // 紧凑单行：今天 HH:MM:SS / 跨天 MM-DD HH:MM
+      var full = F.formatDateTime(ev.timestamp);
+      var sev = ev.severity === "warning" ? " cell-warn" : ev.severity === "error" ? " cell-bad" : "";
+      var label = EVENT_TYPE_LABELS[ev.event_type] || ev.event_type;
       // Phase 16C §17/§18：展示层 humanize；原 details 保留在 tooltip
-      var detail = ui.humanizeEventDetails(ev);
+      var detail = ui.humanizeEventDetails(ev) || "";
       var rawDetail = "";
       try {
         rawDetail = ev.details && typeof ev.details === "object" ? JSON.stringify(ev.details) : (ev.details || "");
       } catch (e) { rawDetail = String(ev.details || ""); }
-      if (detail) {
-        var dd = document.createElement("span");
-        dd.className = "ev-detail";
-        dd.textContent = detail;
-        dd.title = rawDetail || detail;
-        row.appendChild(dd);
-      }
-      list.appendChild(row);
-    });
-    // "查看更多"（仅当还有未显示的行）
+      var esc = function (s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); };
+      return "<tr>" +
+        "<td title='" + esc(full) + "'>" + esc(time) + "</td>" +
+        "<td class='ev-type" + sev + "' title='" + esc(ev.event_type) + "'>" + esc(label) + "</td>" +
+        "<td class='ev-detail' title='" + esc(rawDetail || detail) + "'>" + esc(detail) + "</td>" +
+        "</tr>";
+    }).join("");
+    // "查看更多"（仅当还有未显示的行）—— 表格末行
     if (!eventsExpanded && events.length > EVENTS_PAGE_SIZE) {
-      var wrap = document.createElement("div");
-      wrap.className = "events-more-wrap";
+      var tr = document.createElement("tr");
+      tr.className = "events-more-row";
+      var td = document.createElement("td");
+      td.colSpan = 3;
       var b = document.createElement("button");
       b.type = "button";
       b.className = "btn small subtle events-more";
@@ -980,8 +970,9 @@
         eventsExpanded = true;
         renderEventsList();
       });
-      wrap.appendChild(b);
-      list.appendChild(wrap);
+      td.appendChild(b);
+      tr.appendChild(td);
+      tbody.appendChild(tr);
     }
   }
 

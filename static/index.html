@@ -80,8 +80,9 @@
             </span>
           </div>
           <div class="ss-right">
-            <span class="stat-hint" id="ovLastUpdate">等待刷新...</span>
-            <span class="stat-hint" id="ovNextRefresh" style="color:var(--text-disabled)"></span>
+            <!-- 16D：常态（在线）不显示"最后更新 X 秒前 / X 秒后刷新"（轮询频率高，信息量低）；
+                 仅离线/后端不可达时此处显示状态说明 -->
+            <span class="stat-hint" id="ovLastUpdate"></span>
           </div>
         </div>
 
@@ -171,15 +172,14 @@
                   <div class="stat-hint" id="dqLossToday"></div>
                 </div>
                 <div class="stat">
-                  <div class="stat-label">最近有效采样</div>
-                  <div class="stat-value mid" id="dqLastSample">--</div>
-                  <div class="stat-hint" id="dqOpenGap"></div>
-                </div>
-                <div class="stat">
                   <div class="stat-label">数据库状态</div>
                   <div class="stat-value mid" id="dqDb">--</div>
                   <div class="stat-hint" id="dqDbHint"></div>
                 </div>
+              </div>
+              <!-- 持续缺口提示（16D：从"最近有效采样"项移出到卡底部，仅在有 open gap 时显示） -->
+              <div class="card-footer" id="dqOpenGapWrap" hidden>
+                <span class="stat-hint bad" id="dqOpenGap"></span>
               </div>
             </div>
           </div>
@@ -248,16 +248,14 @@
             <span class="sh-actions"><span class="sh-sub">覆盖率与缺口（缺口详情见历史页）</span></span>
           </div>
           <div class="section-body">
-            <div class="card">
-              <div class="table-wrap">
-                <table class="table-full">
-                  <thead><tr>
-                    <th>日期</th><th>提示</th><th>缓存</th><th>输出</th>
-                    <th>计算</th><th>逻辑</th><th>缓存率</th><th>覆盖率</th><th>缺口</th>
-                  </tr></thead>
-                  <tbody id="dailyTbody"><tr><td colspan="9" class="na">暂无数据。</td></tr></tbody>
-                </table>
-              </div>
+            <div class="table-wrap card-like">
+              <table class="table-full table-daily">
+                <thead><tr>
+                  <th>日期</th><th>提示</th><th>缓存</th><th>输出</th>
+                  <th>计算</th><th>逻辑</th><th>缓存率</th><th>覆盖率</th><th>缺口</th>
+                </tr></thead>
+                <tbody id="dailyTbody"><tr><td colspan="9" class="na">暂无数据。</td></tr></tbody>
+              </table>
             </div>
           </div>
         </div>
@@ -497,20 +495,18 @@
             <span class="sh-actions"><span class="sh-sub">已知监控缺口</span></span>
           </div>
           <div class="section-body">
-            <div class="card">
-              <div id="gapsEmpty" class="empty-state" hidden>
-                <div class="empty-icon" data-icon="check"></div>
-                <div class="empty-title">暂无已知监控缺口</div>
-                <div class="empty-desc">监控正常运行时，此列表保持为空。</div>
-              </div>
-              <div class="table-wrap" id="gapsTableWrap">
-                <table class="table-full">
-                  <thead><tr>
-                    <th>开始</th><th>结束</th><th>时长</th><th>来源</th><th>原因</th><th>Token 丢失？</th>
-                  </tr></thead>
-                  <tbody id="gapsTbody"></tbody>
-                </table>
-              </div>
+            <div id="gapsEmpty" class="card empty-state gaps-empty" hidden>
+              <div class="empty-icon" data-icon="check"></div>
+              <div class="empty-title">暂无已知监控缺口</div>
+              <div class="empty-desc">监控正常运行时，此列表保持为空。</div>
+            </div>
+            <div class="table-wrap table-flat card-like" id="gapsTableWrap">
+              <table class="table-full table-gap">
+                <thead><tr>
+                  <th>开始</th><th>结束</th><th>时长</th><th>来源</th><th>原因</th><th>Token 丢失？</th>
+                </tr></thead>
+                <tbody id="gapsTbody"></tbody>
+              </table>
             </div>
           </div>
         </div>
@@ -522,11 +518,16 @@
             <span class="sh-actions"><span class="sh-sub">最近 30 条（来自应用事件日志）</span></span>
           </div>
           <div class="section-body">
-            <div class="card">
-              <div id="eventsEmpty" class="empty-state" hidden>
-                <div class="empty-title">暂无事件</div>
-              </div>
-              <div class="events-list" id="eventsList"></div>
+            <div id="eventsEmpty" class="card empty-state" hidden>
+              <div class="empty-title">暂无事件</div>
+            </div>
+            <div class="table-wrap table-flat card-like" id="eventsTableWrap">
+              <table class="table-full table-events">
+                <thead><tr>
+                  <th>时间</th><th>类型</th><th>详情</th>
+                </tr></thead>
+                <tbody id="eventsTbody"></tbody>
+              </table>
             </div>
           </div>
         </div>

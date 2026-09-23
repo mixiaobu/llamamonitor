@@ -22,12 +22,14 @@
   user-select: none;
 }
 
-/* 品牌区（spec §114/§115：极简，不重复大标题） */
+/* 品牌区（spec §114/§115：极简，不重复大标题）
+   16D 细节：左 padding 8px（= .navview padding 8 + 8），使 28px logo 在
+   compact 60px 内容区（60-16=44）恰好水平居中，展开/收起切换零偏移。 */
 .nav-brand {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
-  padding: var(--spacing-sm) var(--spacing-md) var(--spacing-lg);
+  padding: var(--spacing-sm) var(--spacing-md) var(--spacing-lg) var(--spacing-sm);
   min-height: 40px;
 }
 .nav-brand .brand-icon {
@@ -143,30 +145,24 @@
   text-overflow: ellipsis;
 }
 
-/* ============ Compact 模式（spec §8/§54：窗口窄时 56-64px） ============ */
+/* ============ Compact 模式（spec §8/§54：窗口窄时 60px） ============
+   16D 细节：左右 padding 与展开态完全一致（.navview 8px / 内部 12px），
+   logo、nav-icon、选中指示条在展开/收起切换时 x 位置不变，不跳动。
+   60px - 2*8 = 44px 内容宽：nav-icon 20px + 2*12 = 44 恰好居中；
+   brand-icon 28px + 12 起点对齐展开态。 */
 .app.compact {
   --nav-width: 60px;
 }
 .app.compact .navview {
-  padding: var(--spacing-sm) 6px;
+  padding: var(--spacing-sm);
 }
-.app.compact .nav-brand {
-  justify-content: center;
-  padding: var(--spacing-sm) 0 var(--spacing-lg);
+.app.compact .nav-brand,
+.app.compact .nav-item {
+  /* 保持展开态的水平 padding（12px），左对齐不变 */
 }
 .app.compact .nav-brand .brand-name,
 .app.compact .nav-item .nav-label {
   display: none;
-}
-.app.compact .nav-brand .brand-icon {
-  margin: 0 auto;
-}
-.app.compact .nav-item {
-  justify-content: center;
-  padding: var(--spacing-sm) 0;
-}
-.app.compact .nav-item .nav-label {
-  /* 保留可访问性：tooltip 显示名称 */
 }
 
 /* ============ 内容区（Phase 16D spec §8：统一宽度与留白） ============
@@ -183,15 +179,13 @@
   margin: 0 auto;
   padding: var(--spacing-2xl) var(--page-pad) var(--spacing-3xl);
 }
-.page-settings { max-width: var(--content-max-settings); margin-left: auto; margin-right: auto; }
-.page-about { max-width: var(--content-max-about); margin-left: auto; margin-right: auto; }
+/* 16D：设置/关于页不再单独收窄（原 1280/900 与左右留白不一致），
+   恢复默认 = 与其他页共用 .content-inner 的 1520 宽 + 32px 左右 padding */
 @media (max-width: 1366px) {
   .content-inner { padding-left: var(--page-pad-narrow); padding-right: var(--page-pad-narrow); }
 }
 @media (min-width: 2560px) {
   .content-inner { max-width: 1920px; }
-  .page-settings { max-width: 1520px; }
-  .page-about { max-width: 1040px; }
 }
 
 /* ============ 页面（Phase 16D spec §9 统一页面骨架） ============

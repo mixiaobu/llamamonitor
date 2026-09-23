@@ -173,6 +173,37 @@
     return l;
   }
 
+  /* 16D 移动端：时间/日期轴防挤压——窄容器自动减少标签并旋转，
+     不再全部挤成一团。time 轴用 minInterval（ECharts 自动按间隔抽稀）。 */
+  function _isNarrow(containerId) {
+    var dom = typeof document !== "undefined" ? document.getElementById(containerId) : null;
+    return !!(dom && dom.getBoundingClientRect().width < 640);
+  }
+  function timeAxisLabel(p, containerId, extra) {
+    var l = baseAxisLabel(p, extra);
+    if (_isNarrow(containerId)) {
+      l.minInterval = 60000;   // time 轴：最小 1 分钟间隔，窄屏自动更稀
+      l.rotate = 30;
+      l.hideOverlap = true;
+      l.margin = 8;
+    }
+    return l;
+  }
+  function categoryDateAxisLabel(p, containerId, rowCount) {
+    var l = baseAxisLabel(p);
+    var dom = typeof document !== "undefined" ? document.getElementById(containerId) : null;
+    var w = dom ? dom.getBoundingClientRect().width : 800;
+    // 每个日期标签约需 48px（10 字符 @ 11px 略缩）；窄屏按容器宽抽稀 + 旋转
+    if (w < 640) {
+      var fit = Math.max(1, Math.floor(w / 48));      // 最多能放下的标签数
+      l.interval = Math.max(0, Math.ceil(rowCount / fit) - 1);
+      if (w < 480) l.rotate = 45;
+      l.hideOverlap = true;
+      l.margin = 8;
+    }
+    return l;
+  }
+
   /* ================================================================
      图表 1：Daily Token Usage（Stacked Bar：Prompt / Cached / Output）
      spec §35：适度圆角、tooltip 含 Logical Total。
@@ -225,7 +256,7 @@
       xAxis: {
         type: "category",
         data: rows.map(function (r) { return r.date; }),
-        axisLabel: baseAxisLabel(p),
+        axisLabel: categoryDateAxisLabel(p, id, rows.length),
         axisLine: { lineStyle: { color: p.split } },
         axisTick: { show: false },
       },
@@ -308,13 +339,7 @@
         icon: "rect", itemWidth: 10, itemHeight: 10, itemGap: 14,
       },
       grid: { left: 8, right: 8, top: 32, bottom: 4, containLabel: true },
-      xAxis: {
-        type: "time",
-        axisLabel: baseAxisLabel(p, { formatter: function (v) { return F.formatHM(v / 1000); } }),
-        axisLine: { lineStyle: { color: p.split } },
-        axisTick: { show: false },
-        splitLine: { show: false },
-      },
+      xAxis: _gpuTimeAxis(p, id),
       yAxis: {
         type: "value",
         axisLabel: baseAxisLabel(p, { formatter: function (v) { return F.formatTps(v); } }),
@@ -352,7 +377,7 @@
       xAxis: {
         type: "category",
         data: data.map(function (d) { return d[0]; }),
-        axisLabel: baseAxisLabel(p),
+        axisLabel: categoryDateAxisLabel(p, id, data.length),
         axisLine: { lineStyle: { color: p.split } },
         axisTick: { show: false },
       },
@@ -428,10 +453,10 @@
      data: /api/gpu/live {gpus:[{uuid,index,name,points:[...]}]}
      visible: {uuid: bool} 显隐控制
      ================================================================ */
-  function _gpuTimeAxis(p) {
+  function _gpuTimeAxis(p, containerId) {
     return {
       type: "time",
-      axisLabel: baseAxisLabel(p, { formatter: function (v) { return F.formatHM(v / 1000); } }),
+      axisLabel: timeAxisLabel(p, containerId, { formatter: function (v) { return F.formatHM(v / 1000); } }),
       axisLine: { lineStyle: { color: p.split } },
       axisTick: { show: false },
       splitLine: { show: false },
@@ -503,7 +528,7 @@
       }),
       legend: _gpuLegend(p),
       grid: { left: 8, right: 8, top: 32, bottom: 4, containLabel: true },
-      xAxis: _gpuTimeAxis(p),
+      xAxis: _gpuTimeAxis(p, id),
       yAxis: {
         type: "value", min: 0, max: 100,
         axisLabel: baseAxisLabel(p, { formatter: function (v) { return v + "%"; } }),
@@ -533,7 +558,7 @@
       }),
       legend: _gpuLegend(p),
       grid: { left: 8, right: 8, top: 32, bottom: 4, containLabel: true },
-      xAxis: _gpuTimeAxis(p),
+      xAxis: _gpuTimeAxis(p, id),
       yAxis: {
         type: "value",
         axisLabel: baseAxisLabel(p, { formatter: function (v) { return v >= 1000 ? (v / 1000) + "kW" : v + "W"; } }),
@@ -563,7 +588,7 @@
       }),
       legend: _gpuLegend(p),
       grid: { left: 8, right: 8, top: 32, bottom: 4, containLabel: true },
-      xAxis: _gpuTimeAxis(p),
+      xAxis: _gpuTimeAxis(p, id),
       yAxis: {
         type: "value",
         axisLabel: baseAxisLabel(p, { formatter: function (v) { return v + "\u00B0C"; } }),

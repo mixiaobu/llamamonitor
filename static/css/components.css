@@ -104,6 +104,9 @@
 .stat-value.mid {
   font-size: var(--font-size-metric);
 }
+.stat-value.large {
+  font-size: 28px; /* 介于 mid(22) 与 display(32)：关键摘要值 */
+}
 .stat-value.small {
   font-size: var(--font-size-body);
 }
@@ -115,6 +118,10 @@
 .stat-hint.warn { color: var(--warning); }
 .stat-hint.bad { color: var(--error); }
 .stat-hint.ok { color: var(--success); }
+/* 数值语义色（与 stat-hint 同色板，16D 数据质量卡 tone 复用） */
+.stat-value.ok { color: var(--success); }
+.stat-value.warn { color: var(--warning); }
+.stat-value.bad { color: var(--error); }
 
 /* ============ Button（spec §19/§20：32-36px 高，5-7px 圆角，统一四类） ============ */
 .btn {
@@ -347,6 +354,15 @@
   max-width: 100%;
   overflow-x: auto;
 }
+/* 16D 移动端：横向滚动条压内容（Safari 经典坑）—— 滚动容器上下留白，
+   按钮垂直居中，滚动条落在留白区不遮挡文字 */
+@media (max-width: 900px) {
+  .seg {
+    padding-top: 6px;
+    padding-bottom: 6px;
+    align-items: center;
+  }
+}
 .seg button {
   border: 1px solid transparent;
   background: transparent;
@@ -558,13 +574,18 @@
   gap: var(--spacing-md);
 }
 
-/* ============ Table（spec §67/§68/§69：Win11 DataGrid 风格） ============ */
+/* ============ Table（spec §67/§68/§69：Win11 DataGrid 风格） ============
+   16D：表格容器即卡片（去掉外层 .card 包裹层），视觉标准与 .card 一致
+   （bg-card / border-subtle / radius-large / shadow-card）。 */
 .table-wrap {
   overflow-y: auto;
   overflow-x: auto;
   max-height: 420px;
+  background: var(--bg-card);
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-medium);
+  border-radius: var(--radius-large);
+  box-shadow: var(--shadow-card);
+  min-width: 0;
 }
 .table-full {
   width: 100%;
@@ -603,6 +624,47 @@
 .table-full td.cell-warn { color: var(--warning); }
 .table-full td.cell-bad { color: var(--error); }
 .table-full td.cell-ok { color: var(--success); }
+/* 不内滚的表（16D：最近缺口表交给页面外层滚动，直接完整展示）：
+   去掉 max-height 与纵向滚动；sticky 表头在无滚动容器时会粘到页面顶部，
+   一并取消，保持普通文档流。 */
+.table-flat {
+  max-height: none;
+  overflow-y: visible;
+}
+.table-flat .table-full thead th { position: static; }
+/* 允许换行的单元格（长原因/说明），覆盖 td 默认 nowrap */
+.table-full td.cell-wrap { white-space: normal; }
+
+/* ============ 表格列宽规范（16D 审计） ============
+   原则：短列（时间/枚举/标记）固定宽度；信息列弹性撑满剩余空间；
+   表格整体设 min-width——桌面撑满容器，窄屏在 .table-wrap 内横向滚动
+   而不是挤压变形。 */
+
+/* 用量页「每日明细」表（9 列） */
+.table-daily { table-layout: fixed; min-width: 920px; }
+.table-daily th:nth-child(1), .table-daily td:nth-child(1) { width: 104px; } /* 日期 */
+.table-daily th:nth-child(6), .table-daily td:nth-child(6) { width: 96px; }  /* 计算 */
+.table-daily th:nth-child(7), .table-daily td:nth-child(7) { width: 88px; }  /* 缓存率 */
+.table-daily th:nth-child(8), .table-daily td:nth-child(8) { width: 88px; }  /* 覆盖率 */
+.table-daily th:nth-child(9), .table-daily td:nth-child(9) { width: 64px; }  /* 缺口 */
+.table-daily th:nth-child(2), .table-daily td:nth-child(2) { width: auto; }  /* 提示（弹性，最大数值） */
+
+/* 历史页「最近缺口」表 */
+.table-gap { table-layout: fixed; min-width: 780px; }
+.table-gap th:nth-child(1), .table-gap td:nth-child(1) { width: 120px; } /* 开始 */
+.table-gap th:nth-child(2), .table-gap td:nth-child(2) { width: 120px; } /* 结束 */
+.table-gap th:nth-child(3), .table-gap td:nth-child(3) { width: 88px; }  /* 时长 */
+.table-gap th:nth-child(4), .table-gap td:nth-child(4) { width: 76px; }  /* 来源 */
+.table-gap th:nth-child(6), .table-gap td:nth-child(6) { width: 104px; } /* Token 丢失？ */
+.table-gap th:nth-child(5), .table-gap td:nth-child(5) { width: auto; }  /* 原因（弹性） */
+.table-gap td:nth-child(5) { white-space: normal; }
+.table-gap td { overflow-wrap: break-word; }
+
+/* 历史页「监控事件」表 */
+.table-events { table-layout: fixed; min-width: 640px; }
+.table-events th:nth-child(1), .table-events td:nth-child(1) { width: 120px; } /* 时间 */
+.table-events th:nth-child(2), .table-events td:nth-child(2) { width: 140px; } /* 类型 */
+.table-events th:nth-child(3), .table-events td:nth-child(3) { width: auto; }  /* 详情（弹性） */
 
 /* ============ EmptyState（spec §38/§110：icon + 标题 + 说明） ============ */
 .empty-state {

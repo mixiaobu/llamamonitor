@@ -14,6 +14,11 @@
 @media (max-width: 1400px) {
   .chart { height: 280px; }
 }
+/* 16D 移动端：手机（≤700px）图表更紧凑，减少纵向滚动 */
+@media (max-width: 700px) {
+  .chart { height: 240px; }
+  .chart.tall { height: 260px; }
+}
 .chart-empty-overlay {
   position: absolute;
   inset: 0;
@@ -26,10 +31,11 @@
 .chart-box.has-empty .chart { visibility: hidden; }
 .chart-box.has-empty .chart-empty-overlay { display: block; }
 
-/* ---------- GPU 设备卡（spec §135：每 GPU 一卡；多卡网格） ---------- */
+/* ---------- GPU 设备卡（spec §135：每 GPU 一卡；多卡网格；
+   列宽规则见下方 .gpu-grid 覆盖：320-400px 动态 + 移动端 min(320px,100%)） ---------- */
 .gpu-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr));
   gap: var(--spacing-lg);
 }
 .gpu-device {
@@ -200,19 +206,41 @@
   margin: 0 0 var(--spacing-lg);
   line-height: 1.4;
 }
+/* 16D：设置页撑满视口高度（flex 列），保存栏沉底：
+   内容短 -> margin-top:auto 把 footer 推到页面底部（视口内）；
+   内容长 -> sticky bottom:0 钉在滚动视口最底部。 */
+.page-settings.active {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100vh - 56px); /* content-inner 上下 padding 24+32 */
+}
+.settings-shell {
+  margin-bottom: var(--section-gap);
+}
 .settings-footer {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: center;
   gap: var(--spacing-md);
-  margin-top: var(--section-gap); /* 16D：与分区节奏一致 */
+  flex-wrap: wrap; /* 16D：窄屏/有未保存提示时自动换行，不再挤压按钮 */
+  margin-top: auto;
   padding: var(--spacing-md) var(--spacing-lg);
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-large);
   position: sticky;
-  bottom: var(--spacing-md);
+  bottom: 0; /* 16D：固定钉在滚动视口最底部 */
+  /* 16D：宽度 = settings-shell 右侧内容列（总宽 - 184px 菜单 - 32px 间隙） */
+  margin-left: calc(184px + var(--spacing-2xl));
   box-shadow: var(--shadow-pop);
+}
+/* 16D：未保存提示独占上一行（右对齐），按钮行保持完整宽度 */
+.settings-footer .dirty-badge {
+  flex: 1 0 100%;
+  text-align: right;
+}
+@media (max-width: 900px) {
+  .settings-footer { margin-left: 0; }
 }
 .dirty-badge {
   color: var(--warning);
@@ -548,6 +576,22 @@
   flex-wrap: wrap;
   margin-bottom: var(--section-gap);
 }
+/* 16D 移动端：多卡勾选 chip 竖排（每卡一行），不再横向挤压 */
+@media (max-width: 900px) {
+  .gpu-toolbar #gpuPick {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    overflow-x: visible;
+    max-width: none;
+    width: 100%;
+  }
+  .gpu-toolbar #gpuPick .check-chip {
+    width: 100%;
+    margin: 0;
+    justify-content: flex-start;
+  }
+}
 .charts-2col {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -557,9 +601,10 @@
   .charts-2col { grid-template-columns: 1fr; }
 }
 
-/* ---------- GPU 卡（spec §36-§39）：320-400px 动态网格 + VRAM 进度条 ---------- */
+/* ---------- GPU 卡（spec §36-§39）：320-400px 动态网格 + VRAM 进度条
+   16D 移动端：min(320px,100%) 手机单列不溢出（390px 屏内容宽仅 270px） ---------- */
 .gpu-grid {
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr));
 }
 .gpu-device .gd-primary {
   display: flex;
@@ -595,44 +640,28 @@
   background: var(--accent);
 }
 
-/* ---------- 事件列表（§22.4：无嵌套滚动，页面承担纵向滚动；15 条 + 查看更多） ---------- */
-.events-list {
-  display: flex;
-  flex-direction: column;
-  max-height: none;
-  overflow-y: visible;
-}
-.event-row {
-  display: grid;
-  grid-template-columns: 96px 84px minmax(0, 1fr);
-  gap: var(--spacing-md);
-  align-items: baseline;
-  padding: var(--spacing-sm) 0;
-  border-bottom: 1px solid var(--border-subtle);
-  font-size: var(--font-size-secondary);
-}
-.event-row:last-child { border-bottom: none; }
-.event-row .ev-time {
-  color: var(--text-secondary);
+/* ---------- 监控事件（§22.4：16D 改为表格；无嵌套滚动，页面承担纵向滚动；15 条 + 查看更多） ----------
+   列宽规范见 components.css .table-events（时间/类型定宽 + 详情弹性 + min-width 窄屏横滚） */
+.table-events td:nth-child(1) {
   font-variant-numeric: tabular-nums;
-  font-size: var(--font-size-caption);
+  white-space: nowrap;
 }
-.event-row .ev-type {
+.table-events td.ev-type {
   font-weight: var(--font-weight-semibold);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.event-row .ev-type.sev-warning { color: var(--warning); }
-.event-row .ev-type.sev-error { color: var(--error); }
-.event-row .ev-detail {
+.table-events td.ev-detail {
   color: var(--text-secondary);
-  font-size: var(--font-size-caption);
+  white-space: normal;
   word-break: break-word;
 }
-@media (max-width: 700px) {
-  .event-row { grid-template-columns: 84px minmax(0, 1fr); }
-  .event-row .ev-detail { grid-column: 1 / -1; }
+.table-events td.cell-warn { color: var(--warning); }
+.table-events td.cell-bad { color: var(--error); }
+.table-events tr.events-more-row td {
+  border-bottom: none;
+  padding-top: var(--spacing-md);
 }
 
 /* ---------- Settings 内部二级导航（spec §55/§98） ---------- */
@@ -962,9 +991,9 @@ a.link:hover .arr { transform: translateX(2px); }
   /* surface from .card */
 }
 
-/* 数据质量 summary（§18.6：横向 summary card，4 列） */
+/* 数据质量 summary（§18.6：横向 summary card；16D 移除"最近有效采样"后 3 列均分） */
 .dq-summary .stat-grid {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 @media (max-width: 1200px) {
   .dq-summary .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }

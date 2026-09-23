@@ -85,14 +85,15 @@ a:hover {
   text-decoration: underline;
 }
 
-/* ---------- Focus（spec §74：accent ring，不用 outline:none 无替代） ---------- */
+/* ---------- Focus（spec §74：accent ring，不用 outline:none 无替代） ----------
+   16D：不再覆写 border-radius（手机点按触发 focus-visible 时按钮圆角被改成
+   4px 直角）；每个元素保留自身圆角，ring 自然贴合。 */
 :focus {
   outline: none;
 }
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
-  border-radius: var(--radius-small);
 }
 
 /* ---------- 滚动条（spec §57：窄、低对比、不隐藏） ---------- */

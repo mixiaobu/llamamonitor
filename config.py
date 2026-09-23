@@ -143,7 +143,7 @@ class UpdatesConfig:
 @dataclass
 class UIConfig:
     refresh_interval_seconds: float = 5.0     # 1 ~ 3600
-    daily_default_days: int = 30              # 1 ~ 3650
+    daily_default_days: int = 7               # 1 ~ 3650（16D：默认 7 天）
     theme: str = "dark"                       # dark / light / system
 
 
@@ -223,7 +223,7 @@ DEFAULT_CONFIG: dict = {
     },
     "ui": {
         "refresh_interval_seconds": 5,
-        "daily_default_days": 30,
+        "daily_default_days": 7,
         "theme": "dark",
     },
     "logging": {
@@ -457,7 +457,7 @@ def _build_app_config(merged: dict) -> tuple[AppConfig, list[str]]:
         ),
         daily_default_days=_check(
             "ui", "daily_default_days", ui.get("daily_default_days"),
-            lambda v: _is_int_in_range(v, 1, 3650), int, 30,
+            lambda v: _is_int_in_range(v, 1, 3650), int, 7,
         ),
         theme=_check(
             "ui", "theme", ui.get("theme"),

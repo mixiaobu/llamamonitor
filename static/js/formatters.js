@@ -143,6 +143,20 @@
     return new Date(Number(epoch) * 1000).toLocaleString();
   }
 
+  /** epoch 秒 -> 紧凑时间（表格/列表用，保证单行）：
+      与今天同天只显示 HH:MM:SS，否则 MM-DD HH:MM。完整值可放 title。 */
+  function formatClock(epoch) {
+    if (!epoch) return NA;
+    var d = new Date(Number(epoch) * 1000);
+    var now = new Date();
+    var sameDay = d.getFullYear() === now.getFullYear() &&
+                  d.getMonth() === now.getMonth() &&
+                  d.getDate() === now.getDate();
+    if (sameDay) return formatTime(epoch);
+    return pad2(d.getMonth() + 1) + "-" + pad2(d.getDate()) + " " +
+           pad2(d.getHours()) + ":" + pad2(d.getMinutes());
+  }
+
   /** 普通数字（千分位） */
   function formatNumber(v) {
     if (isBad(v)) return NA;
@@ -175,6 +189,7 @@
     formatTime: formatTime,
     formatHM: formatHM,
     formatDateTime: formatDateTime,
+    formatClock: formatClock,
     formatNumber: formatNumber,
     formatInt: formatInt,
   };

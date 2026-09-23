@@ -1,8 +1,48 @@
 # LlamaMonitor 0.16.18 — Phase 16D 统一 UI 交付说明
 
-> **0.16.18 间距审计追加**：性能页 MTP 组（summary 卡 → 双图行）纵向间距 12px 与
-> `.grid` 双图之间横向间距 16px 不一致。修复：`.mtp-group` gap 对齐网格 gap（16px），
-> 行列间距统一。
+> **0.16.18 间距/细节审计追加**（多项，全部 CDP 实测验证）：
+> 1. 性能页 MTP 组（summary 卡 → 双图行）纵向间距 12px 与双图横向间距 16px 不一致 →
+>    `.mtp-group` gap 对齐网格 gap（16px），行列间距统一。
+> 2. 监控事件时间单行化：`toLocaleString()` 全量时间（~19 字符）在 96px 列必然折行 →
+>    新增 `F.formatClock()`（当天 `HH:MM:SS` / 跨天 `MM-DD HH:MM`，完整时间进 tooltip）；
+>    事件列表列宽 96/84/1fr → 110/96/1fr（时间列 nowrap）。
+> 3. 缺口表/事件列表列宽重排：缺口表改 `table-layout: fixed`（开始/结束 112、时长 84、
+>    来源 72、原因弹性+允许换行、Token 丢失 96），修复长原因列挤压时间列的失衡。
+> 4. 数据质量卡：移除信息量低的"最近有效采样"（3 项均分），持续缺口提示移到卡底部
+>    （仅存在 open gap 时显示）；数值字号统一 22px（mid）并叠加语义色
+>    （`.stat-value.ok/.warn/.bad`）——此前 JS 整段覆写 className 吞掉字号类退化为 12px。
+> 5. 侧边栏展开/收起零跳动：compact 与展开态使用完全相同的左右 padding
+>    （`.navview` 8px / 项内 12px）；品牌区左 padding 12→8px，28px logo 在
+>    compact 60px 内容区（44px）恰好水平居中（实测中心 x=30 = 60/2）。
+> 6. 用量页默认范围 7 天（`daily_default_days` 30→7，含 config 默认值/测试/前端 state）。
+> 7. 最近缺口表取消内层滚动（`table-flat`：无 max-height、无 sticky 表头），
+>    表格完整平铺，滚动交给页面外层。
+> 8. 表格去卡片包裹：最近缺口表、每日明细表、监控事件不再套一层 `.card`，
+>    `.table-wrap` 本身承担卡片视觉（bg-card / border / radius-large / shadow-card）。
+> 9. 监控事件列表 → 表格（时间/类型/详情 三列，卡片标准；"查看更多"为表格末行；
+>    同样 `table-flat` 平铺）。
+> 10. 设置页/关于页恢复与其他页一致的内容宽度（1520 + 32px 左右留白，
+>     原 1280/900 单独收窄移除）。
+> 11. 设置页保存栏固定钉在滚动视口最底部（`sticky bottom:0`），宽度精确等于
+>     右侧内容列（总宽 - 184px 菜单 - 32px 间隙）；内容短于视口时页面 flex
+>     撑满 + `margin-top:auto` 沉底。
+> 12. 移动端适配（手机浏览器可直连使用）：服务绑定改为 0.0.0.0（局域网只读，
+>     修改类 API 仍限 loopback，Phase 10 安全模型）；GPU 设备网格
+>     `minmax(320px,1fr)` → `minmax(min(320px,100%),1fr)` 修复 390px 屏溢出；
+>     ≤700px 图表高度 240/260px；≤900px 既有规则覆盖统计/网格/设置栏单列化。
+>     CDP 390×844 实测 7 页无页面级横向滚动，表格内层横向滚动为移动端标准。
+> 13. 概览状态条：在线常态不显示"最后更新 X 秒前 / X 秒后刷新"（5s 轮询信息量低）；
+>     仅离线（"最后成功采样"）与后端不可达时显示说明。
+> 14. 表格列宽规范成文（components.css）：短列固定（日期 104/时间 120/枚举 64-140），
+>     信息列弹性撑满，表格设 min-width（920/780/640）——桌面撑满容器、窄屏横向滚动不挤压。
+> 15. 按钮点按圆角修复：`:focus-visible` 不再覆写 `border-radius`（手机点按触发
+>     focus-visible 时按钮被改成 4px 直角）；每个元素保留自身圆角。
+> 16. 设置页未保存提示独占上一行（`flex:1 0 100%` + 右对齐），按钮行不再被挤压。
+> 17. 手机端 GPU 勾选 chip 竖排（≤900px 每卡一行，与"手机上竖着排"一致）；
+>     图表时间/日期轴防挤压：窄容器 time 轴 minInterval 抽稀 + 旋转 30° +
+>     hideOverlap，category 日期轴按容器宽抽稀（interval）+ 45° 旋转。
+> 18. 静态文件加 `Cache-Control: no-cache`（含首页 HTML，ETag 304 不增流量）：
+>     修复原地升级后浏览器启发式缓存旧 JS 导致 `F.formatClock is not a function`。
 
 > **0.16.17 间距与细节审计（本轮追加）**：CDP 实测发现概览/性能/关于三页存在 0px 间距
 > （状态卡/指标条/品牌卡 与紧随其后的 section 贴死，根因是 `.section:last-child{margin-bottom:0}`

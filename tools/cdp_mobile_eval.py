@@ -1,4 +1,4 @@
-# set desktop metrics then run js file
+# set device metrics override then run audit js file
 import sys, socket, struct, base64, os, json, time
 
 def send(ws, obj):
@@ -51,7 +51,8 @@ def read_msg(ws):
             ws.sendall(bytes(h) + bytes(b ^ pm[i % 4] for i, b in enumerate(data)))
 
 def main():
-    url, jsfile, w, h = sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4])
+    url, jsfile = sys.argv[1], sys.argv[2]
+    w, h = int(sys.argv[3]), int(sys.argv[4])
     rest = url[len("ws://"):]
     host, _, path = rest.partition("/")
     host, _, port = host.partition(":")
@@ -65,6 +66,7 @@ def main():
     resp = b""
     while b"\r\n\r\n" not in resp:
         resp += ws.recv(4096)
+
     mid = [0]
     def call(method, params=None):
         mid[0] += 1
@@ -80,7 +82,8 @@ def main():
             if j.get("id") == mid[0]:
                 return j.get("error") or j.get("result", {})
         return {"_timeout": True}
-    call("Emulation.setDeviceMetricsOverride", {"width": w, "height": h, "deviceScaleFactor": 1, "mobile": False})
+
+    call("Emulation.setDeviceMetricsOverride", {"width": w, "height": h, "deviceScaleFactor": 1, "mobile": True})
     time.sleep(1)
     js = open(jsfile, encoding="utf-8").read()
     r = call("Runtime.evaluate", {"expression": js, "returnByValue": True})
