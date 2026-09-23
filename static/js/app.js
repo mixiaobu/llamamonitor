@@ -1084,6 +1084,13 @@
       });
     });
     LM.nav.initCompact();
+    // 16E+：远程（局域网 IP）客户端没有可改的配置（/api/config 等 loopback-only），
+    // 直接隐藏「设置」导航入口——比"进去看到只读表单"更干净。本机不变。
+    if (!LM.api.isLocal()) {
+      document.querySelectorAll('.nav-item[data-page="settings"]').forEach(function (b) {
+        b.style.display = "none";
+      });
+    }
     // Settings 事件绑定（保存/重置/测试连接/dirty 标记/主题切换/自动启动/危险操作/更新）
     if (LM.settings && LM.settings.init) LM.settings.init();
 

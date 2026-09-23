@@ -14,5 +14,5 @@ Windows PE FileVersion 由构建脚本统一转换为 x.y.z.0（如 1.0.0 -> 1.0
 不手工维护第二份版本。
 """
 
-__version__ = "0.16.21"
+__version__ = "0.16.22"
 APP_NAME = "LlamaMonitor"

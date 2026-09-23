@@ -1,5 +1,14 @@
 # LlamaMonitor 0.16.18 — Phase 16D 统一 UI 交付说明
 
+> **0.16.22 远程隐藏设置入口（真实局域网 IP 端到端 CDP 实测）**：
+> 1. **远程不再显示「设置」导航**：0.16.21 已让远程不发 loopback-only 请求、设置页降级为
+>    只读表单——但"点进去看到一屏禁用控件"仍多余（用户反馈：干脆别给入口）。app.js
+>    `init()` 里 `!LM.api.isLocal()` 时 `display:none` 掉 `.nav-item[data-page="settings"]`，
+>    本机不变。远程无 hash 深链、更新 InfoBar 也不会出现（更新状态 loopback-only），
+>    设置页在手机上确实不可达。
+> 2. **验证**：真实 `http://172.16.1.2:8765` CDP：`settingsNavVisible: false`、
+>    `http403: []`、`console: []`；本机 `settingsNavVisible: true`，行为完全不变。
+
 > **0.16.21 手机网络面板 403 噪音（真实局域网 IP 端到端 CDP 实测）**：
 > 1. **loopback-only 请求零 403**：`/api/config`、`/api/update/*`、`/api/app/integration`
 >    按 Phase 10 安全模型仅允许 127.0.0.1/::1，手机（局域网 IP）访问必得 403——0.16.20

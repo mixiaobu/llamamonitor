@@ -26,6 +26,8 @@
   LM.nav.showPage("overview");
   out.theme = document.documentElement.getAttribute("data-theme");
   out.navItems = document.querySelectorAll(".nav-item").length;
+  var setBtn = document.querySelector('.nav-item[data-page="settings"]');
+  out.settingsNavVisible = setBtn ? (getComputedStyle(setBtn).display !== "none") : null;
   out.gpuCards = document.querySelectorAll("#ovGpuMini .gpu-mini").length;
   LM.nav.showPage("overview");
   return JSON.stringify(out);
