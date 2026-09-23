@@ -335,12 +335,6 @@
     var denom = (src.prompt_tokens || 0) + (src.cached_tokens || 0);
     setStatValue("sumCacheRatio", denom > 0 ? F.formatPercent((src.cached_tokens || 0) / denom * 100) : F.NA);
     setFullTip("sumRangeLogical", src.logical_tokens);
-    // 隐藏的旧卡片（HTML 占位保留 id 兼容）
-    setStatValue("sumTodayLogical", F.formatTokenCount((s.today || {}).logical_tokens));
-    setStatValue("sumTodayCompute", F.formatTokenCount((s.today || {}).compute_tokens));
-    setStatValue("sumTodayPrompt", F.formatTokenCount((s.today || {}).prompt_tokens));
-    setStatValue("sumTodayCached", F.formatTokenCount((s.today || {}).cached_tokens));
-    setStatValue("sumTodayOutput", F.formatTokenCount((s.today || {}).output_tokens));
   }
 
   /* ================= Runtime（Performance 页 + Overview 摘要） ================= */

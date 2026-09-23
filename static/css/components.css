@@ -13,7 +13,7 @@
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-large);
   box-shadow: var(--shadow-card);
-  padding: var(--spacing-md) var(--spacing-lg);
+  padding: var(--card-pad) var(--card-pad-lg);
   min-width: 0;
   transition: background-color var(--transition-normal), border-color var(--transition-normal);
 }
@@ -24,6 +24,8 @@
   background: var(--bg-card-hover);
   border-color: var(--border-default);
 }
+/* Card Header（Phase 16D §11 同构：标题区 / 内容区 / 可选底部说明区）
+   Card Title 15/600（低于 Section Title 18/700，高于 Body 14） */
 .card-title {
   display: flex;
   align-items: center;
@@ -31,14 +33,22 @@
   gap: var(--spacing-md);
   flex-wrap: wrap;
   margin: 0 0 var(--spacing-lg);
-  font-size: var(--font-size-subtitle);
+  font-size: var(--font-size-card);
   font-weight: var(--font-weight-semibold);
   color: var(--text-primary);
 }
 .card-title .card-sub {
   font-size: var(--font-size-caption);
   font-weight: var(--font-weight-regular);
-  color: var(--text-secondary);
+  color: var(--text-muted);
+}
+/* 卡片底部说明区（Phase 16D §11：仅当确需数据来源/注释时使用） */
+.card-footer {
+  margin-top: var(--spacing-md);
+  padding-top: var(--spacing-sm);
+  border-top: 1px solid var(--border-subtle);
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
 }
 .card-section-gap {
   margin-top: var(--spacing-lg);
@@ -92,7 +102,7 @@
   text-overflow: ellipsis;
 }
 .stat-value.mid {
-  font-size: var(--font-size-subtitle);
+  font-size: var(--font-size-metric);
 }
 .stat-value.small {
   font-size: var(--font-size-body);

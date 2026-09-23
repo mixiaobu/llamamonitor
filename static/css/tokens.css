@@ -1,40 +1,48 @@
 /* ============================================================
-   LlamaMonitor — Design Tokens（Phase 15, Windows 11 Fluent）
-   所有颜色/圆角/间距/字号的唯一来源。组件 CSS 只引用变量，
-   不写裸色值（spec §3/§4/§59）。主题只在这里切换（spec §26）。
+   LlamaMonitor — Design Tokens（Phase 16D 统一设计语言）
+   所有颜色 / 字体 / 间距 / 圆角 / 布局 的唯一来源。
+   组件 CSS 只引用变量，不写裸值；主题只在这里切换。
 
-   层级（spec §4）：
-     --bg-base   App Background（Mica 透出层，半透明）
-     --bg-layer  Navigation / 次级 surface
-     --bg-card   Card Surface
-     --bg-hover  Hover Surface
+   统一原则（Phase 16D 四条核心）：
+   1）动作只出现在 Page Header 右侧 / Section Header 右侧；
+   2）所有卡片同构：标题区 / 内容区 / 可选底部说明区；
+   3）所有页面按 页头 → 分区 → 卡片 组织；
+   4）所有视觉走同一套 token。
    ============================================================ */
 
 :root {
-  /* ---------- Font（Phase 16B spec §5：整体字号上调） ----------
-     Page Title 22 / Section 17 / Card Title 15 / Body 14 /
-     Secondary 13 / Caption 12 / Primary Metric 34 / Secondary Metric 20 */
+  /* ---------- 字体（Phase 16D spec §5 统一层级） ----------
+     Page Title 24/700 · Page Subtitle 13/400 · Section Title 18/700
+     Card Title 15/600 · Metric Big 40（概览）/32（普通）
+     Metric Medium 22/600 · Body 14 · Secondary 13 · Caption 12
+     （变量名沿用 Phase 15 以兼容既有引用，值统一到规范） */
   --font-family: "Segoe UI Variable Text", "Segoe UI Variable Display",
     "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", Arial, sans-serif;
   --font-size-caption: 12px;
   --font-size-body: 14px;
   --font-size-secondary: 13px;
-  --font-size-subtitle: 17px;
-  --font-size-title: 22px;
-  --font-size-display: 34px;
-  --font-size-hero: 34px;
-  --font-size-metric: 20px;
+  --font-size-subtitle: 18px;   /* = Section Title（旧名兼容） */
+  --font-size-title: 24px;      /* = Page Title（旧名兼容） */
+  --font-size-card: 15px;       /* Card Title（新增） */
+  --font-size-display: 32px;    /* = Metric Big 普通（旧名兼容） */
+  --font-size-hero: 40px;       /* = Metric Big 概览主指标（旧名兼容） */
+  --font-size-metric: 22px;     /* = Metric Medium（旧名兼容） */
   --font-weight-regular: 400;
+  --font-weight-medium: 500;
   --font-weight-semibold: 600;
+  --font-weight-bold: 700;
   --line-height: 1.45;
 
-  /* ---------- Radius（spec §14：8/10px；控件小圆角 4-7px） ---------- */
+  /* ---------- 圆角（Phase 16D spec §6 统一） ----------
+     大卡片 12 · 小卡片 10 · 按钮/输入 8 · 更小组件 4 · 胶囊 999 */
   --radius-small: 4px;
-  --radius-control: 6px;
+  --radius-control: 8px;
   --radius-medium: 8px;
-  --radius-large: 10px;
+  --radius-large: 12px;         /* 大卡片 */
+  --radius-card-sm: 10px;       /* 小卡片（gpu mini / chip 类） */
+  --radius-pill: 999px;
 
-  /* ---------- Spacing（spec §59：只用 4/8/12/16/20/24/32） ---------- */
+  /* ---------- 间距（Phase 16D spec §7 只用 4/8/12/16/20/24/32/40） ---------- */
   --spacing-xs: 4px;
   --spacing-sm: 8px;
   --spacing-md: 12px;
@@ -42,85 +50,108 @@
   --spacing-xl: 20px;
   --spacing-2xl: 24px;
   --spacing-3xl: 32px;
+  --spacing-4xl: 40px;
 
-  /* ---------- Motion（spec §27/§77：极轻，100-150ms） ---------- */
+  /* 布局级节奏（Phase 16D spec §30 统一视觉节奏） */
+  --section-gap: 24px;      /* 页头→首分区 / 分区间距 */
+  --section-head-gap: 12px; /* Section Header → Body */
+  --card-pad: 16px;         /* Card 内 padding（16-20） */
+  --card-pad-lg: 20px;
+  --card-row-gap: 12px;     /* Card 内行间距 */
+
+  /* ---------- 全局布局（Phase 16D spec §8） ---------- */
+  --nav-width: 212px;
+  --content-max: 1520px;
+  --content-max-settings: 1280px;
+  --content-max-about: 900px;
+  --page-pad: 32px;         /* 页面左右 padding（24-32） */
+  --page-pad-narrow: 24px;
+
+  /* ---------- Motion（极轻，100-150ms） ---------- */
   --transition-fast: 100ms ease;
   --transition-normal: 150ms ease;
-  --shadow-card: 0 1.6px 3.6px rgba(0, 0, 0, 0.30), 0 0.4px 0.9px rgba(0, 0, 0, 0.26);
-  --shadow-pop: 0 8px 18px rgba(0, 0, 0, 0.35), 0 2px 5px rgba(0, 0, 0, 0.30);
 }
 
-/* ============ DARK（Windows 11 深色，spec §4：深灰底/稍浅 layer/更浅 card） ============ */
+/* ============ DARK（Windows 11 深色，spec §4） ============
+   App Background #202124 · Sidebar 更暗 · Main surface #26282B
+   Card #2B2D31 · Elevated 比 Card 略亮 · Border 0.07-0.10 */
 :root,
 [data-theme="dark"] {
-  /* 基础底：半透明让 native Mica 纹理透出（Mica 不可用时视觉仍一致） */
-  --bg-base: rgba(32, 32, 32, 0.93);
-  --bg-layer: #272727;
-  --bg-card: #2d2d2d;
-  --bg-card-hover: #353535;
-  --bg-elevated: #323232;
-  --bg-input: #202020;
-  --bg-input-hover: #252525;
-  --bg-subtle-hover: rgba(255, 255, 255, 0.06);
-  --bg-subtle-active: rgba(255, 255, 255, 0.09);
+  --bg-base: rgba(32, 33, 36, 0.96);   /* App / 主内容背景 ≈ #202124（透出 Mica） */
+  --bg-layer: #1b1c1f;                 /* Sidebar（比主内容略暗） */
+  --bg-card: #2b2d31;                  /* Card Surface */
+  --bg-card-hover: #33363b;
+  --bg-elevated: #313439;             /* 弹层 / 表头 / tooltip（比 card 略亮） */
+  --bg-input: #212327;
+  --bg-input-hover: #272a2f;
+  --bg-subtle: rgba(255, 255, 255, 0.03);
+  --bg-subtle-hover: rgba(255, 255, 255, 0.05);
+  --bg-subtle-active: rgba(255, 255, 255, 0.08);
 
   --border-subtle: rgba(255, 255, 255, 0.08);
-  --border-default: rgba(255, 255, 255, 0.14);
-  --border-strong: rgba(255, 255, 255, 0.24);
+  --border-default: rgba(255, 255, 255, 0.13);
+  --border-strong: rgba(255, 255, 255, 0.22);
 
-  --text-primary: #ffffff;
-  --text-secondary: rgba(255, 255, 255, 0.70);
-  --text-disabled: rgba(255, 255, 255, 0.40);
+  --text-primary: #f3f4f6;             /* 接近白但不刺眼 */
+  --text-secondary: rgba(255, 255, 255, 0.64);
+  --text-muted: rgba(255, 255, 255, 0.45);
+  --text-disabled: rgba(255, 255, 255, 0.36);
 
-  /* Accent 只用于选中/按钮/focus/active（spec §5）：Win11 深色 accent */
-  --accent: #60cdff;
-  --accent-hover: #8adcff;
-  --accent-pressed: #4db8ec;
-  --accent-contrast: #000000;
-  --accent-subtle: rgba(96, 205, 255, 0.14);
-  --accent-subtle-border: rgba(96, 205, 255, 0.35);
+  /* Accent：Windows 风格蓝，克制 */
+  --accent: #4cc2ff;
+  --accent-hover: #6fd0ff;
+  --accent-pressed: #33a9e8;
+  --accent-contrast: #00131f;
+  --accent-subtle: rgba(76, 194, 255, 0.13);
+  --accent-subtle-border: rgba(76, 194, 255, 0.34);
 
-  --success: #6cbe45;
-  --warning: #f7b955;
-  --error: #ff99a4;
-  --info: #60cdff;
+  --success: #5fb96a;
+  --warning: #f2b354;
+  --error: #ff8f98;
+  --info: #4cc2ff;
 
-  --success-subtle: rgba(108, 190, 69, 0.14);
-  --warning-subtle: rgba(247, 185, 85, 0.14);
-  --error-subtle: rgba(255, 153, 164, 0.13);
-  --info-subtle: rgba(96, 205, 255, 0.12);
+  --success-subtle: rgba(95, 185, 106, 0.14);
+  --warning-subtle: rgba(242, 179, 84, 0.14);
+  --error-subtle: rgba(255, 143, 152, 0.12);
+  --error-subtle-border: rgba(255, 143, 152, 0.32);
+  --info-subtle: rgba(76, 194, 255, 0.12);
 
   --overlay-scrim: rgba(0, 0, 0, 0.55);
-  --scrollbar-thumb: rgba(255, 255, 255, 0.25);
-  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.38);
+  --scrollbar-thumb: rgba(255, 255, 255, 0.22);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.34);
+
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.22);
+  --shadow-pop: 0 10px 24px rgba(0, 0, 0, 0.42), 0 2px 6px rgba(0, 0, 0, 0.32);
 }
 
 /* ============ LIGHT（Windows 11 浅色） ============ */
 [data-theme="light"] {
-  --bg-base: rgba(243, 243, 243, 0.95);
-  --bg-layer: #f9f9f9;
-  --bg-card: #fbfbfb;
-  --bg-card-hover: #f5f5f5;
-  --bg-elevated: #f3f3f3;
-  --bg-input: #f5f5f5;
-  --bg-input-hover: #eeeeee;
+  --bg-base: #f4f4f4;
+  --bg-layer: #eaeaea;                 /* Sidebar 略暗于主内容 */
+  --bg-card: #fdfdfd;
+  --bg-card-hover: #f6f6f6;
+  --bg-elevated: #f0f0f0;
+  --bg-input: #f4f4f4;
+  --bg-input-hover: #ececec;
+  --bg-subtle: rgba(0, 0, 0, 0.02);
   --bg-subtle-hover: rgba(0, 0, 0, 0.05);
   --bg-subtle-active: rgba(0, 0, 0, 0.08);
 
-  --border-subtle: #e3e3e3;
-  --border-default: #d1d1d1;
-  --border-strong: #a1a1a1;
+  --border-subtle: #e4e4e4;
+  --border-default: #d2d2d2;
+  --border-strong: #a6a6a6;
 
   --text-primary: #1b1b1b;
-  --text-secondary: #5d5d5d;
-  --text-disabled: #8a8a8a;
+  --text-secondary: #565656;
+  --text-muted: #8a8a8a;
+  --text-disabled: #9a9a9a;
 
   --accent: #005fb8;
   --accent-hover: #0067c0;
   --accent-pressed: #00529d;
   --accent-contrast: #ffffff;
-  --accent-subtle: rgba(0, 103, 192, 0.12);
-  --accent-subtle-border: rgba(0, 103, 192, 0.35);
+  --accent-subtle: rgba(0, 103, 192, 0.11);
+  --accent-subtle-border: rgba(0, 103, 192, 0.34);
 
   --success: #0f7b0f;
   --warning: #9d5d00;
@@ -130,12 +161,13 @@
   --success-subtle: rgba(15, 123, 15, 0.12);
   --warning-subtle: rgba(157, 93, 0, 0.13);
   --error-subtle: rgba(196, 43, 28, 0.10);
+  --error-subtle-border: rgba(196, 43, 28, 0.30);
   --info-subtle: rgba(0, 95, 184, 0.10);
 
   --overlay-scrim: rgba(0, 0, 0, 0.40);
-  --scrollbar-thumb: rgba(0, 0, 0, 0.28);
-  --scrollbar-thumb-hover: rgba(0, 0, 0, 0.42);
+  --scrollbar-thumb: rgba(0, 0, 0, 0.26);
+  --scrollbar-thumb-hover: rgba(0, 0, 0, 0.40);
 
-  --shadow-card: 0 1.6px 3.6px rgba(0, 0, 0, 0.10), 0 0.4px 0.9px rgba(0, 0, 0, 0.08);
-  --shadow-pop: 0 8px 18px rgba(0, 0, 0, 0.22), 0 2px 5px rgba(0, 0, 0, 0.16);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.08);
+  --shadow-pop: 0 10px 24px rgba(0, 0, 0, 0.20), 0 2px 6px rgba(0, 0, 0, 0.14);
 }

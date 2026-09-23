@@ -61,14 +61,16 @@
 
       <!-- ================= Overview（Phase 16B §3：现在状态摘要；
            无大图/无趋势/无累计——那些属于用量与历史页） ================= -->
-      <section class="page page-wide" id="page-overview">
+      <section class="page" id="page-overview">
         <div class="page-header">
-          <h1 class="page-title">概览</h1>
-          <p class="page-subtitle">监控 llama.cpp 用量与运行状态。</p>
+          <div class="ph-head">
+            <h1 class="page-title">概览</h1>
+            <p class="page-subtitle">10 秒看懂：服务是否正常、今天用了多少、当前性能、GPU 与数据健康。</p>
+          </div>
         </div>
 
-        <!-- 状态条（spec §7：左=在线+地址；右=最后更新为主、倒计时为次要） -->
-        <div class="status-strip">
+        <!-- 2. 服务器状态（§18.2：横向状态卡，与卡片同构） -->
+        <div class="status-strip card">
           <div class="ss-left">
             <span class="ss-main">
               <span class="ss-name">llama.cpp
@@ -83,217 +85,195 @@
           </div>
         </div>
 
-        <!-- possible_token_loss：Win11 InfoBar（spec §7，不整页变红） -->
-        <div id="ovTokenLossBar" style="margin-bottom:var(--spacing-lg)"></div>
+        <!-- possible_token_loss：Win11 InfoBar（不整页变红） -->
+        <div id="ovTokenLossBar" class="ov-token-loss"></div>
 
-        <!-- 今日用量（spec §4：摘要级数字） -->
-        <div class="section-label">今日用量</div>
-        <div class="today-card">
-          <div class="today-hero">
-            <div>
-              <div class="hero-num" id="ovTodayLogical" title="">--</div>
-              <div class="hero-label">逻辑 Token <span class="info-tip-slot" data-tip="提示 + 缓存提示 + 生成输出。"></span></div>
-            </div>
-            <div>
-              <div class="hero-num" id="ovTodayCompute" title="">--</div>
-              <div class="hero-label">计算 Token <span class="info-tip-slot" data-tip="新提示 + 生成输出。"></span></div>
-            </div>
+        <!-- 3. 今日用量（§18.3：一张完整大卡，不拆碎；动作在 Section Header 右侧） -->
+        <div class="section">
+          <div class="section-header">
+            <span class="sh-title">今日用量</span>
+            <span class="sh-actions"><a class="link" href="#" data-goto="usage">查看用量明细 <span class="arr">→</span></a></span>
           </div>
-          <div class="today-divider"></div>
-          <div class="today-breakdown">
-            <div><div class="tb-label">提示</div><div class="tb-value" id="ovTodayPrompt">--</div></div>
-            <div><div class="tb-label">缓存</div><div class="tb-value" id="ovTodayCached">--</div></div>
-            <div><div class="tb-label">输出</div><div class="tb-value" id="ovTodayOutput">--</div></div>
-          </div>
-          <div class="card-section-gap" style="padding-top:var(--spacing-md);border-top:1px solid var(--border-subtle)">
-            <a class="link" href="#" data-goto="usage">查看用量历史与每日明细 <span class="arr">→</span></a>
+          <div class="section-body">
+            <div class="card today-card">
+              <div class="today-hero">
+                <div>
+                  <div class="hero-num" id="ovTodayLogical" title="">--</div>
+                  <div class="hero-label">逻辑 Token <span class="info-tip-slot" data-tip="提示 + 缓存提示 + 生成输出。"></span></div>
+                </div>
+                <div>
+                  <div class="hero-num" id="ovTodayCompute" title="">--</div>
+                  <div class="hero-label">计算 Token <span class="info-tip-slot" data-tip="新提示 + 生成输出。"></span></div>
+                </div>
+              </div>
+              <div class="today-divider"></div>
+              <div class="today-breakdown">
+                <div><div class="tb-label">提示</div><div class="tb-value" id="ovTodayPrompt">--</div></div>
+                <div><div class="tb-label">缓存</div><div class="tb-value" id="ovTodayCached">--</div></div>
+                <div><div class="tb-label">输出</div><div class="tb-value" id="ovTodayOutput">--</div></div>
+              </div>
+            </div>
           </div>
         </div>
 
-        <!-- 当前性能与运行（spec §5） -->
-        <div class="section-label">当前性能与运行</div>
-        <div class="ov-perf-grid">
-          <div class="perf-card">
-            <div class="perf-card-title">Token 速率</div>
-            <div class="pc-row"><span class="pc-key">提示处理</span><span class="pc-value" id="ovPromptTps">--</span></div>
-            <div class="pc-row"><span class="pc-key">解码</span><span class="pc-value" id="ovDecodeTps">--</span></div>
-            <div class="pc-row"><span class="pc-key">MTP 接受率</span><span class="pc-value" id="ovMtpRate">--</span></div>
+        <!-- 4. 当前性能与运行（§18.4：两张并排卡；动作归位 Section Header 右侧） -->
+        <div class="section">
+          <div class="section-header">
+            <span class="sh-title">当前性能与运行</span>
+            <span class="sh-actions"><a class="link" href="#" data-goto="performance">查看性能详情 <span class="arr">→</span></a></span>
           </div>
-          <div class="perf-card">
-            <div class="perf-card-title">运行状态</div>
-            <div class="pc-row"><span class="pc-key">处理中 / 排队</span><span class="pc-value" id="ovRequests">--</span></div>
-            <div class="pc-row"><span class="pc-key">上下文上限</span><span class="pc-value" id="ovContext">--</span></div>
-            <div class="pc-row"><span class="pc-key">KV 缓存</span><span class="pc-value" id="ovKvCache">--</span></div>
+          <div class="section-body ov-perf-grid">
+            <div class="card perf-card">
+              <div class="card-title">Token 速率</div>
+              <div class="pc-row"><span class="pc-key">提示处理</span><span class="pc-value" id="ovPromptTps">--</span></div>
+              <div class="pc-row"><span class="pc-key">解码</span><span class="pc-value" id="ovDecodeTps">--</span></div>
+              <div class="pc-row"><span class="pc-key">MTP 接受率</span><span class="pc-value" id="ovMtpRate">--</span></div>
+            </div>
+            <div class="card perf-card">
+              <div class="card-title">运行状态</div>
+              <div class="pc-row"><span class="pc-key">处理中 / 排队</span><span class="pc-value" id="ovRequests">--</span></div>
+              <div class="pc-row"><span class="pc-key">上下文上限</span><span class="pc-value" id="ovContext">--</span></div>
+              <div class="pc-row"><span class="pc-key">KV 缓存</span><span class="pc-value" id="ovKvCache">--</span></div>
+            </div>
           </div>
-        </div>
-        <div class="card-section-gap">
-          <a class="link" href="#" data-goto="performance">查看吞吐量趋势与 MTP 详情 <span class="arr">→</span></a>
         </div>
 
-        <!-- GPU 摘要（spec §11：迷你卡 4 指标 + 详情链接） -->
-        <div class="section-label">GPU</div>
-        <div class="gpu-mini-head">
-          <span class="gm-title">
-            <span id="ovGpuState" class="status-badge paused"><span class="dot"></span><span class="status-text">--</span></span>
-            <span class="ss-hint" id="ovGpuLine" style="margin-left:var(--spacing-sm)">--</span>
-          </span>
-          <a class="link" id="ovGpuLink" href="#" data-goto="gpu">查看 GPU 详情 <span class="arr">→</span></a>
-        </div>
-        <div class="gpu-mini-grid" id="ovGpuMini"></div>
-
-        <!-- 数据质量（spec §6） -->
-        <div class="section-label">数据质量</div>
-        <div class="card page-section">
-          <div class="stat-grid">
-            <div class="stat">
-              <div class="stat-label">今日监控覆盖率</div>
-              <div class="stat-value mid" id="dqCoverage">--</div>
-              <div class="stat-hint">有效采样 / 应有采样</div>
-            </div>
-            <div class="stat">
-              <div class="stat-label">今日缺口</div>
-              <div class="stat-value mid" id="dqGapsToday">--</div>
-              <div class="stat-hint" id="dqLossToday"></div>
-            </div>
-            <div class="stat">
-              <div class="stat-label">最近有效采样</div>
-              <div class="stat-value mid" id="dqLastSample">--</div>
-              <div class="stat-hint" id="dqOpenGap"></div>
-            </div>
-            <div class="stat">
-              <div class="stat-label">数据库状态</div>
-              <div class="stat-value mid" id="dqDb">--</div>
-              <div class="stat-hint" id="dqDbHint"></div>
-            </div>
+        <!-- 5. GPU（§18.5：摘要行 + mini cards；动作归位 Section Header 右侧） -->
+        <div class="section">
+          <div class="section-header">
+            <span class="sh-title">GPU
+              <span class="sh-sub"><span id="ovGpuState" class="status-badge paused"><span class="dot"></span><span class="status-text">--</span></span><span class="ss-hint" id="ovGpuLine">--</span></span>
+            </span>
+            <span class="sh-actions"><a class="link" id="ovGpuLink" href="#" data-goto="gpu">查看 GPU 详情 <span class="arr">→</span></a></span>
           </div>
-          <div class="card-section-gap">
-            <a class="link" id="dqLink" href="#" data-goto="history">查看历史与缺口详情 <span class="arr">→</span></a>
+          <div class="section-body">
+            <div class="gpu-mini-grid" id="ovGpuMini"></div>
+          </div>
+        </div>
+
+        <!-- 6. 数据质量（§18.6：横向 summary card；动作归位 Section Header 右侧） -->
+        <div class="section">
+          <div class="section-header">
+            <span class="sh-title">数据质量</span>
+            <span class="sh-actions"><a class="link" id="dqLink" href="#" data-goto="history">查看历史与缺口详情 <span class="arr">→</span></a></span>
+          </div>
+          <div class="section-body">
+            <div class="card dq-summary">
+              <div class="stat-grid">
+                <div class="stat">
+                  <div class="stat-label">今日监控覆盖率</div>
+                  <div class="stat-value mid" id="dqCoverage">--</div>
+                  <div class="stat-hint">有效采样 / 应有采样</div>
+                </div>
+                <div class="stat">
+                  <div class="stat-label">今日缺口</div>
+                  <div class="stat-value mid" id="dqGapsToday">--</div>
+                  <div class="stat-hint" id="dqLossToday"></div>
+                </div>
+                <div class="stat">
+                  <div class="stat-label">最近有效采样</div>
+                  <div class="stat-value mid" id="dqLastSample">--</div>
+                  <div class="stat-hint" id="dqOpenGap"></div>
+                </div>
+                <div class="stat">
+                  <div class="stat-label">数据库状态</div>
+                  <div class="stat-value mid" id="dqDb">--</div>
+                  <div class="stat-hint" id="dqDbHint"></div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </section>
 
-      <!-- ================= Usage（spec §133） ================= -->
-      <section class="page page-wide" id="page-usage">
-        <div class="page-header" style="display:flex;align-items:flex-start;justify-content:space-between;gap:var(--spacing-lg);flex-wrap:wrap">
-          <div>
+      <!-- ================= Usage（Phase 16D §19） ================= -->
+      <section class="page" id="page-usage">
+        <div class="page-header">
+          <div class="ph-head">
             <h1 class="page-title">用量</h1>
-            <p class="page-subtitle">Token 用量历史。时间范围同时驱动下方摘要、图表与明细表。</p>
+            <p class="page-subtitle">所选时间范围的 Token 用量：汇总、趋势与每日明细。</p>
           </div>
-          <div class="seg" id="usageRange" role="group" aria-label="时间范围"></div>
+          <div class="ph-actions"><div class="seg" id="usageRange" role="group" aria-label="时间范围"></div></div>
         </div>
 
         <!-- 范围摘要卡（Phase 16C §3/USAGE-001：卡片恒为所选范围汇总；
              标题即具体范围名（今日/近 7 天/本月（2026-09）/全部…），
              不再用"累计"徽标——30 天汇总是范围汇总，不是全生命周期累计） -->
-        <div class="card page-section">
-          <div class="card-title">
-            <span id="sumRangeLabel">所选范围</span>
+        <div class="section">
+          <div class="section-header">
+            <span class="sh-title" id="sumRangeLabel">所选范围</span>
+            <span class="sh-actions"><span class="range-tag">所选范围</span></span>
           </div>
-          <div class="stat" style="margin-bottom:var(--spacing-md)">
-            <div class="stat-label">逻辑 Token <span class="info-tip-slot" data-tip="提示 + 缓存提示 + 生成输出。"></span></div>
-            <div class="stat-value" id="sumRangeLogical" title="">--</div>
-          </div>
-          <div class="stat">
-            <div class="stat-label">计算 Token <span class="info-tip-slot" data-tip="新提示 + 生成输出。"></span></div>
-            <div class="stat-value mid" id="sumRangeCompute">--</div>
-          </div>
-          <div class="card-section-gap">
-            <div class="stat-grid">
-              <div class="stat"><div class="stat-label">提示</div><div class="stat-value small" id="sumRangePrompt">--</div></div>
-              <div class="stat"><div class="stat-label">缓存</div><div class="stat-value small" id="sumRangeCached">--</div></div>
-              <div class="stat"><div class="stat-label">输出</div><div class="stat-value small" id="sumRangeOutput">--</div></div>
+          <div class="section-body">
+            <div class="card">
+              <div class="stat" style="margin-bottom:var(--spacing-md)">
+                <div class="stat-label">逻辑 Token <span class="info-tip-slot" data-tip="提示 + 缓存提示 + 生成输出。"></span></div>
+                <div class="stat-value" id="sumRangeLogical" title="">--</div>
+              </div>
               <div class="stat">
-                <div class="stat-label">缓存率 <span class="info-tip-slot" data-tip="缓存提示 / (新提示 + 缓存提示)。"></span></div>
-                <div class="stat-value small" id="sumCacheRatio">--</div>
+                <div class="stat-label">计算 Token <span class="info-tip-slot" data-tip="新提示 + 生成输出。"></span></div>
+                <div class="stat-value mid" id="sumRangeCompute">--</div>
+              </div>
+              <div class="card-section-gap">
+                <div class="stat-grid">
+                  <div class="stat"><div class="stat-label">提示</div><div class="stat-value small" id="sumRangePrompt">--</div></div>
+                  <div class="stat"><div class="stat-label">缓存</div><div class="stat-value small" id="sumRangeCached">--</div></div>
+                  <div class="stat"><div class="stat-label">输出</div><div class="stat-value small" id="sumRangeOutput">--</div></div>
+                  <div class="stat">
+                    <div class="stat-label">缓存率 <span class="info-tip-slot" data-tip="缓存提示 / (新提示 + 缓存提示)。"></span></div>
+                    <div class="stat-value small" id="sumCacheRatio">--</div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
         </div>
 
-        <div class="card page-section chart-box" id="chartUsageBox">
-          <div class="card-title">每日 Token 用量 <span class="card-sub">提示 / 缓存 / 输出（堆叠）</span></div>
-          <div class="chart" id="chartUsage" data-chart="chartUsage"></div>
-          <div class="chart-empty-overlay"></div>
-        </div>
-
-        <div class="usage-cards-deprecated" hidden>
-          <div class="card">
-            <div class="card-title">今日</div>
-            <div class="stat" style="margin-bottom:var(--spacing-md)">
-              <div class="stat-label">逻辑 Token</div>
-              <div class="stat-value" id="sumTodayLogical" title="">--</div>
-            </div>
-            <div class="stat">
-              <div class="stat-label">计算 Token</div>
-              <div class="stat-value mid" id="sumTodayCompute">--</div>
-            </div>
-            <div class="card-section-gap">
-              <div class="stat-grid">
-                <div class="stat"><div class="stat-label">提示</div><div class="stat-value small" id="sumTodayPrompt">--</div></div>
-                <div class="stat"><div class="stat-label">缓存</div><div class="stat-value small" id="sumTodayCached">--</div></div>
-                <div class="stat"><div class="stat-label">输出</div><div class="stat-value small" id="sumTodayOutput">--</div></div>
-              </div>
-            </div>
+        <div class="section">
+          <div class="section-header">
+            <span class="sh-title">每日 Token 用量</span>
+            <span class="sh-actions"><span class="sh-sub">提示 / 缓存 / 输出（堆叠）</span></span>
           </div>
-          <div class="card">
-            <div class="card-title">本月</div>
-            <div class="stat" style="margin-bottom:var(--spacing-md)">
-              <div class="stat-label">逻辑 Token</div>
-              <div class="stat-value" id="sumMonthLogical">--</div>
-            </div>
-            <div class="stat">
-              <div class="stat-label">计算 Token</div>
-              <div class="stat-value mid" id="sumMonthCompute">--</div>
-            </div>
-          </div>
-          <div class="card">
-            <div class="card-title">总计</div>
-            <div class="stat" style="margin-bottom:var(--spacing-md)">
-              <div class="stat-label">逻辑 Token</div>
-              <div class="stat-value" id="sumTotalLogical" title="">--</div>
-            </div>
-            <div class="stat">
-              <div class="stat-label">计算 Token</div>
-              <div class="stat-value mid" id="sumTotalCompute">--</div>
-            </div>
-            <div class="card-section-gap">
-              <div class="stat-grid">
-                <div class="stat"><div class="stat-label">提示</div><div class="stat-value small" id="sumTotalPrompt">--</div></div>
-                <div class="stat"><div class="stat-label">缓存</div><div class="stat-value small" id="sumTotalCached">--</div></div>
-                <div class="stat"><div class="stat-label">输出</div><div class="stat-value small" id="sumTotalOutput">--</div></div>
-              </div>
-              <div class="stat" style="margin-top:var(--spacing-sm)">
-                <div class="stat-label">缓存率 <span class="info-tip-slot" data-tip="缓存提示 / (新提示 + 缓存提示)。"></span></div>
-                <div class="stat-value small" id="sumCacheRatio">--</div>
-              </div>
+          <div class="section-body">
+            <div class="card chart-box" id="chartUsageBox">
+              <div class="chart" id="chartUsage" data-chart="chartUsage"></div>
+              <div class="chart-empty-overlay"></div>
             </div>
           </div>
         </div>
 
-        <div class="card page-section">
-          <div class="card-title">每日明细 <span class="card-sub">覆盖率与缺口（缺口详情见历史页）</span></div>
-          <div class="table-wrap">
-            <table class="table-full">
-              <thead><tr>
-                <th>日期</th><th>提示</th><th>缓存</th><th>输出</th>
-                <th>计算</th><th>逻辑</th><th>缓存率</th><th>覆盖率</th><th>缺口</th>
-              </tr></thead>
-              <tbody id="dailyTbody"><tr><td colspan="9" class="na">暂无数据。</td></tr></tbody>
-            </table>
+        <div class="section">
+          <div class="section-header">
+            <span class="sh-title">每日明细</span>
+            <span class="sh-actions"><span class="sh-sub">覆盖率与缺口（缺口详情见历史页）</span></span>
+          </div>
+          <div class="section-body">
+            <div class="card">
+              <div class="table-wrap">
+                <table class="table-full">
+                  <thead><tr>
+                    <th>日期</th><th>提示</th><th>缓存</th><th>输出</th>
+                    <th>计算</th><th>逻辑</th><th>缓存率</th><th>覆盖率</th><th>缺口</th>
+                  </tr></thead>
+                  <tbody id="dailyTbody"><tr><td colspan="9" class="na">暂无数据。</td></tr></tbody>
+                </table>
+              </div>
+            </div>
           </div>
         </div>
       </section>
 
-      <!-- ================= Performance（Phase 16B §14：指标条一行，TPS/吞吐/MTP 分卡） ================= -->
-      <section class="page page-wide" id="page-performance">
+      <!-- ================= Performance（Phase 16D §20） ================= -->
+      <section class="page" id="page-performance">
         <div class="page-header">
-          <h1 class="page-title">性能</h1>
-          <p class="page-subtitle">推理速度、请求与 MTP（投机解码）活动。</p>
+          <div class="ph-head">
+            <h1 class="page-title">性能</h1>
+            <p class="page-subtitle">实时生成性能、服务器运行时状态与 MTP（投机解码）运行效果。</p>
+          </div>
         </div>
 
-        <!-- 即时指标条（Phase 16C §5：Prompt TPS/Decode TPS/处理中/排队/Busy Slots；
-             MTP 接受率不再重复——下方 MTP 卡已有完整 Summary） -->
-        <div class="metric-strip">
+        <!-- 2. 实时指标条（§20.2：横向 5 项，无单独 Section 动作） -->
+        <div class="metric-strip card">
           <div class="ms-item">
             <div class="ms-key">Prompt TPS</div>
             <div class="ms-value" id="perfPromptTps">--</div>
@@ -316,61 +296,83 @@
           </div>
         </div>
 
-        <div class="card page-section chart-box" id="chartTpsBox">
-          <div class="card-title">Token 吞吐 <span class="card-sub">最近 60 分钟</span></div>
-          <div class="chart" id="chartTps" data-chart="chartTps"></div>
-          <div class="chart-empty-overlay"></div>
-        </div>
-
-        <div class="card page-section">
-          <div class="card-title">服务器运行时</div>
-          <div class="stat-grid">
-            <div class="stat"><div class="stat-label">处理中</div><div class="stat-value mid" id="rtProcessing">--</div></div>
-            <div class="stat"><div class="stat-label">排队（延迟）</div><div class="stat-value mid" id="rtQueued">--</div></div>
-            <div class="stat"><div class="stat-label">忙碌解码槽</div><div class="stat-value mid" id="rtBusySlots">--</div></div>
-            <div class="stat">
-              <div class="stat-label">最大 Token 记录 <span class="info-tip-slot" data-tip="当前活动 Token 记录数（n_tokens_max），不是上下文使用量。"></span></div>
-              <div class="stat-value mid" id="rtTokenMax">--</div>
-            </div>
-            <div class="stat"><div class="stat-label">KV 缓存使用率</div><div class="stat-value mid" id="rtKvCache">--</div></div>
-            <div class="stat">
-              <div class="stat-label">上下文上限 <span class="info-tip-slot" data-tip="服务器配置的上下文长度。"></span></div>
-              <div class="stat-value mid" id="rtContextMax">--</div>
+        <!-- 3. Token 吞吐（§20.3：无数据时统一 Empty State，不留空坐标轴） -->
+        <div class="section">
+          <div class="section-header">
+            <span class="sh-title">Token 吞吐</span>
+            <span class="sh-actions"><span class="sh-sub">最近 60 分钟</span></span>
+          </div>
+          <div class="section-body">
+            <div class="card chart-box" id="chartTpsBox">
+              <div class="chart" id="chartTps" data-chart="chartTps"></div>
+              <div class="chart-empty-overlay"></div>
             </div>
           </div>
         </div>
 
-        <div class="card page-section">
-          <div class="card-title">MTP / 投机解码 <span class="card-sub">今日</span></div>
-          <div class="stat-grid">
-            <div class="stat">
-              <div class="stat-label">接受率 <span class="info-tip-slot" data-tip="已接受草稿 Token / 草稿 Token。"></span></div>
-              <div class="stat-value mid" id="mtpAcceptRate">--</div>
+        <!-- 4. 服务器运行时（§20.4：6 项，2~3 列） -->
+        <div class="section">
+          <div class="section-header">
+            <span class="sh-title">服务器运行时</span>
+          </div>
+          <div class="section-body">
+            <div class="card">
+              <div class="stat-grid">
+                <div class="stat"><div class="stat-label">处理中</div><div class="stat-value mid" id="rtProcessing">--</div></div>
+                <div class="stat"><div class="stat-label">排队（延迟）</div><div class="stat-value mid" id="rtQueued">--</div></div>
+                <div class="stat"><div class="stat-label">忙碌解码槽</div><div class="stat-value mid" id="rtBusySlots">--</div></div>
+                <div class="stat">
+                  <div class="stat-label">最大 Token 记录 <span class="info-tip-slot" data-tip="当前活动 Token 记录数（n_tokens_max），不是上下文使用量。"></span></div>
+                  <div class="stat-value mid" id="rtTokenMax">--</div>
+                </div>
+                <div class="stat"><div class="stat-label">KV 缓存使用率</div><div class="stat-value mid" id="rtKvCache">--</div></div>
+                <div class="stat">
+                  <div class="stat-label">上下文上限 <span class="info-tip-slot" data-tip="服务器配置的上下文长度。"></span></div>
+                  <div class="stat-value mid" id="rtContextMax">--</div>
+                </div>
+              </div>
             </div>
-            <div class="stat"><div class="stat-label">草稿 Token</div><div class="stat-value mid" id="mtpDraft">--</div></div>
-            <div class="stat"><div class="stat-label">已接受 Token</div><div class="stat-value mid" id="mtpAccepted">--</div></div>
-            <div class="stat"><div class="stat-label">草稿序列</div><div class="stat-value mid" id="mtpSeqs">--</div></div>
           </div>
         </div>
 
-        <div class="grid cols-2 page-section">
-          <div class="card chart-box" id="chartMtpBox">
-            <div class="card-title">接受率趋势 <span class="card-sub">按天</span></div>
-            <div class="chart" id="chartMtp" data-chart="chartMtp"></div>
-            <div class="chart-empty-overlay"></div>
+        <!-- 5. MTP / 投机解码（§20.5：summary metrics + 两张并排图，作为一个整体） -->
+        <div class="section">
+          <div class="section-header">
+            <span class="sh-title">MTP / 投机解码</span>
+            <span class="sh-actions"><span class="sh-sub">今日</span></span>
           </div>
-          <div class="card chart-box" id="chartMtpPosBox">
-            <div class="card-title">各草稿位置的已接受 Token <span class="card-sub">今日，按草稿位置</span></div>
-            <div class="chart" id="chartMtpPos" data-chart="chartMtpPos"></div>
-            <div class="chart-empty-overlay"></div>
+          <div class="section-body mtp-group">
+            <div class="card mtp-summary">
+              <div class="stat-grid">
+                <div class="stat">
+                  <div class="stat-label">接受率 <span class="info-tip-slot" data-tip="已接受草稿 Token / 草稿 Token。"></span></div>
+                  <div class="stat-value mid" id="mtpAcceptRate">--</div>
+                </div>
+                <div class="stat"><div class="stat-label">草稿 Token</div><div class="stat-value mid" id="mtpDraft">--</div></div>
+                <div class="stat"><div class="stat-label">已接受 Token</div><div class="stat-value mid" id="mtpAccepted">--</div></div>
+                <div class="stat"><div class="stat-label">草稿序列</div><div class="stat-value mid" id="mtpSeqs">--</div></div>
+              </div>
+            </div>
+            <div class="grid cols-2">
+              <div class="card chart-box" id="chartMtpBox">
+                <div class="card-title">接受率趋势 <span class="card-sub">按天</span></div>
+                <div class="chart" id="chartMtp" data-chart="chartMtp"></div>
+                <div class="chart-empty-overlay"></div>
+              </div>
+              <div class="card chart-box" id="chartMtpPosBox">
+                <div class="card-title">各草稿位置的已接受 Token <span class="card-sub">今日，按草稿位置</span></div>
+                <div class="chart" id="chartMtpPos" data-chart="chartMtpPos"></div>
+                <div class="chart-empty-overlay"></div>
+              </div>
+            </div>
           </div>
         </div>
       </section>
 
-      <!-- ================= GPU（Phase 16B §15-§39：硬件页，大卡+历史图） ================= -->
-      <section class="page page-wide" id="page-gpu">
-        <div class="page-header" style="display:flex;align-items:flex-start;justify-content:space-between;gap:var(--spacing-lg);flex-wrap:wrap">
-          <div>
+      <!-- ================= GPU（Phase 16D §21） ================= -->
+      <section class="page" id="page-gpu">
+        <div class="page-header">
+          <div class="ph-head">
             <h1 class="page-title">GPU</h1>
             <p class="page-subtitle">
               NVIDIA GPU 利用率、显存、功耗与温度。
@@ -378,33 +380,53 @@
               <span class="stat-hint bad" id="gpuUnavailReason" style="display:none"></span>
             </p>
           </div>
-          <div class="seg" id="gpuRange" role="group" aria-label="GPU 历史范围"></div>
+          <div class="ph-actions"><div class="seg" id="gpuRange" role="group" aria-label="GPU 历史范围"></div></div>
         </div>
 
-        <!-- 当前状态大卡（320-400px 自适应网格；主 4 指标 + VRAM 进度条 + 次要指标） -->
-        <div class="gpu-grid page-section" id="gpuCards">
-          <div class="empty-state" style="grid-column:1/-1"><div class="empty-title">加载中</div></div>
+        <!-- 2. GPU 概览（§21.2：卡片网格；主 4 指标 + VRAM 进度条 + 次要指标，高度一致） -->
+        <div class="section">
+          <div class="section-header">
+            <span class="sh-title">GPU 概览</span>
+          </div>
+          <div class="section-body">
+            <div class="gpu-grid" id="gpuCards">
+              <div class="empty-state" style="grid-column:1/-1"><div class="empty-title">加载中</div></div>
+            </div>
+          </div>
         </div>
 
-        <!-- 历史工具行：GPU 过滤（☑ GPU 0 · T400）+ 范围 -->
+        <!-- 3. GPU 过滤器条（§21.3：图表区上方单独一行，统一 chip 风格） -->
         <div class="gpu-toolbar">
           <div class="seg" id="gpuPick" role="group" aria-label="GPU 过滤"></div>
           <span class="stat-hint" id="gpuRangeHint"></span>
         </div>
 
-        <div class="card page-section">
-          <div class="chart-box" id="chartGpuUtilBox">
-            <div class="card-title">利用率 &amp; 显存 <span class="card-sub">同一 GPU 同色，利用率实线 / 显存虚线（0-100%）</span></div>
-            <div class="chart" id="chartGpuUtil" data-chart="chartGpuUtil"></div>
-            <div class="chart-empty-overlay"></div>
+        <!-- 4. 利用率 & 显存（§21.4：全宽图表卡） -->
+        <div class="section">
+          <div class="section-header">
+            <span class="sh-title">利用率 &amp; 显存</span>
+            <span class="sh-actions"><span class="sh-sub">同一 GPU 同色，利用率实线 / 显存虚线（0-100%）</span></span>
           </div>
-          <div class="charts-2col" style="margin-top:var(--spacing-lg)">
-            <div class="chart-box" id="chartGpuPowerBox">
+          <div class="section-body">
+            <div class="card chart-box" id="chartGpuUtilBox">
+              <div class="chart" id="chartGpuUtil" data-chart="chartGpuUtil"></div>
+              <div class="chart-empty-overlay"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 5. 硬件趋势（§21.5：功耗 + 温度并排；不支持功耗的卡不建 series / 不显示图例） -->
+        <div class="section">
+          <div class="section-header">
+            <span class="sh-title">硬件趋势</span>
+          </div>
+          <div class="section-body charts-2col">
+            <div class="card chart-box" id="chartGpuPowerBox">
               <div class="card-title">功耗</div>
               <div class="chart" id="chartGpuPower" data-chart="chartGpuPower"></div>
               <div class="chart-empty-overlay"></div>
             </div>
-            <div class="chart-box" id="chartGpuTempBox">
+            <div class="card chart-box" id="chartGpuTempBox">
               <div class="card-title">温度</div>
               <div class="chart" id="chartGpuTemp" data-chart="chartGpuTemp"></div>
               <div class="chart-empty-overlay"></div>
@@ -412,84 +434,127 @@
           </div>
         </div>
 
-        <div class="card page-section">
-          <div class="card-title">能耗估算 <span class="card-sub">由采样功耗积分估算（/api/gpu/daily）</span></div>
-          <div id="gpuEnergy"></div>
+        <!-- 6. 能耗估算（§21.6：摘要卡；数据来源说明在 Section Header 右侧） -->
+        <div class="section">
+          <div class="section-header">
+            <span class="sh-title">能耗估算</span>
+            <span class="sh-actions"><span class="sh-sub">由采样功耗积分估算（/api/gpu/daily）</span></span>
+          </div>
+          <div class="section-body">
+            <div class="card">
+              <div id="gpuEnergy"></div>
+            </div>
+          </div>
         </div>
       </section>
 
-      <!-- ================= History（Phase 16B §43-§51：数据质量+缺口+事件+导出） ================= -->
-      <section class="page page-wide" id="page-history">
+      <!-- ================= History（Phase 16D §22） ================= -->
+      <section class="page" id="page-history">
         <div class="page-header">
-          <h1 class="page-title">历史</h1>
-          <p class="page-subtitle">监控覆盖率、已知数据缺口与监控事件。</p>
-        </div>
-
-        <div class="card page-section">
-          <div class="card-title">数据质量 <span class="card-sub">覆盖率为监控时间，非 Token 精度</span></div>
-          <div class="stat-grid">
-            <div class="stat">
-              <div class="stat-label">数据库</div>
-              <div class="stat-value small" id="hqDb">--</div>
-              <div class="stat-hint" id="hqDbHint"></div>
-            </div>
-            <div class="stat">
-              <div class="stat-label">今日覆盖率</div>
-              <div class="stat-value mid" id="hqCoverage">--</div>
-            </div>
-            <div class="stat">
-              <div class="stat-label">今日/总缺口</div>
-              <div class="stat-value mid" id="hqGaps">--</div>
-              <div class="stat-hint" id="hqLoss"></div>
-            </div>
-            <div class="stat">
-              <div class="stat-label">最后采样</div>
-              <div class="stat-value small" id="hqLastSample">--</div>
-            </div>
-          </div>
-          <div class="stat-hint bad" id="hqOpenGap" style="margin-top:var(--spacing-sm)"></div>
-        </div>
-
-        <div class="card page-section">
-          <div class="card-title">最近缺口 <span class="card-sub">已知监控缺口</span></div>
-          <div id="gapsEmpty" class="empty-state" hidden>
-            <div class="empty-icon" data-icon="check"></div>
-            <div class="empty-title">暂无已知监控缺口</div>
-            <div class="empty-desc">监控正常运行时，此列表保持为空。</div>
-          </div>
-          <div class="table-wrap" id="gapsTableWrap">
-            <table class="table-full">
-              <thead><tr>
-                <th>开始</th><th>结束</th><th>时长</th><th>来源</th><th>原因</th><th>Token 丢失？</th>
-              </tr></thead>
-              <tbody id="gapsTbody"></tbody>
-            </table>
+          <div class="ph-head">
+            <h1 class="page-title">历史</h1>
+            <p class="page-subtitle">数据质量、已知缺口、监控事件与导出。</p>
           </div>
         </div>
 
-        <div class="card page-section">
-          <div class="card-title">监控事件 <span class="card-sub">最近 30 条（来自应用事件日志）</span></div>
-          <div id="eventsEmpty" class="empty-state" hidden>
-            <div class="empty-title">暂无事件</div>
+        <!-- 2. 数据质量（§22.2：summary card） -->
+        <div class="section">
+          <div class="section-header">
+            <span class="sh-title">数据质量</span>
+            <span class="sh-actions"><span class="sh-sub">覆盖率为监控时间，非 Token 精度</span></span>
           </div>
-          <div class="events-list" id="eventsList"></div>
+          <div class="section-body">
+            <div class="card">
+              <div class="stat-grid">
+                <div class="stat">
+                  <div class="stat-label">数据库</div>
+                  <div class="stat-value small" id="hqDb">--</div>
+                  <div class="stat-hint" id="hqDbHint"></div>
+                </div>
+                <div class="stat">
+                  <div class="stat-label">今日覆盖率</div>
+                  <div class="stat-value mid" id="hqCoverage">--</div>
+                </div>
+                <div class="stat">
+                  <div class="stat-label">今日/总缺口</div>
+                  <div class="stat-value mid" id="hqGaps">--</div>
+                  <div class="stat-hint" id="hqLoss"></div>
+                </div>
+                <div class="stat">
+                  <div class="stat-label">最后采样</div>
+                  <div class="stat-value small" id="hqLastSample">--</div>
+                </div>
+              </div>
+              <div class="card-footer"><span class="stat-hint bad" id="hqOpenGap"></span></div>
+            </div>
+          </div>
         </div>
 
-        <div class="card page-section">
-          <div class="card-title">导出</div>
-          <div class="btn-row">
-            <button class="btn" id="btnExportCsv">导出每日 CSV</button>
-            <button class="btn" id="btnExportGpuCsv">导出 GPU 每日 CSV</button>
-            <span class="caption">文件将下载到浏览器默认下载目录。</span>
+        <!-- 3. 最近缺口（§22.3：有数据绝不显示空态） -->
+        <div class="section">
+          <div class="section-header">
+            <span class="sh-title">最近缺口</span>
+            <span class="sh-actions"><span class="sh-sub">已知监控缺口</span></span>
+          </div>
+          <div class="section-body">
+            <div class="card">
+              <div id="gapsEmpty" class="empty-state" hidden>
+                <div class="empty-icon" data-icon="check"></div>
+                <div class="empty-title">暂无已知监控缺口</div>
+                <div class="empty-desc">监控正常运行时，此列表保持为空。</div>
+              </div>
+              <div class="table-wrap" id="gapsTableWrap">
+                <table class="table-full">
+                  <thead><tr>
+                    <th>开始</th><th>结束</th><th>时长</th><th>来源</th><th>原因</th><th>Token 丢失？</th>
+                  </tr></thead>
+                  <tbody id="gapsTbody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 4. 监控事件（§22.4：人类可读化详情；无数据才显示空态） -->
+        <div class="section">
+          <div class="section-header">
+            <span class="sh-title">监控事件</span>
+            <span class="sh-actions"><span class="sh-sub">最近 30 条（来自应用事件日志）</span></span>
+          </div>
+          <div class="section-body">
+            <div class="card">
+              <div id="eventsEmpty" class="empty-state" hidden>
+                <div class="empty-title">暂无事件</div>
+              </div>
+              <div class="events-list" id="eventsList"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 5. 导出（§22.5） -->
+        <div class="section">
+          <div class="section-header">
+            <span class="sh-title">导出</span>
+          </div>
+          <div class="section-body">
+            <div class="card">
+              <div class="btn-row">
+                <button class="btn" id="btnExportCsv">导出每日 CSV</button>
+                <button class="btn" id="btnExportGpuCsv">导出 GPU 每日 CSV</button>
+                <span class="caption">文件将下载到浏览器默认下载目录。</span>
+              </div>
+            </div>
           </div>
         </div>
       </section>
 
-      <!-- ================= Settings（Phase 16B §55/§98：内部二级导航 rail + 分类 pane） ================= -->
+      <!-- ================= Settings（Phase 16D §23-26：rail + Section Card 统一） ================= -->
       <section class="page page-settings" id="page-settings">
         <div class="page-header">
-          <h1 class="page-title">设置</h1>
-          <p class="page-subtitle">配置。除外观外的更改需要重启。</p>
+          <div class="ph-head">
+            <h1 class="page-title">设置</h1>
+            <p class="page-subtitle">配置 LlamaMonitor。除外观外的更改需要重启后生效。</p>
+          </div>
         </div>
 
         <div class="settings-shell">
@@ -812,29 +877,50 @@
       <!-- ================= About（Phase 16C §23/§24：品牌头部 + 信息表 + 说明；
            max-width 900px 由 .page-about 控制） ================= -->
       <section class="page page-about" id="page-about">
-        <div class="card page-section">
+        <div class="page-header">
+          <div class="ph-head">
+            <h1 class="page-title">关于</h1>
+          </div>
+        </div>
+
+        <!-- 1. 品牌卡（§27.1：Logo + 名称 + 版本 + 副标题） -->
+        <div class="card about-hero-card">
           <div class="about-hero">
             <div class="ah-logo" id="aboutLogo"></div>
             <div>
               <div class="ah-name">LlamaMonitor</div>
-              <div class="ah-ver"><span id="aboutVersion">--</span> · llama.cpp 的本地只读监控工具</div>
+              <div class="ah-ver"><span id="aboutVersion">--</span></div>
+              <div class="ah-tag">llama.cpp 的本地只读监控工具</div>
             </div>
           </div>
-          <div class="kv-list">
-            <span class="k">应用</span><span class="v" id="aboutName">LlamaMonitor</span>
-            <span class="k">版本</span><span class="v" id="aboutVersionRow">--</span>
-            <span class="k">数据库 Schema</span><span class="v" id="aboutSchema">--</span>
-            <span class="k">平台</span><span class="v" id="aboutPlatform">Windows x64</span>
-            <span class="k">数据目录</span><span class="v" id="aboutDataDir">--</span>
+        </div>
+
+        <!-- 2. 应用信息（§27.2：信息表 + 操作 + 说明） -->
+        <div class="section">
+          <div class="section-header">
+            <span class="sh-title">应用信息</span>
           </div>
-          <div class="btn-row" style="margin-top:var(--spacing-md)">
-            <button class="btn subtle" id="btnCopyVersion">复制版本信息</button>
-            <button class="btn subtle" id="btnAboutOpenData">打开数据目录</button>
-            <span class="inline-result" id="aboutCopyResult"></span>
+          <div class="section-body">
+            <div class="card">
+              <div class="kv-list">
+                <span class="k">应用</span><span class="v" id="aboutName">LlamaMonitor</span>
+                <span class="k">版本</span><span class="v" id="aboutVersionRow">--</span>
+                <span class="k">数据库 Schema</span><span class="v" id="aboutSchema">--</span>
+                <span class="k">平台</span><span class="v" id="aboutPlatform">Windows x64</span>
+                <span class="k">数据目录</span><span class="v" id="aboutDataDir">--</span>
+              </div>
+              <div class="card-footer">
+                <div class="btn-row">
+                  <button class="btn subtle" id="btnCopyVersion">复制版本信息</button>
+                  <button class="btn subtle" id="btnAboutOpenData">打开数据目录</button>
+                  <span class="inline-result" id="aboutCopyResult"></span>
+                </div>
+              </div>
+              <p class="about-note">
+                LlamaMonitor 通过读取 llama.cpp 的 /metrics 端点进行监控，不代理或修改推理请求。
+              </p>
+            </div>
           </div>
-          <p class="about-note">
-            LlamaMonitor 通过读取 llama.cpp 的 /metrics 端点进行监控，不代理或修改推理请求。
-          </p>
         </div>
       </section>
 
