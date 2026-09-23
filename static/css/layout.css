@@ -223,6 +223,24 @@
   gap: var(--spacing-sm);
   flex: none;
 }
+/* 16E：窄屏（≤900px 含手机）页头改列式——标题独占一行，时间筛选整行铺满。
+   此前 .seg 固定 258px 起，320px 视口下右边界溢出 .content，整排筛选被推出
+   可视区（用户反馈"手机上看不到时间筛选"）。整行 + .seg overflow-x auto：
+   放不下时内部横滚而不是溢出页面。 */
+@media (max-width: 900px) {
+  .page-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--spacing-sm);
+  }
+  .page-header .ph-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .page-header .ph-actions .seg {
+    width: 100%;
+  }
+}
 
 /* Section：统一 标题行 + Body（spec §10/§30：页头 24 → 分区 12 → 卡片 20） */
 .section {

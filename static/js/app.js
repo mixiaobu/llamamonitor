@@ -1001,33 +1001,25 @@
   /* ================= 启动 ================= */
 
   async function loadConfig() {
+    /* 16E：时间筛选控件先于 /api/config 创建——该端点是 loopback-only，
+       手机走局域网 IP 访问得 403，此前筛选被放在 await 之后，403 直接进
+       catch，两个 segmented 永远没被创建（手机看不到时间范围筛选）。
+       现在：先用内置默认值渲染；config 成功后用服务器配置 set() 同步选中项。 */
     try {
-      var c = await api.get("/api/config");
-      if (c.ui) {
-        cfgUi.refreshIntervalSeconds = c.ui.refresh_interval_seconds || 5;
-        cfgUi.dailyDefaultDays = c.ui.daily_default_days || 30;
-        cfgUi.theme = c.ui.theme || "system";
-      }
-      lastConfigUrl = (c.llama_server && c.llama_server.url) || "";
-      var _su = $("ovServerUrl"); if (lastConfigUrl && _su) _su.textContent = lastConfigUrl.replace(/^https?:\/\//, "");
-      setThemeMode(cfgUi.theme);
-      // Usage 页时间范围（Phase 16B §10：今天/7天/30天/本月/全部，驱动摘要+图表+表格）
-      var defDays = cfgUi.dailyDefaultDays || 30;
-      state.dailyRangeMode = defDays <= 1 ? "today" : defDays <= 7 ? "7d" :
-        defDays <= 30 ? "30d" : defDays <= 62 ? "month" : "all";
+      var modeOptions = [
+        { value: "today", label: "今天" },
+        { value: "7d", label: "7 天" },
+        { value: "30d", label: "30 天" },
+        { value: "month", label: "本月" },
+        { value: "all", label: "全部" },
+      ];
       var rangeEl = $("usageRange");
-      if (rangeEl && LM.nav) {
-        var modeOptions = [
-          { value: "today", label: "今天" },
-          { value: "7d", label: "7 天" },
-          { value: "30d", label: "30 天" },
-          { value: "month", label: "本月" },
-          { value: "all", label: "全部" },
-        ];
-        ui.segmented(rangeEl, modeOptions, state.dailyRangeMode, function (v) {
-          setDailyRangeMode(v);
-        });
-      }
+      var usageSeg = rangeEl && LM.nav
+        ? ui.segmented(rangeEl, modeOptions, state.dailyRangeMode, function (v) {
+            state.dailyRangeMode = v;
+            setDailyRangeMode(v);
+          })
+        : null;
       var gpuRangeEl = $("gpuRange");
       if (gpuRangeEl) {
         ui.segmented(gpuRangeEl, [
@@ -1039,6 +1031,24 @@
           state.gpuRangeMinutes = v;
           refreshGpuLive();
         });
+      }
+      var c = await api.get("/api/config");
+      if (c.ui) {
+        cfgUi.refreshIntervalSeconds = c.ui.refresh_interval_seconds || 5;
+        cfgUi.dailyDefaultDays = c.ui.daily_default_days || 30;
+        cfgUi.theme = c.ui.theme || "system";
+      }
+      lastConfigUrl = (c.llama_server && c.llama_server.url) || "";
+      var _su = $("ovServerUrl"); if (lastConfigUrl && _su) _su.textContent = lastConfigUrl.replace(/^https?:\/\//, "");
+      setThemeMode(cfgUi.theme);
+      // 服务器配置到达后同步 Usage 默认范围（set() 只更新选中态，不触发 onChange）
+      var defDays = cfgUi.dailyDefaultDays || 30;
+      var serverDefault = defDays <= 1 ? "today" : defDays <= 7 ? "7d" :
+        defDays <= 30 ? "30d" : defDays <= 62 ? "month" : "all";
+      if (usageSeg && serverDefault !== state.dailyRangeMode) {
+        state.dailyRangeMode = serverDefault;
+        usageSeg.set(serverDefault);
+        setDailyRangeMode(serverDefault);
       }
     } catch (e) {
       console.warn("config load failed (defaults used):", e.message || e);
@@ -1143,6 +1153,8 @@
       run: function () { if (LM.nav.currentPage() === "history") return refreshEvents(); },
     });
     // Updates：30s 全局（驱动横幅）+ 1s 仅在 Updates 分区（下载进度，UI-023 统一进调度器）
+    // 16E：/api/update/* 是 loopback-only——手机（局域网 IP）访问得 403。
+    // loadUpdateStatus 内部已 catch 并区分 403（静默），这里不变。
     LM.poll.register("updates", { intervalMs: 30000, visibleOnly: false, run: LM.settings.loadUpdateStatus });
     LM.poll.register("updatesProgress", {
       intervalMs: 1000, visibleOnly: true,

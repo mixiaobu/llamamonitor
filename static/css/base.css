@@ -8,6 +8,19 @@
   box-sizing: border-box;
 }
 
+/* 16E：手机点按高亮。浏览器原生 tap highlight 用近似圆角矩形（不是元素真实
+   圆角），点按 GPU 勾选 chip / 设置分区 / 分段按钮时蓝色高亮看起来"圆角不对"。
+   关掉原生高亮，改由每个交互元素的 :active 自绘反馈（与元素圆角完全一致，
+   见各组件规则）；没有 :active 规则的元素保持默认高亮不变。 */
+.seg button,
+.btn,
+.check-chip,
+.nav-item,
+.rail-item,
+a.link {
+  -webkit-tap-highlight-color: transparent;
+}
+
 html,
 body {
   margin: 0;

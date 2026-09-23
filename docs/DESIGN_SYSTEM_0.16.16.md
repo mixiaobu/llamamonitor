@@ -1,5 +1,27 @@
 # LlamaMonitor 0.16.18 — Phase 16D 统一 UI 交付说明
 
+> **0.16.20 手机端反馈修复（全部 CDP 手机模拟实测：320/390px + /api/config 403 模拟）**：
+> 1. **手机时间范围筛选不显示（核心）**：`/api/config` 是 loopback-only，手机走局域网 IP
+>    访问得 403，而 GPU/用量页的时间筛选 segmented 被放在 `await /api/config` 之后构建，
+>    403 直接进 catch → 两个筛选永远没被创建。修复：`loadConfig()` 先用内置默认值创建
+>    两个 segmented，config 成功后用 `set()` 同步服务器默认范围（403/失败则保持默认值）。
+>    同时窄屏（≤900px）页头改列式：标题独占一行、时间筛选整行铺满（320px 下 `.seg`
+>    不再被 `.content` 右边界裁掉，放不下时内部横滚）。
+> 2. **手机访问 local-only 端点 403**：`/api/update/status` 30s 全局轮询在手机上每 30 秒
+>    403 一次——`loadUpdateStatus` 对 `detail === "local-only endpoint"` 的 403 静默跳过
+>    （本机 loopback 行为不变）。
+> 3. **设置页文件夹三按钮溢出**：「打开数据/日志/备份」横排总宽 ~294px 在窄屏被裁 →
+>    ≤900px 时该 setting-control 纵向全宽堆叠（`:has(> .btn)` 只对按钮行生效）。
+> 4. **手机点按蓝色高亮圆角不一致**：浏览器原生 tap highlight 用近似圆角矩形而非元素
+>    真实圆角。交互元素（seg/btn/chip/nav/rail/link）`-webkit-tap-highlight-color:
+>    transparent`，各组件补 `:active` 自绘反馈——高亮圆角与元素完全一致。
+> 5. **概览 GPU 卡显存折行**：手机单列 2×2 指标格半宽 ~120px，22px 的
+>    「29.7 / 32.0 GiB」从数字中间折断 → ≤900px 时 `.gm-metric .v` 降到 15px
+>    （单行可容纳）；GPU 页主指标值同宽场景降到 14px + nowrap。
+> 6. **能耗估算卡 GPU 名挤压**：左侧「GPU <型号> - 今日能耗（估算）」型号过长换行挤压
+>    右侧估算值 → 左侧 `overflow-wrap: anywhere` 允许完整换行，右侧数值 `flex:none +
+>    nowrap` 锁定单行右对齐。
+
 > **0.16.18 间距/细节审计追加**（多项，全部 CDP 实测验证）：
 > 1. 性能页 MTP 组（summary 卡 → 双图行）纵向间距 12px 与双图横向间距 16px 不一致 →
 >    `.mtp-group` gap 对齐网格 gap（16px），行列间距统一。

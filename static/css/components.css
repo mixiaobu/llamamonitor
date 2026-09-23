@@ -833,6 +833,17 @@
   .setting-row .setting-control {
     justify-content: flex-start;
   }
+  /* 16E：文件夹行三个按钮（打开数据/日志/备份）横向排列总宽 ~294px，
+     窄屏（内容宽 < 300px）溢出被裁。改为纵向全宽堆叠。 */
+  .setting-row .setting-control:has(> .btn) {
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+    gap: var(--spacing-sm);
+  }
+  .setting-row .setting-control .btn {
+    width: 100%;
+  }
 }
 
 /* ============ KV 列表（About / 数据信息：label-value 行） ============ */

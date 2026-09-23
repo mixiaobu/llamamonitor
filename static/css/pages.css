@@ -125,10 +125,22 @@
 .energy-row {
   display: flex;
   justify-content: space-between;
+  align-items: baseline;
   gap: var(--spacing-lg);
   max-width: 480px;
 }
-.energy-row .k { color: var(--text-secondary); }
+/* 16E：左侧「GPU <型号> - 今日能耗（估算）」型号过长时会换行/挤压右侧估算值。
+   左侧允许完整换行收缩，右侧数值锁定单行、右对齐不被压缩。 */
+.energy-row .k {
+  color: var(--text-secondary);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.energy-row .v {
+  flex: none;
+  white-space: nowrap;
+  text-align: right;
+}
 .energy-row.total {
   font-weight: var(--font-weight-semibold);
   border-top: 1px solid var(--border-subtle);
@@ -555,6 +567,9 @@
 .gm-metric .v.dim { color: var(--text-disabled); font-weight: var(--font-weight-regular); }
 @media (max-width: 900px) {
   .gpu-mini-grid { grid-template-columns: 1fr; }
+  /* 16E：手机单列下 2×2 指标格半宽只有 ~120px，22px 的「29.7 / 32.0 GiB」
+     会从数字中间折断。降到 16px 后单行可容纳（~105px）。 */
+  .gm-metric .v { font-size: var(--font-size-card); }
 }
 
 /* ---------- 概览：性能/运行 双卡（宽屏两列，窄屏单列） ---------- */
@@ -629,6 +644,22 @@
   font-variant-numeric: tabular-nums;
 }
 .gpu-device .gd-primary .v.dim { color: var(--text-disabled); font-weight: var(--font-weight-regular); }
+/* 16E：窄屏（手机单列 ~250-280px）主指标值字号 22px 会让「29.7 / 32.0 GiB」
+   这类长串折行（数字从中间断开）。降一档 + 禁止断行 + 允许整体右移收缩。 */
+@media (max-width: 900px) {
+  .gpu-device .gd-primary {
+    font-size: var(--font-size-body);
+  }
+  .gpu-device .gd-primary .v {
+    font-size: var(--font-size-body);
+    white-space: nowrap;
+    min-width: 0;
+  }
+  .gpu-device .gd-primary .k {
+    white-space: nowrap;
+    flex: none;
+  }
+}
 .gpu-device .gd-secondary {
   margin-top: var(--spacing-sm);
   padding-top: var(--spacing-sm);
@@ -705,6 +736,11 @@
 }
 .settings-rail .rail-item:hover {
   background: var(--bg-subtle-hover);
+  color: var(--text-primary);
+}
+/* 16E：手机点按反馈（与 8px 圆角一致） */
+.settings-rail .rail-item:active {
+  background: var(--bg-subtle-active);
   color: var(--text-primary);
 }
 .settings-rail .rail-item[aria-current="true"] {
@@ -798,6 +834,7 @@ a.link {
   transition: background-color var(--transition-fast);
 }
 a.link:hover { background: var(--accent-subtle, var(--bg-subtle-hover)); text-decoration: none; }
+a.link:active { background: var(--accent-subtle, var(--bg-subtle-hover)); text-decoration: none; }
 a.link:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 a.link .arr {
   display: inline-block;
@@ -832,6 +869,16 @@ a.link:hover .arr { transform: translateX(2px); }
   transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
 }
 .check-chip:hover { border-color: var(--accent); }
+/* 16E：手机点按反馈（与胶囊圆角一致，替代原生 tap highlight） */
+.check-chip:active {
+  background: var(--bg-subtle-active);
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+.check-chip.on:active {
+  background: var(--accent);
+  color: var(--text-primary);
+}
 .check-chip input {
   position: absolute;
   opacity: 0;
