@@ -1032,13 +1032,15 @@
           refreshGpuLive();
         });
       }
-      var c = await api.get("/api/config");
-      if (c.ui) {
+      // 16E：/api/config 是 loopback-only。远程（局域网 IP）客户端不发该请求，
+      // 直接用内置默认值——手机 DevTools 网络面板不再出现 403。
+      var c = LM.api.isLocal() ? await api.get("/api/config") : null;
+      if (c && c.ui) {
         cfgUi.refreshIntervalSeconds = c.ui.refresh_interval_seconds || 5;
         cfgUi.dailyDefaultDays = c.ui.daily_default_days || 30;
         cfgUi.theme = c.ui.theme || "system";
       }
-      lastConfigUrl = (c.llama_server && c.llama_server.url) || "";
+      lastConfigUrl = (c && c.llama_server && c.llama_server.url) || "";
       var _su = $("ovServerUrl"); if (lastConfigUrl && _su) _su.textContent = lastConfigUrl.replace(/^https?:\/\//, "");
       setThemeMode(cfgUi.theme);
       // 服务器配置到达后同步 Usage 默认范围（set() 只更新选中态，不触发 onChange）

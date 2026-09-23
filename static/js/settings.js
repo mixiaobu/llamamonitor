@@ -141,6 +141,34 @@
   }
 
   async function loadSettings() {
+    // 16E：/api/config 读写都 loopback-only。远程（局域网 IP）客户端是只读端
+    // ——不发配置请求（避免 403），表单显示占位并给出提示。
+    if (!LM.api.isLocal()) {
+      settingsLoaded = true;
+      settingsDirty = false;
+      updateSettingsFooter();
+      var note = document.createElement("p");
+      note.className = "settings-desc";
+      note.id = "remoteReadOnlyNote";
+      note.textContent = "远程只读模式：设置仅能在运行 LlamaMonitor 的电脑上修改（本机 127.0.0.1 访问）。";
+      var first = document.querySelector(".settings-pane .settings-card");
+      if (first) {
+        var oldNote = document.getElementById("remoteReadOnlyNote");
+        if (oldNote) oldNote.remove();
+        first.insertBefore(note, first.firstChild);
+      }
+      await loadGpuDetected();
+      // 禁用表单控件（含刚渲染的 GPU 勾选框）：远程改了也不会保存，
+      // 禁用比"改完没反应"更直观
+      var pane = document.querySelector(".settings-pane");
+      if (pane) {
+        Array.prototype.forEach.call(
+          pane.querySelectorAll("input, select"),
+          function (el) { el.disabled = true; }
+        );
+      }
+      return;
+    }
     try {
       await loadGpuDetected(); // 先拿 GPU 探测结果，fillForm 才能渲染勾选框
       var c = await api.get("/api/config");
@@ -509,6 +537,12 @@
   async function loadAppIntegration() {
     var box = $("appInfo");
     box.innerHTML = "";
+    // 16E：/api/app/integration 是 loopback-only——远程客户端不发（含可执行文件
+    // 路径等本机信息），占位说明代替 403。
+    if (!LM.api.isLocal()) {
+      kvRow(box, "状态", "远程只读：本机信息仅在本机可见");
+      return;
+    }
     try {
       var d = await api.get("/api/app/integration");
       kvRow(box, "应用模式", d.background ? "后台（托盘）" : "前台");
@@ -660,6 +694,9 @@
   }
 
   async function loadUpdateStatus() {
+    // 16E：/api/update/* 是 loopback-only。远程（局域网 IP）客户端不发该请求
+    // ——此前每 30s 全局轮询在手机上刷 403；本机行为不变。
+    if (!LM.api.isLocal()) return;
     try {
       var st = await api.get("/api/update/status");
       renderUpdateStatus(st);
@@ -712,10 +749,13 @@
     }
     $("aboutVersion").textContent = ver;
     var row = $("aboutVersionRow"); if (row) row.textContent = ver;
-    try {
-      var c = await api.get("/api/config");
-      if (c.paths) $("aboutDataDir").textContent = c.paths.database || "--";
-    } catch (e) { /* 保留占位 */ }
+    // 16E：/api/config loopback-only——远程不发（数据目录是本地路径，不外露）
+    if (LM.api.isLocal()) {
+      try {
+        var c = await api.get("/api/config");
+        if (c.paths) $("aboutDataDir").textContent = c.paths.database || "--";
+      } catch (e) { /* 保留占位 */ }
+    }
     // 平台（静态）
     var pf = $("aboutPlatform"); if (pf) pf.textContent = "Windows x64";
   }

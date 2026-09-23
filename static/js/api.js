@@ -62,9 +62,18 @@
     }
   }
 
+  /* 16E：本地（loopback）客户端判定。/api/config、/api/update/* 等端点按
+     Phase 10 安全模型只允许 127.0.0.1/::1——手机走局域网 IP 访问必得 403。
+     远程客户端用 isLocal() 提前跳过这些请求（网络面板零 403），本机行为不变。 */
+  function isLocal() {
+    var h = (location.hostname || "").toLowerCase();
+    return h === "127.0.0.1" || h === "localhost" || h === "::1" || h === "[::1]";
+  }
+
   window.LM = window.LM || {};
   LM.api = {
     ApiError: ApiError,
+    isLocal: isLocal,
     get: function (url, timeoutMs) { return request("GET", url, undefined, timeoutMs); },
     post: function (url, body, timeoutMs) { return request("POST", url, body, timeoutMs); },
     put: function (url, body, timeoutMs) { return request("PUT", url, body, timeoutMs); },

@@ -1,5 +1,22 @@
 # LlamaMonitor 0.16.18 — Phase 16D 统一 UI 交付说明
 
+> **0.16.21 手机网络面板 403 噪音（真实局域网 IP 端到端 CDP 实测）**：
+> 1. **loopback-only 请求零 403**：`/api/config`、`/api/update/*`、`/api/app/integration`
+>    按 Phase 10 安全模型仅允许 127.0.0.1/::1，手机（局域网 IP）访问必得 403——0.16.20
+>    已保证页面功能不受影响，但 DevTools 网络面板里 `/api/update/status` 30s 全局轮询
+>    每 30 秒刷一条红色 403，且 `/api/config` 首次加载 403 两条。0.16.21 前端新增
+>    `LM.api.isLocal()`（`location.hostname` ∈ {127.0.0.1, localhost, ::1, [::1]}），
+>    远程客户端**直接不发**这些 loopback-only 请求：app.js `loadConfig`、settings.js
+>    `loadUpdateStatus` / `loadSettings` / `loadAppIntegration` / `loadAbout` 共 5 处
+>    guard。本机（loopback）行为完全不变。
+> 2. **设置页远程只读模式**：远程进入设置页时显示「远程只读模式：设置仅能在运行
+>    LlamaMonitor 的电脑上修改（本机 127.0.0.1 访问）」提示，并禁用全部表单控件
+>    （含 GPU 勾选框）与保存按钮——比"改完点保存没反应"更直观。About 页数据目录
+>    （本地路径）在远程不发 `/api/config` 获取。
+> 3. **验证**：真实 `http://172.16.1.2:8765`（无 fetch mock，服务端真返回 403）端到端
+>    CDP：`http403: []`、`console: []`，筛选/数据/设置页三按钮竖排全部正常；local
+>    origin 设置页正常加载真实配置（host=0.0.0.0、GPU 勾选框启用、保存按钮可用）。
+
 > **0.16.20 手机端反馈修复（全部 CDP 手机模拟实测：320/390px + /api/config 403 模拟）**：
 > 1. **手机时间范围筛选不显示（核心）**：`/api/config` 是 loopback-only，手机走局域网 IP
 >    访问得 403，而 GPU/用量页的时间筛选 segmented 被放在 `await /api/config` 之后构建，
