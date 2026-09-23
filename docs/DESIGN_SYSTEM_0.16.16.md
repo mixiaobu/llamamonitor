@@ -1,4 +1,8 @@
-# LlamaMonitor 0.16.17 — Phase 16D 统一 UI 交付说明
+# LlamaMonitor 0.16.18 — Phase 16D 统一 UI 交付说明
+
+> **0.16.18 间距审计追加**：性能页 MTP 组（summary 卡 → 双图行）纵向间距 12px 与
+> `.grid` 双图之间横向间距 16px 不一致。修复：`.mtp-group` gap 对齐网格 gap（16px），
+> 行列间距统一。
 
 > **0.16.17 间距与细节审计（本轮追加）**：CDP 实测发现概览/性能/关于三页存在 0px 间距
 > （状态卡/指标条/品牌卡 与紧随其后的 section 贴死，根因是 `.section:last-child{margin-bottom:0}`

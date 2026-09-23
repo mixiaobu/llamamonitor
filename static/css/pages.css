@@ -951,11 +951,12 @@ a.link:hover .arr { transform: translateX(2px); }
   margin-bottom: 0;
 }
 
-/* MTP 组（§20.5：summary + 双图 作为整体） */
+/* MTP 组（§20.5：summary + 双图 作为整体；
+   16D 审计：纵向节奏与 .grid 的 16px 网格 gap 一致，行列间距统一） */
 .mtp-group {
   display: flex;
   flex-direction: column;
-  gap: var(--section-head-gap);
+  gap: var(--spacing-lg);
 }
 .mtp-summary {
   /* surface from .card */
