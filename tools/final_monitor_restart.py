@@ -14,12 +14,16 @@ SERVER = "http://127.0.0.1:9091"
 EXE = os.path.join(os.environ["LOCALAPPDATA"], "Programs", "LlamaMonitor",
                    "LlamaMonitor", "LlamaMonitor.exe")
 
+# loopback 不走系统代理（与 app httpx RC-004 死代理 bypass 一致）
+_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
 def get(url, to=10):
-    with urllib.request.urlopen(url, timeout=to) as r:
+    with _OPENER.open(url, timeout=to) as r:
         return r.read().decode("utf-8", "replace")
 
 def jget(url, to=10):
     return json.loads(get(url, to))
+
 
 def server_totals():
     txt = get(SERVER + "/metrics")

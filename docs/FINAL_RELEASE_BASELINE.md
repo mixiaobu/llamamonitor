@@ -94,7 +94,7 @@ Mutation（loopback-only，`*` 注：GET /api/config、/api/app/integration、/a
 
 | ID | 级别 | 描述 | 状态 |
 |---|---|---|---|
-| （发布过程中发现的 MEDIUM/LOW 登记于此，含影响与计划版本） | | | |
+| KNOWN-1.0.0-001 | MEDIUM | `PUT /api/app/autostart` 在 HKCU Run 注册表键被系统组件（Shell/资源管理器/计划任务等）持续占用时，3 次重试（450ms 退避）耗尽后 `PermissionError [WinError 5]` 未被 API 层捕获 → 500。2026-09-24 01:42–01:57 真实复现：约 15 分钟内每次 PUT 均 500；同期同测试进程 `winreg` 写**新**值名成功、覆盖**既有** LlamaMonitor 值间歇被拒；01:57 后同 API 成功（`{"success":true,"stale":false}`）。数据无损（失败时值未被改写；stale 检测与 UI 提示仍正确）。API 文档已声明 500（"注册表被占用（3 次重试后仍失败）"）。 | 接受（瞬时 OS 竞争，非逻辑缺陷）。1.0.x 可优化：区分"键不可写/值不可写"返回 503 + 指数退避。修复需动核心 `windows_integration.py`，复现依赖 OS 锁时序、回归测试不稳定——按冻结规则不纳入 1.0.0。 |
 
 > 已知限制（写入 Release Notes）：llama.cpp 版本间 metrics 差异；离线期间 counter reset 的部分
 > 活动不可恢复（possible_token_loss 标记）；GPU 依赖 NVIDIA 驱动/nvidia-smi；GPU 能耗为采样功率
