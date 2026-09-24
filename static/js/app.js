@@ -43,7 +43,6 @@
     lastStatusRefresh: 0,  // 最近一次 /api/status 轮询完成时刻（epoch ms）— 倒计时基准
     statusBackendOk: true, // 后端（非 llama）是否可达
     ovSummary: null,       // 最近一次 /api/summary（Overview 今日卡）
-    lossBar: null,         // possible_token_loss InfoBar 实例
     serverUrlText: "",     // Phase 16C §21：当前服务器地址（设置页连接状态复用）
   };
 
@@ -407,28 +406,7 @@
         ? "历史中存在 Token 丢失缺口" : "无 Token 丢失缺口";
       if ($("hqLastSample")) $("hqLastSample").textContent = F.formatAgo(t.last_valid_sample_seconds_ago);
       renderGapsTable();
-      renderTokenLossBar();
     }
-  }
-
-  /* possible_token_loss：Win11 InfoBar（spec §7：提示级，不整页变红） */
-  function renderTokenLossBar() {
-    var box = $("ovTokenLossBar");
-    if (!box) return;
-    var loss = state.quality && state.quality.today && state.quality.today.possible_token_loss;
-    if (!loss) {
-      if (state.lossBar) { state.lossBar.close(); state.lossBar = null; }
-      box.innerHTML = "";
-      return;
-    }
-    if (state.lossBar) { state.lossBar.close(); state.lossBar = null; }
-    state.lossBar = ui.createInfoBar({
-      type: "warning",
-      title: "历史 Token 统计可能不完整",
-      message: "今日存在监控缺口，期间产生的 Token 可能未被统计。缺口详情见 历史 页。",
-      dismissible: true,
-    });
-    box.appendChild(state.lossBar.el);
   }
 
   var GAP_REASON_LABELS = {

@@ -1027,14 +1027,6 @@ a.link:hover .arr { transform: translateX(2px); }
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
 }
 
-/* 概览 token-loss InfoBar 容器（不占 section 节奏） */
-.ov-token-loss {
-  margin-bottom: var(--section-gap);
-}
-.ov-token-loss:empty {
-  margin-bottom: 0;
-}
-
 /* MTP 组（§20.5：summary + 双图 作为整体；
    16D 审计：纵向节奏与 .grid 的 16px 网格 gap 一致，行列间距统一） */
 .mtp-group {

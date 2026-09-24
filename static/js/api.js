@@ -64,10 +64,13 @@
 
   /* 16E：本地（loopback）客户端判定。/api/config、/api/update/* 等端点按
      Phase 10 安全模型只允许 127.0.0.1/::1——手机走局域网 IP 访问必得 403。
-     远程客户端用 isLocal() 提前跳过这些请求（网络面板零 403），本机行为不变。 */
+     远程客户端用 isLocal() 提前跳过这些请求（网络面板零 403），本机行为不变。
+     REL-1.0.0-002：web.host=0.0.0.0 时桌面窗口加载 URL 的 hostname 是 "0.0.0.0"
+     （bind-any，等价本机）——此前未列入 → 本机桌面窗口被误判为远程，
+     「设置」导航入口被隐藏、loopback-only 请求被跳过。0.0.0.0 归入本机。 */
   function isLocal() {
     var h = (location.hostname || "").toLowerCase();
-    return h === "127.0.0.1" || h === "localhost" || h === "::1" || h === "[::1]";
+    return h === "127.0.0.1" || h === "localhost" || h === "::1" || h === "[::1]" || h === "0.0.0.0";
   }
 
   window.LM = window.LM || {};

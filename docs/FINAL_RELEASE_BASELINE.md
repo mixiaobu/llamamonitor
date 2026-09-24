@@ -43,7 +43,7 @@
 
 ## 测试
 
-- 测试数：**418**（unittest，全部绿 @ 9bc526d）
+- 测试数：**418**（unittest，全部绿 @ 9bc526d）→ **421**（5aaad6e 起：+3 RemotePathLeakTests 回归，全部绿）→ **421**（5aaad6e 起：+3 RemotePathLeakTests 回归，全部绿）
 - 重点回归域：async / thread / single-instance / database / update / backup / time-based（FakeClock）
 
 ## 数据库表（schema v4，共 10 张）
@@ -88,6 +88,7 @@ Mutation（loopback-only，`*` 注：GET /api/config、/api/app/integration、/a
 
 | ID | 级别 | 模块 | 问题 | 修复 | 回归测试 | 受影响 Gate |
 |---|---|---|---|---|---|---|
+| REL-1.0.0-002 | HIGH | `static/js/api.js` `isLocal()` | `web.host=0.0.0.0`（用户为远程访问修改）时，桌面窗口加载 URL 为 `http://0.0.0.0:8765/`，`isLocal()` 只认 `127.0.0.1/localhost/::1/[::1]`，**"0.0.0.0" 未列入** → 本机桌面窗口被误判为远程客户端：「设置」导航入口被隐藏（0.16.22 引入）、loopback-only 请求被跳过、设置页走远程只读模式。0.16.22 远程验证只覆盖了局域网 IP（172.16.1.2），未覆盖 bind-any host 场景。 | `isLocal()` 判定加入 `h === "0.0.0.0"`（bind-any 等价本机）。 | `tools/final_islocal_test.js`（9 用例矩阵：127.0.0.1/localhost/::1/[::1]/0.0.0.0 → 本机；局域网 IP×2/域名/空 → 远程）+ 1.0.0 构建后 UI smoke 复验（桌面窗口 settings 入口可见 + 概览缺口横幅移除）。 | UI（桌面窗口 settings 入口 + 概览页）、Security（远程只读矩阵不变——远程走真实局域网 IP/域名，判定不受影响）。另按用户要求移除概览页「历史 Token 统计可能不完整」InfoBar（`renderTokenLossBar` + `#ovTokenLossBar` + `.ov-token-loss`；缺口详情历史页保留）。 |
 | REL-1.0.0-001 | HIGH（安全） | `server.py` 只读 API | `web.host=0.0.0.0` 时，局域网只读客户端可经 **未做 loopback 限制**的只读端点读到完整 Windows 路径，泄漏用户名 + `%LOCALAPPDATA%` 目录：`/api/status` → `config.path`；`/api/data/info` → `database_path` + `last_auto_backup.path`。本机显示需要完整路径，但远程不需要。 | 新增 `server._expose_path(request, full)`：本机（127.0.0.1/::1）返回完整路径，远程返回 `Path(full).name`（文件名）；仅套用到上述只读字段。修改类 API 仍由 `_require_loopback` 强制 403，未改动。 | `tests/test_data_management.py::RemotePathLeakTests`（3 个：本机看全路径 / 远程只看 basename / 远程 403 修改类 API）+ 新增 `tests/configutil.py::remote_app` 测试工具 | API（只读形状 + local-only 403）、Security（远程只读无路径泄漏 / 无 bypass） |
 
 ## Known Issues / Accepted Risks（发布前登记）
