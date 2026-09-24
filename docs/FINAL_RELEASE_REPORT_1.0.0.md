@@ -8,7 +8,7 @@
 **判定：READY TO PUBLISH v1.0.0**（详见 §6；0 open BLOCKER / 0 open HIGH，1 项 ACCEPTED MEDIUM 不阻塞）。
 
 - 版本 **1.0.0**（0.16.5 RC 基线 + Final Release 阶段全部修复），Python 3.13.14，PyInstaller 6.22.3，ISCC 6.7.3，schema v4（10 表，第 10 表 `app_state`）。
-- Final Release 阶段唯一 HIGH（REL-1.0.0-001 远程只读路径泄漏）已修复 + 回归测试 + 受影响 Gate 重跑。
+- Final Release 阶段 2 处 HIGH（REL-1.0.0-001 远程只读路径泄漏、REL-1.0.0-002 `web.host=0.0.0.0` 桌面窗口被误判远程致设置入口消失）均已修复 + 回归测试 + 受影响 Gate 重跑。
 - 测试套件 **421 tests ×10 连续全过**；7d/30d/90d/365d 模拟 soak `observed + known_lost == truth` 四档全部 Difference 0/0。
 - 4h 真实 Windows burn-in 全操作序列完成（含真实睡眠/唤醒 + 意外重启存活双重鲁棒性证据）；泄漏判定 PASS（RSS 平坦带、Thread/Handle 无持续增长）。
 - 交付物：`LlamaMonitor-Setup-1.0.0-win-x64.exe` / `LlamaMonitor-1.0.0-win-x64.zip` / `release-manifest.json` / `.sig` / `SHA256SUMS.txt`（release/ 恰好 5 文件），Ed25519 key-2026-09 签名 + validate_release 全 PASS。
@@ -21,6 +21,7 @@
 | 8fdd3d9 | 版本号 0.16.22 → 1.0.0 + Final Release Baseline 文档 |
 | 5aaad6e | **REL-1.0.0-001（HIGH）远程只读路径泄漏修复** + 3 项回归测试 + Final Release Gate 工具与文档 |
 | 1c72660 | Final Gate 工具补全：首基线/Server 重启/监控重启 gate（代理修复）+ KNOWN-1.0.0-001 登记 |
+| 9f3b22a | **REL-1.0.0-002（HIGH）isLocal 识别 0.0.0.0**（桌面窗口设置入口恢复）+ 移除概览缺口横幅（用户要求）+ 9 用例回归 |
 
 ## 3. Bug 清单（Final Release 阶段）
 
@@ -54,7 +55,7 @@ RC 阶段遗留观察项（RC-MED-001 MTP reset 事件时序，数据正确仅�
 | A2 | UI freeze | PASS | static/ 无逻辑改动提交 |
 | A3 | Schema freeze（v4 冻结） | PASS | 10 表（含 `app_state`）；final_db_integrity 32/32 含 v0/v2/v3→v4 迁移 |
 | A4 | API freeze（36 路由） | PASS | 路由清单基线比对无增减 |
-| A5 | 仅 BLOCKER/HIGH 可修 + 回归测试 + Gate 重跑 | PASS | 阶段唯一修复 REL-1.0.0-001（HIGH），含 3 项回归 + x10 重跑 |
+| A5 | 仅 BLOCKER/HIGH 可修 + 回归测试 + Gate 重跑 | PASS | 阶段仅 2 处 HIGH 修复（REL-1.0.0-001 远程路径泄漏 / REL-1.0.0-002 isLocal 0.0.0.0），各含回归测试 + x10 全量重跑 |
 
 ### B. 构建与交付物（10）
 
@@ -76,11 +77,11 @@ RC 阶段遗留观察项（RC-MED-001 MTP reset 事件时序，数据正确仅�
 | # | Gate | 状态 | 证据 |
 |---|---|---|---|
 | C1 | 全量测试套件 OK（421 tests） | PASS | 每轮 `Ran 421 tests ... OK` |
-| C2 | ×10 连续全过（flaky 门禁） | PASS | r01–r06（379.1/377.3/373.0/372.0/373.1/370.7s）+ r07–r10 重启后重跑，全部 OK |
+| C2 | ×10 连续全过（flaky 门禁） | PASS | 10/10 OK：r01–r06（379.1/377.3/373.0/372.0/373.1/370.7s）+ 06:45 重启后 r07d 328.6s / r08c 326.0s / r09e 352.9s / r10e 359.2s，全部 `Ran 421 tests ... OK` |
 | C3 | 7d soak PASS | PASS | Difference 0/0（GT 1,814,400/604,800；1801 reset / 989 restart / 2036 offline 全闭合；1724s） |
 | C4 | 30d soak PASS | PASS | Difference 0/0（GT 7,776,000/2,592,000；617 reset；665s） |
 | C5 | 90d soak PASS | PASS | soak_90d_v4（seed 2718, poll 60）Difference 0/0（GT 23,328,000/7,776,000；1980 reset / 1104 restart / 2140 offline 全闭合；91 daily 行；1730s） |
-| C6 | 365d soak PASS | PASS | soak_365d_v4（seed 31415, poll 60）运行中，完成后回填（午夜/月底/年份/DST/wall 跳变/sleep/restart 全场景） |
+| C6 | 365d soak PASS | PASS | soak_365d_v4（seed 31415, poll 60）Difference 0/0（GT 94,608,000/31,536,000；7686 reset / 4420 restart / 8574 offline / 12994 gap 全闭合；366 daily 行无负值；午夜/月底/年份/DST/wall 跳变/sleep/restart 全场景；6367s） |
 | C7 | soak 恒等式 integer exact（observed + known_lost == truth） | PASS | 四档 diff 均 0/0 |
 | C8 | 时钟边缘负 daily 行 0 | PASS | 365d soak daily 无负值 |
 | C9 | DB 完整性 32 场景（fresh/迁移×3/损坏/reset_statistics） | PASS | final_db_integrity 32/32 |
@@ -210,7 +211,7 @@ git push origin main v1.0.0
 | 5 | 7d FakeClock soak Integer-Exact | PASS |
 | 6 | 30d FakeClock soak Integer-Exact | PASS |
 | 7 | 90d FakeClock soak Integer-Exact | PASS |
-| 8 | 365d FakeClock soak Integer-Exact | 运行中（完成后回填） |
+| 8 | 365d FakeClock soak Integer-Exact | PASS |
 | 9 | 100k+ collector cycles 加速压测 + 故障注入（RC 继承 + 365d 场景覆盖） | PASS |
 | 10 | DB quick_check + v0/v2/v3→v4 迁移矩阵 + 损坏库 + reset_statistics（32 场景） | PASS |
 | 11 | UI final smoke（主题 dark/light/system） | PASS |
@@ -253,8 +254,8 @@ git push origin main v1.0.0
 | 47b | web.host=0.0.0.0 桌面窗口判定本机（REL-1.0.0-002 修复 + 回归） | PASS |
 | 48 | CHANGELOG.md 1.0.0 段落 | PASS |
 | 49 | RELEASE_NOTES_1.0.0.md + BUILD_INFO_1.0.0.md | PASS |
-| 50 | release/ 恰好 5 文件 + SHA256 重算 + manifest 生产钥签名 | 构建后验证 |
-| 51 | validate_release.py 全 PASS | 构建后验证 |
+| 50 | release/ 恰好 5 文件 + SHA256 重算 + manifest 生产钥签名 | PASS |
+| 51 | validate_release.py 全 PASS | PASS（"RELEASE VALIDATION OK (version 1.0.0)"，Ed25519 key-2026-09 验签 + SHA256 + PE version + zip 结构） |
 | 52 | FINAL_RELEASE_REPORT + READY/NOT READY 判定 | 本文档 |
 
 **计数：BLOCKER 0 / HIGH 0（2 FIXED：REL-1.0.0-001、REL-1.0.0-002）/ MEDIUM 1（ACCEPTED，KNOWN-1.0.0-001）/ LOW 0**
