@@ -143,8 +143,8 @@
     if (offlineBar) { offlineBar.close(); offlineBar = null; }
     offlineBar = ui.createInfoBar({
       type: "error",
-      title: "llama.cpp 当前无法连接",
-      message: "最近一次成功更新：" + (lastTs ? F.formatTime(lastTs) : "unknown") +
+      title: "llama-server 连接中断",
+      message: "最近一次成功采样：" + (lastTs ? F.formatTime(lastTs) : "无记录") +
         "。实时值显示 --；历史数据已保留。",
       dismissible: false,
     });
@@ -206,7 +206,7 @@
     // 全局状态徽章（Overview 顶部 + 页面内 server 卡）
     ui.setStatusBadge($("ovServerState"),
       state.online === true ? "online" : state.online === false ? "offline" : "paused",
-      state.online === null ? "启动中" : undefined);
+      state.online === null ? "检测中" : undefined);
 
     // Offline InfoBar（spec §39：明确 offline，保留历史）
     if (state.online === false) {
@@ -243,13 +243,13 @@
 
     // 当前速率（offline 或字段缺失 -> --）
     var on = state.online === true;
-    setStatValue("ovPromptTps", on && data.prompt_tps != null ? F.formatTokenCount(data.prompt_tps) + " t/s" : F.NA);
-    setStatValue("ovDecodeTps", on && data.decode_tps != null ? F.formatTokenCount(data.decode_tps) + " t/s" : F.NA);
+    setStatValue("ovPromptTps", on && data.prompt_tps != null ? F.formatTokenCount(data.prompt_tps) + " tok/s" : F.NA);
+    setStatValue("ovDecodeTps", on && data.decode_tps != null ? F.formatTokenCount(data.decode_tps) + " tok/s" : F.NA);
     setStatValue("ovContext", on ? F.formatTokenCount(data.context_max) : F.NA);
     setStatValue("ovRequests", on ? F.formatInt(data.requests_processing) + " / " + F.formatInt(data.requests_deferred) : F.NA);
     // Performance 页指标条 + 运行卡（spec §25/§26）
-    setStatValue("perfPromptTps", on && data.prompt_tps != null ? F.formatTokenCount(data.prompt_tps) + " t/s" : F.NA);
-    setStatValue("perfDecodeTps", on && data.decode_tps != null ? F.formatTokenCount(data.decode_tps) + " t/s" : F.NA);
+    setStatValue("perfPromptTps", on && data.prompt_tps != null ? F.formatTokenCount(data.prompt_tps) + " tok/s" : F.NA);
+    setStatValue("perfDecodeTps", on && data.decode_tps != null ? F.formatTokenCount(data.decode_tps) + " tok/s" : F.NA);
     setStatValue("rtContextMax", data.context_max != null ? F.formatTokenCount(data.context_max) : F.NA);
 
     if (state.online === true && state.lastUpdateTs) state.lastSuccessTs = state.lastUpdateTs;
@@ -326,7 +326,7 @@
     setStatValue("rtProcessing", F.formatInt(d.requests_processing));
     setStatValue("rtQueued", F.formatInt(d.requests_deferred));
     setStatValue("rtBusySlots", F.formatInt(d.busy_slots));
-    // "最大 Token 记录"（n_tokens_max）——不是上下文使用量（spec §26 命名）
+    // "上下文高水位"（n_tokens_max）——历史观测最大值，不是当前上下文使用量
     setStatValue("rtTokenMax", F.formatTokenCount(d.n_tokens_max));
     var kv = d.kv_cache_usage_ratio;
     var kvText = kv == null ? F.NA : F.formatPercent(kv * 100);
@@ -336,7 +336,7 @@
       elKv.classList.toggle("dim", kv == null);
     }
     setStatValue("ovKvCache", kvText); // Overview 运行状态卡（0.16.12）
-    // 指标条（Phase 16C §5：Prompt TPS/Decode TPS/处理中/排队/Busy Slots，
+    // 指标条（Phase 16C §5：Prompt TPS/Decode TPS/处理中请求/等待中请求/忙碌 Slot（平均），
     // 顶部不再重复 MTP 接受率——下方 MTP 卡已有完整 Summary）
     setStatValue("perfProcessing", F.formatInt(d.requests_processing));
     setStatValue("perfQueued", F.formatInt(d.requests_deferred));
@@ -378,7 +378,7 @@
       }
       var lossEl = $("dqLossToday");
       if (lossEl) {
-        lossEl.textContent = t.possible_token_loss ? "缺口可能存在 Token 丢失" : "无 Token 丢失缺口";
+        lossEl.textContent = t.possible_token_loss ? "缺口期间 Token 可能缺失" : "无 Token 缺失缺口";
         lossEl.className = "stat-hint " + (t.possible_token_loss ? "bad" : "");
       }
       var openText = q.open_gap ? "持续缺口，始于 " + F.formatDateTime(q.open_gap.start) +
@@ -403,20 +403,20 @@
       if ($("hqCoverage")) $("hqCoverage").textContent = t.monitoring_coverage_percent == null ? F.NA : F.formatPercent(t.monitoring_coverage_percent);
       if ($("hqGaps")) $("hqGaps").textContent = (t.gap_count || 0) + " / " + ((q.total && q.total.gap_count) || 0);
       if ($("hqLoss")) $("hqLoss").textContent = (q.total && q.total.possible_token_loss)
-        ? "历史中存在 Token 丢失缺口" : "无 Token 丢失缺口";
+        ? "历史中存在 Token 可能缺失的缺口" : "无 Token 缺失缺口";
       if ($("hqLastSample")) $("hqLastSample").textContent = F.formatAgo(t.last_valid_sample_seconds_ago);
       renderGapsTable();
     }
   }
 
   var GAP_REASON_LABELS = {
-    server_offline: "服务器离线",
-    monitor_restart: "监控重启",
-    system_pause_or_sleep: "系统睡眠/暂停",
-    invalid_metrics: "无效指标",
+    server_offline: "llama-server 不可达",
+    monitor_restart: "LlamaMonitor 重启",
+    system_pause_or_sleep: "系统休眠",
+    invalid_metrics: "采集异常",
     unknown: "未知",
   };
-  var GAP_SOURCE_LABELS = { llama: "LLM", application: "应用", gpu: "GPU" };
+  var GAP_SOURCE_LABELS = { llama: "llama.cpp", application: "LlamaMonitor", gpu: "GPU 采集" };
 
   function renderGapsTable() {
     var tbody = $("gapsTbody");
@@ -519,8 +519,8 @@
       var vram = (g.memory_used_mb == null || g.memory_total_mb == null) ? F.NA :
         (g.memory_used_mb / 1024).toFixed(1) + " / " + (g.memory_total_mb / 1024).toFixed(1) + " GiB";
       var primary = [
-        ["利用率", g.utilization_percent == null ? F.NA : F.formatPercent(g.utilization_percent, 0)],
-        ["显存", vram],
+        ["GPU 利用率", g.utilization_percent == null ? F.NA : F.formatPercent(g.utilization_percent, 0)],
+        ["显存占用", vram],
         ["温度", F.formatTemp(g.temperature_c)],
         ["功耗", F.formatPower(g.power_draw_w)],
       ];
@@ -536,8 +536,8 @@
         row.appendChild(k);
         row.appendChild(v);
         card.appendChild(row);
-        // GPU-002：VRAM 进度条紧跟在"显存"数值下方（同一行的子元素）
-        if (r[0] === "显存" && g.memory_usage_percent != null) {
+        // GPU-002：VRAM 进度条紧跟在"显存占用"数值下方（同一行的子元素）
+        if (r[0] === "显存占用" && g.memory_usage_percent != null) {
           var bar = document.createElement("div");
           bar.className = "vram-bar";
           var fill = document.createElement("div");
@@ -550,10 +550,10 @@
 
       // 次要指标（spec §38：风扇/时钟/PCIe 小字一行）
       var secondary = [
-        ["风扇", g.fan_percent == null ? F.NA : F.formatPercent(g.fan_percent, 0)],
-        ["SM", g.sm_clock_mhz == null ? F.NA : g.sm_clock_mhz + " MHz"],
+        ["风扇转速", g.fan_percent == null ? F.NA : F.formatPercent(g.fan_percent, 0)],
+        ["SM 时钟", g.sm_clock_mhz == null ? F.NA : g.sm_clock_mhz + " MHz"],
         ["显存时钟", g.memory_clock_mhz == null ? F.NA : g.memory_clock_mhz + " MHz"],
-        ["PCIe", (g.pcie_generation == null || g.pcie_width == null) ? F.NA : "Gen" + g.pcie_generation + " x" + g.pcie_width],
+        ["PCIe 链路", (g.pcie_generation == null || g.pcie_width == null) ? F.NA : "Gen" + g.pcie_generation + " x" + g.pcie_width],
       ];
       var kv = document.createElement("div");
       kv.className = "gpu-kv gd-secondary";
@@ -617,8 +617,8 @@
       var vramText = (g.memory_used_mb == null || g.memory_total_mb == null) ? F.NA :
         (g.memory_used_mb / 1024).toFixed(1) + " / " + (g.memory_total_mb / 1024).toFixed(1) + " GiB";
       var items = [
-        ["利用率", g.utilization_percent == null ? F.NA : F.formatPercent(g.utilization_percent, 0)],
-        ["显存", vramText],
+        ["GPU 利用率", g.utilization_percent == null ? F.NA : F.formatPercent(g.utilization_percent, 0)],
+        ["显存占用", vramText],
         ["温度", F.formatTemp(g.temperature_c)],
         ["功耗", F.formatPower(g.power_draw_w)],
       ];
@@ -735,7 +735,7 @@
       tt.textContent = "无能耗数据";
       var dd = document.createElement("div");
       dd.className = "empty-desc";
-      dd.textContent = "能耗由采样功耗估算；首个样本采集后出现。";
+      dd.textContent = "根据采样功耗随时间积分估算，仅供参考。首个样本采集后显示。";
       empty.appendChild(ic);
       empty.appendChild(tt);
       empty.appendChild(dd);
@@ -865,19 +865,20 @@
 
   /* 监控事件（History 页 spec §50：/api/events，最近 30 条） */
   var EVENT_TYPE_LABELS = {
-    monitor_start: "监控启动",
-    monitor_stop: "监控停止",
-    monitor_restart_gap: "监控重启",
-    server_online: "服务器上线",
-    server_offline: "服务器离线",
+    monitor_start: "LlamaMonitor 启动",
+    monitor_stop: "LlamaMonitor 停止",
+    monitor_restart_gap: "LlamaMonitor 重启",
+    server_online: "llama-server 已连接",
+    server_offline: "llama-server 连接中断",
     metrics_valid: "指标有效",
-    invalid_metrics: "无效指标",
-    database_protective_mode: "数据库保护模式",
+    invalid_metrics: "采集异常",
+    database_protective_mode: "数据库进入保护模式",
     database_recovery: "数据库恢复",
     database_write_failure: "数据库写入失败",
     database_integrity_error: "数据库完整性错误",
     counter_reset: "计数器重置",
-    backup_created: "备份完成",
+    backup_created: "数据库备份完成",
+    migration: "数据库迁移",
     update_check: "更新检查",
     update_check_failed: "更新检查失败",
     update_available: "发现新版本",
@@ -887,7 +888,7 @@
     update_verification_failed: "更新校验失败",
     update_install_started: "更新安装开始",
     update_install_aborted: "更新安装中止",
-    update_backup_failed: "更新备份失败",
+    update_backup_failed: "更新前备份失败",
   };
 
   function refreshEvents() {

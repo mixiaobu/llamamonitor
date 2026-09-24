@@ -7,6 +7,70 @@
 > 互相视为"不同系列"：安装器降级保护按数值比较（1.0.0 > 0.13.x），从 1.0.0 安装
 > 0.13.x 会被识别为降级并拒绝（实测行为，非缺陷）。
 
+## [1.0.1] - 2026-09-25
+
+**术语审计与 UI 文案修订版（UI/Text Freeze）**。不改布局、功能、数据库统计逻辑
+与 Metrics 采集逻辑，仅术语校准 + llama.cpp metric 语义校准 + 中英文统一 +
+tooltip 统一 + 去机器翻译感 + 去开发者内部术语。唯一术语字典：
+[`docs/UI_TERMINOLOGY.md`](docs/UI_TERMINOLOGY.md)；回归防护：
+`tests/test_ui_terminology.py`（4 例）。
+
+### 术语（详见 UI_TERMINOLOGY.md 完整映射表）
+- 「逻辑 Token」→ **Token 总量**、「计算 Token」→ **实际计算 Token**（均标注
+  派生指标：输入 + 缓存复用 + 输出 / 输入 + 输出）；「提示」→ **输入 Token**、
+  「缓存」→ **缓存复用 Token**、「缓存率」→ **缓存复用率**（= 缓存复用 /（输入 + 缓存复用））。
+- MTP 语义校准：「草稿序列」（spec_decode_num_drafts_total 实为验证步骤数）→
+  **推测验证轮次**；「接受率」→ **Draft Token 接受率**；「投机解码」→ **推测解码**
+  （tooltip Speculative Decoding）；MTP 标题 → **MTP（Multi-Token 预测）**。
+- 语义错误修复：「最大 Token 记录」→ **上下文高水位**
+  （llamacpp:n_tokens_max = 历史最大序列长度，非上下文上限）；「上下文上限」→
+  **上下文窗口上限**（llamacpp:context_max，按真实后端字段核实）；
+  「Busy Slots / 忙碌解码槽」→ **平均忙碌 Slot 数**
+  （llamacpp:n_busy_slots_per_decode = 每次 llama_decode() 平均，非瞬时状态）；
+  「KV 缓存使用率」保留（仅当后端提供 ratio，否则 --）。
+- 「排队（延迟）」→ **等待中请求**（requests_deferred 是等待，不是延迟）；
+  「处理中」→ **处理中请求**；「服务器运行时」→ **服务器运行状态**；
+  「Token 吞吐」→ **Token 吞吐率**；TPS 单位统一 `tok/s`。
+- Prompt TPS / Decode TPS 全项目统一英文（卡片、图例、指标条一致）。
+- GPU：页标题「GPU」→ **GPU 监控**；「利用率 & 显存」→ **GPU 利用率与显存占用**；
+  「硬件趋势」→ **功耗与温度**；指标统一 显存占用/风扇转速/SM 时钟/PCIe 链路；
+  能耗说明「根据采样功耗随时间积分估算，仅供参考。」（删 /api/gpu/daily 路径）。
+- 历史：「历史」→ **监控历史**；「覆盖率」→ **采集覆盖率**（时间完整性，非
+  Token 精度）；缺口表列 开始时间/结束时间/持续时间/来源/原因/**Token 可能缺失**
+  （是/否，不带问号）；缺口原因中文化（llama-server 不可达 / LlamaMonitor 重启 /
+  系统休眠 / 采集异常）；来源 llama.cpp / LlamaMonitor / GPU 采集。
+- 事件：llama-server **已连接 / 连接中断**（不用上线/离线）；LlamaMonitor
+  **启动 / 停止 / 重启**；「备份完成」→ **数据库备份完成**；补 **数据库迁移**
+  （detail "Schema 2 → 3"，不再回退显示英文 event name）；counter_reset 细节
+  映射中文计数名（不显内部字段）。
+- 设置：服务器 desc 重写（仅 HTTP GET 读取指标，不代理/不修改推理请求）；
+  「Metrics 路径」→ **指标端点路径**；「采集器」→ **指标采集**；
+  「轮询间隔」→ **指标采集间隔 / GPU 采集间隔**；「实时数据保留」→
+  **实时采样保留时长**；「面板刷新间隔」→ **界面刷新间隔**；「默认历史范围」→
+  **默认统计范围**；GPU desc「通过 NVIDIA nvidia-smi 读取 GPU 状态…不修改
+  GPU 配置」；「检测到的 GPU（不勾选=…）」→ **监控的 GPU（未选择时监控所有
+  已检测到的 GPU）**；「最大日志大小」→ **单个日志文件上限**；日志「备份数量」
+  → **轮转文件保留数**；WAL 说明带 Write-Ahead Logging；数据按钮 刷新状态 /
+  立即备份 / 检查数据库完整性；「清空实时历史」→ **清除实时采样历史**、
+  「重置所有统计」→ **重置统计数据**（tooltip/确认框说明计数器基线保留）；
+  「随 Windows 启动」→ **登录时自动启动**；「API 主机/端口」→ **监听地址/端口**
+  （0.0.0.0 显示轻量 Warning：只读接口可能可被局域网访问，管理操作仅本机）；
+  运行信息 运行模式/单实例运行/运行环境/应用数据目录；更新 desc 重写
+  （GitHub Releases + Ed25519 签名 + SHA-256 完整性校验）；「安装模式」→
+  **安装类型**、「最新 Release」→ **最新版本**、「状态」→ **更新状态**；
+  更新状态文案全部中文化（未检查/已是最新版本/发现新版本/正在下载/正在验证/
+  已准备安装/正在安装/检查失败，禁 IDLE/READY_TO_INSTALL/ERROR 裸显）。
+- 关于：副标题「llama.cpp 本地只读监控工具」；「数据库 Schema」→
+  **数据库 Schema 版本**；「数据目录」（值为 monitor.db 路径）→ **数据库文件**；
+  说明去 /metrics 路径（"仅通过 HTTP GET 读取 llama-server 指标数据…"）。
+- 拼写规范：llama.cpp / llama-server / LlamaMonitor / Draft Token（禁 LLama /
+  LLM server / llamacpp 裸词；raw metric 名仅允许出现在 tooltip「来源：」行）。
+
+### 测试
+- 新增 `tests/test_ui_terminology.py`（4 例：废弃术语消失 / 新术语存在 /
+  日志备份数改名 / tok/s 统一）；`test_api_dashboard.py` 页面标记断言同步
+  到新术语。全量 `python -m unittest discover -s tests`：**425 例全绿**。
+
 ## [1.0.0] - 2026-09-24
 
 **正式首发版本（Final Release）**。在 0.16.x 稳定线基础上完成 75 项 Release Gate

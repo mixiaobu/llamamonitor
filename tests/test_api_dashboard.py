@@ -92,10 +92,12 @@ class DashboardApiTests(unittest.TestCase):
             # 故只断言静态骨架里稳定存在的元素）
             for marker in (
                 "LlamaMonitor",
-                "逻辑 Token",
-                "缓存率",
-                "Token 吞吐",
-                "接受率",
+                # Phase 16F 术语审计：旧标记（逻辑 Token/缓存率…）已按
+                # docs/UI_TERMINOLOGY.md 统一为 新术语
+                "Token 总量",
+                "缓存复用率",
+                "Token 吞吐率",
+                "Draft Token 接受率",
                 'id="usageRange"',
                 "/static/echarts.min.js",
                 "/static/js/app.js",

@@ -50,8 +50,8 @@
         <span class="nav-icon" data-icon="performance"></span><span class="nav-label">性能</span></button>
       <button class="nav-item" data-page="gpu" title="GPU">
         <span class="nav-icon" data-icon="gpu"></span><span class="nav-label">GPU</span></button>
-      <button class="nav-item" data-page="history" title="历史">
-        <span class="nav-icon" data-icon="history"></span><span class="nav-label">历史</span></button>
+      <button class="nav-item" data-page="history" title="监控历史">
+        <span class="nav-icon" data-icon="history"></span><span class="nav-label">监控历史</span></button>
     </div>
     <div class="nav-items bottom">
       <button class="nav-item" data-page="settings" title="设置">
@@ -83,7 +83,7 @@
           <div class="ss-left">
             <span class="ss-main">
               <span class="ss-name">llama.cpp
-                <span id="ovServerState" class="status-badge paused"><span class="dot"></span><span class="status-text">启动中</span></span>
+                <span id="ovServerState" class="status-badge paused"><span class="dot"></span><span class="status-text">检测中</span></span>
               </span>
               <span class="ss-url" id="ovServerUrl"></span>
             </span>
@@ -106,18 +106,18 @@
               <div class="today-hero">
                 <div>
                   <div class="hero-num" id="ovTodayLogical" title="">--</div>
-                  <div class="hero-label">逻辑 Token <span class="info-tip-slot" data-tip="提示 + 缓存提示 + 生成输出。"></span></div>
+                  <div class="hero-label">Token 总量 <span class="info-tip-slot" data-tip="派生指标：输入 Token + 缓存复用 Token + 输出 Token。"></span></div>
                 </div>
                 <div>
                   <div class="hero-num" id="ovTodayCompute" title="">--</div>
-                  <div class="hero-label">计算 Token <span class="info-tip-slot" data-tip="新提示 + 生成输出。"></span></div>
+                  <div class="hero-label">实际计算 Token <span class="info-tip-slot" data-tip="派生指标：输入 Token + 输出 Token。"></span></div>
                 </div>
               </div>
               <div class="today-divider"></div>
               <div class="today-breakdown">
-                <div><div class="tb-label">提示</div><div class="tb-value" id="ovTodayPrompt">--</div></div>
-                <div><div class="tb-label">缓存</div><div class="tb-value" id="ovTodayCached">--</div></div>
-                <div><div class="tb-label">输出</div><div class="tb-value" id="ovTodayOutput">--</div></div>
+                <div><div class="tb-label">输入 Token</div><div class="tb-value" id="ovTodayPrompt">--</div></div>
+                <div><div class="tb-label">缓存复用 Token</div><div class="tb-value" id="ovTodayCached">--</div></div>
+                <div><div class="tb-label">输出 Token</div><div class="tb-value" id="ovTodayOutput">--</div></div>
               </div>
             </div>
           </div>
@@ -131,16 +131,16 @@
           </div>
           <div class="section-body ov-perf-grid">
             <div class="card perf-card">
-              <div class="card-title">Token 速率</div>
-              <div class="pc-row"><span class="pc-key">提示处理</span><span class="pc-value" id="ovPromptTps">--</span></div>
-              <div class="pc-row"><span class="pc-key">解码</span><span class="pc-value" id="ovDecodeTps">--</span></div>
-              <div class="pc-row"><span class="pc-key">MTP 接受率</span><span class="pc-value" id="ovMtpRate">--</span></div>
+              <div class="card-title">Token 吞吐率</div>
+              <div class="pc-row"><span class="pc-key">Prompt TPS</span><span class="pc-value" id="ovPromptTps">--</span></div>
+              <div class="pc-row"><span class="pc-key">Decode TPS</span><span class="pc-value" id="ovDecodeTps">--</span></div>
+              <div class="pc-row"><span class="pc-key">Draft Token 接受率</span><span class="pc-value" id="ovMtpRate">--</span></div>
             </div>
             <div class="card perf-card">
               <div class="card-title">运行状态</div>
-              <div class="pc-row"><span class="pc-key">处理中 / 排队</span><span class="pc-value" id="ovRequests">--</span></div>
-              <div class="pc-row"><span class="pc-key">上下文上限</span><span class="pc-value" id="ovContext">--</span></div>
-              <div class="pc-row"><span class="pc-key">KV 缓存</span><span class="pc-value" id="ovKvCache">--</span></div>
+              <div class="pc-row"><span class="pc-key">处理中 / 等待中</span><span class="pc-value" id="ovRequests">--</span></div>
+              <div class="pc-row"><span class="pc-key">上下文窗口上限</span><span class="pc-value" id="ovContext">--</span></div>
+              <div class="pc-row"><span class="pc-key">KV Cache 使用率</span><span class="pc-value" id="ovKvCache">--</span></div>
             </div>
           </div>
         </div>
@@ -168,7 +168,7 @@
             <div class="card dq-summary">
               <div class="stat-grid">
                 <div class="stat">
-                  <div class="stat-label">今日监控覆盖率</div>
+                  <div class="stat-label">今日采集覆盖率</div>
                   <div class="stat-value mid" id="dqCoverage">--</div>
                   <div class="stat-hint">有效采样 / 应有采样</div>
                 </div>
@@ -213,20 +213,20 @@
           <div class="section-body">
             <div class="card">
               <div class="stat" style="margin-bottom:var(--spacing-md)">
-                <div class="stat-label">逻辑 Token <span class="info-tip-slot" data-tip="提示 + 缓存提示 + 生成输出。"></span></div>
+                <div class="stat-label">Token 总量 <span class="info-tip-slot" data-tip="派生指标：输入 Token + 缓存复用 Token + 输出 Token。"></span></div>
                 <div class="stat-value" id="sumRangeLogical" title="">--</div>
               </div>
               <div class="stat">
-                <div class="stat-label">计算 Token <span class="info-tip-slot" data-tip="新提示 + 生成输出。"></span></div>
+                <div class="stat-label">实际计算 Token <span class="info-tip-slot" data-tip="派生指标：输入 Token + 输出 Token。"></span></div>
                 <div class="stat-value mid" id="sumRangeCompute">--</div>
               </div>
               <div class="card-section-gap">
                 <div class="stat-grid">
-                  <div class="stat"><div class="stat-label">提示</div><div class="stat-value small" id="sumRangePrompt">--</div></div>
-                  <div class="stat"><div class="stat-label">缓存</div><div class="stat-value small" id="sumRangeCached">--</div></div>
-                  <div class="stat"><div class="stat-label">输出</div><div class="stat-value small" id="sumRangeOutput">--</div></div>
+                  <div class="stat"><div class="stat-label">输入 Token</div><div class="stat-value small" id="sumRangePrompt">--</div></div>
+                  <div class="stat"><div class="stat-label">缓存复用 Token</div><div class="stat-value small" id="sumRangeCached">--</div></div>
+                  <div class="stat"><div class="stat-label">输出 Token</div><div class="stat-value small" id="sumRangeOutput">--</div></div>
                   <div class="stat">
-                    <div class="stat-label">缓存率 <span class="info-tip-slot" data-tip="缓存提示 / (新提示 + 缓存提示)。"></span></div>
+                    <div class="stat-label">缓存复用率 <span class="info-tip-slot" data-tip="缓存复用 Token / (输入 Token + 缓存复用 Token)，即 KV Cache 复用比例。"></span></div>
                     <div class="stat-value small" id="sumCacheRatio">--</div>
                   </div>
                 </div>
@@ -238,7 +238,7 @@
         <div class="section">
           <div class="section-header">
             <span class="sh-title">每日 Token 用量</span>
-            <span class="sh-actions"><span class="sh-sub">提示 / 缓存 / 输出（堆叠）</span></span>
+            <span class="sh-actions"><span class="sh-sub">输入 / 缓存复用 / 输出（堆叠）</span></span>
           </div>
           <div class="section-body">
             <div class="card chart-box" id="chartUsageBox">
@@ -251,14 +251,14 @@
         <div class="section">
           <div class="section-header">
             <span class="sh-title">每日明细</span>
-            <span class="sh-actions"><span class="sh-sub">覆盖率与缺口（缺口详情见历史页）</span></span>
+            <span class="sh-actions"><span class="sh-sub">采集覆盖率与缺口（缺口详情见监控历史页）</span></span>
           </div>
           <div class="section-body">
             <div class="table-wrap card-like">
               <table class="table-full table-daily">
                 <thead><tr>
-                  <th>日期</th><th>提示</th><th>缓存</th><th>输出</th>
-                  <th>计算</th><th>逻辑</th><th>缓存率</th><th>覆盖率</th><th>缺口</th>
+                  <th>日期</th><th>输入 Token</th><th>缓存复用 Token</th><th>输出 Token</th>
+                  <th>实际计算</th><th>Token 总量</th><th>缓存复用率</th><th>采集覆盖率</th><th>缺口</th>
                 </tr></thead>
                 <tbody id="dailyTbody"><tr><td colspan="9" class="na">暂无数据。</td></tr></tbody>
               </table>
@@ -272,7 +272,7 @@
         <div class="page-header">
           <div class="ph-head">
             <h1 class="page-title">性能</h1>
-            <p class="page-subtitle">实时生成性能、服务器运行时状态与 MTP（投机解码）运行效果。</p>
+            <p class="page-subtitle">实时生成性能、服务器运行状态与 MTP（Multi-Token 预测）运行效果。</p>
           </div>
         </div>
 
@@ -287,15 +287,15 @@
             <div class="ms-value" id="perfDecodeTps">--</div>
           </div>
           <div class="ms-item">
-            <div class="ms-key">处理中</div>
+            <div class="ms-key">处理中请求</div>
             <div class="ms-value" id="perfProcessing">--</div>
           </div>
           <div class="ms-item">
-            <div class="ms-key">排队</div>
+            <div class="ms-key">等待中请求</div>
             <div class="ms-value" id="perfQueued">--</div>
           </div>
           <div class="ms-item">
-            <div class="ms-key">Busy Slots</div>
+            <div class="ms-key">忙碌 Slot（平均）</div>
             <div class="ms-value" id="perfBusySlots">--</div>
           </div>
         </div>
@@ -303,7 +303,7 @@
         <!-- 3. Token 吞吐（§20.3：无数据时统一 Empty State，不留空坐标轴） -->
         <div class="section">
           <div class="section-header">
-            <span class="sh-title">Token 吞吐</span>
+            <span class="sh-title">Token 吞吐率</span>
             <span class="sh-actions"><span class="sh-sub">最近 60 分钟</span></span>
           </div>
           <div class="section-body">
@@ -314,24 +314,30 @@
           </div>
         </div>
 
-        <!-- 4. 服务器运行时（§20.4：6 项，2~3 列） -->
+        <!-- 4. 服务器运行状态（§20.4：6 项，2~3 列） -->
         <div class="section">
           <div class="section-header">
-            <span class="sh-title">服务器运行时</span>
+            <span class="sh-title">服务器运行状态</span>
           </div>
           <div class="section-body">
             <div class="card">
               <div class="stat-grid">
-                <div class="stat"><div class="stat-label">处理中</div><div class="stat-value mid" id="rtProcessing">--</div></div>
-                <div class="stat"><div class="stat-label">排队（延迟）</div><div class="stat-value mid" id="rtQueued">--</div></div>
-                <div class="stat"><div class="stat-label">忙碌解码槽</div><div class="stat-value mid" id="rtBusySlots">--</div></div>
+                <div class="stat"><div class="stat-label">处理中请求</div><div class="stat-value mid" id="rtProcessing">--</div></div>
+                <div class="stat"><div class="stat-label">等待中请求</div><div class="stat-value mid" id="rtQueued">--</div></div>
                 <div class="stat">
-                  <div class="stat-label">最大 Token 记录 <span class="info-tip-slot" data-tip="当前活动 Token 记录数（n_tokens_max），不是上下文使用量。"></span></div>
+                  <div class="stat-label">平均忙碌 Slot 数 <span class="info-tip-slot" data-tip="llama_decode() 调用期间的平均忙碌 Slot 数（历史平均，非瞬时值）。来源：llamacpp:n_busy_slots_per_decode"></span></div>
+                  <div class="stat-value mid" id="rtBusySlots">--</div>
+                </div>
+                <div class="stat">
+                  <div class="stat-label">上下文高水位 <span class="info-tip-slot" data-tip="llama.cpp 观测到的最大 Token 数（历史高水位，非当前上下文长度）。来源：llamacpp:n_tokens_max"></span></div>
                   <div class="stat-value mid" id="rtTokenMax">--</div>
                 </div>
-                <div class="stat"><div class="stat-label">KV 缓存使用率</div><div class="stat-value mid" id="rtKvCache">--</div></div>
                 <div class="stat">
-                  <div class="stat-label">上下文上限 <span class="info-tip-slot" data-tip="服务器配置的上下文长度。"></span></div>
+                  <div class="stat-label">KV Cache 使用率 <span class="info-tip-slot" data-tip="KV Cache 使用比例（0-100%）；llama-server 未提供时显示 --。来源：llamacpp:kv_cache_usage_ratio"></span></div>
+                  <div class="stat-value mid" id="rtKvCache">--</div>
+                </div>
+                <div class="stat">
+                  <div class="stat-label">上下文窗口上限 <span class="info-tip-slot" data-tip="llama-server 报告的上下文长度（配置上限 context_max；部分构建报告可用上下文 context_available）。"></span></div>
                   <div class="stat-value mid" id="rtContextMax">--</div>
                 </div>
               </div>
@@ -339,32 +345,35 @@
           </div>
         </div>
 
-        <!-- 5. MTP / 投机解码（§20.5：summary metrics + 两张并排图，作为一个整体） -->
+        <!-- 5. MTP（§20.5：summary metrics + 两张并排图，作为一个整体） -->
         <div class="section">
           <div class="section-header">
-            <span class="sh-title">MTP / 投机解码</span>
+            <span class="sh-title">MTP（Multi-Token 预测） <span class="info-tip-slot" data-tip="llama.cpp 的推测解码（Speculative Decoding）实现：草稿 Token 由主模型批量验证。"></span></span>
             <span class="sh-actions"><span class="sh-sub">今日</span></span>
           </div>
           <div class="section-body mtp-group">
             <div class="card mtp-summary">
               <div class="stat-grid">
                 <div class="stat">
-                  <div class="stat-label">接受率 <span class="info-tip-slot" data-tip="已接受草稿 Token / 草稿 Token。"></span></div>
+                  <div class="stat-label">Draft Token 接受率 <span class="info-tip-slot" data-tip="已接受 Draft Token / Draft Token，即主模型批量验证后的接受比例。"></span></div>
                   <div class="stat-value mid" id="mtpAcceptRate">--</div>
                 </div>
-                <div class="stat"><div class="stat-label">草稿 Token</div><div class="stat-value mid" id="mtpDraft">--</div></div>
-                <div class="stat"><div class="stat-label">已接受 Token</div><div class="stat-value mid" id="mtpAccepted">--</div></div>
-                <div class="stat"><div class="stat-label">草稿序列</div><div class="stat-value mid" id="mtpSeqs">--</div></div>
+                <div class="stat"><div class="stat-label">Draft Token</div><div class="stat-value mid" id="mtpDraft">--</div></div>
+                <div class="stat"><div class="stat-label">已接受 Draft Token</div><div class="stat-value mid" id="mtpAccepted">--</div></div>
+                <div class="stat">
+                  <div class="stat-label">推测验证轮次 <span class="info-tip-slot" data-tip="推测解码（Speculative Decoding）的验证轮数，不是草稿数量。来源：llamacpp:spec_decode_num_drafts_total"></span></div>
+                  <div class="stat-value mid" id="mtpSeqs">--</div>
+                </div>
               </div>
             </div>
             <div class="grid cols-2">
               <div class="card chart-box" id="chartMtpBox">
-                <div class="card-title">接受率趋势 <span class="card-sub">按天</span></div>
+                <div class="card-title">Draft Token 接受率趋势 <span class="card-sub">按天</span></div>
                 <div class="chart" id="chartMtp" data-chart="chartMtp"></div>
                 <div class="chart-empty-overlay"></div>
               </div>
               <div class="card chart-box" id="chartMtpPosBox">
-                <div class="card-title">各草稿位置的已接受 Token <span class="card-sub">今日，按草稿位置</span></div>
+                <div class="card-title">各 Draft 位置已接受 Token <span class="card-sub">今日，按 Draft 位置</span></div>
                 <div class="chart" id="chartMtpPos" data-chart="chartMtpPos"></div>
                 <div class="chart-empty-overlay"></div>
               </div>
@@ -377,9 +386,9 @@
       <section class="page" id="page-gpu">
         <div class="page-header">
           <div class="ph-head">
-            <h1 class="page-title">GPU</h1>
+            <h1 class="page-title">GPU 监控</h1>
             <p class="page-subtitle">
-              NVIDIA GPU 利用率、显存、功耗与温度。
+              通过 nvidia-smi 监控 NVIDIA GPU 的利用率、显存占用、功耗与温度。
               <span id="gpuPageState" class="status-badge paused" style="margin-left:var(--spacing-sm)"><span class="dot"></span><span class="status-text">--</span></span>
               <span class="stat-hint bad" id="gpuUnavailReason" style="display:none"></span>
             </p>
@@ -405,11 +414,11 @@
           <span class="stat-hint" id="gpuRangeHint"></span>
         </div>
 
-        <!-- 4. 利用率 & 显存（§21.4：全宽图表卡） -->
+        <!-- 4. GPU 利用率与显存占用（§21.4：全宽图表卡） -->
         <div class="section">
           <div class="section-header">
-            <span class="sh-title">利用率 &amp; 显存</span>
-            <span class="sh-actions"><span class="sh-sub">同一 GPU 同色，利用率实线 / 显存虚线（0-100%）</span></span>
+            <span class="sh-title">GPU 利用率与显存占用</span>
+            <span class="sh-actions"><span class="sh-sub">同一 GPU 同色：利用率实线 / 显存占用虚线（0-100%）</span></span>
           </div>
           <div class="section-body">
             <div class="card chart-box" id="chartGpuUtilBox">
@@ -419,10 +428,10 @@
           </div>
         </div>
 
-        <!-- 5. 硬件趋势（§21.5：功耗 + 温度并排；不支持功耗的卡不建 series / 不显示图例） -->
+        <!-- 5. 功耗与温度（§21.5：功耗 + 温度并排；不支持功耗的卡不建 series / 不显示图例） -->
         <div class="section">
           <div class="section-header">
-            <span class="sh-title">硬件趋势</span>
+            <span class="sh-title">功耗与温度</span>
           </div>
           <div class="section-body charts-2col">
             <div class="card chart-box" id="chartGpuPowerBox">
@@ -442,7 +451,7 @@
         <div class="section">
           <div class="section-header">
             <span class="sh-title">能耗估算</span>
-            <span class="sh-actions"><span class="sh-sub">由采样功耗积分估算（/api/gpu/daily）</span></span>
+            <span class="sh-actions"><span class="sh-sub">根据采样功耗随时间积分估算，仅供参考。</span></span>
           </div>
           <div class="section-body">
             <div class="card">
@@ -456,8 +465,8 @@
       <section class="page" id="page-history">
         <div class="page-header">
           <div class="ph-head">
-            <h1 class="page-title">历史</h1>
-            <p class="page-subtitle">数据质量、已知缺口、监控事件与导出。</p>
+            <h1 class="page-title">监控历史</h1>
+            <p class="page-subtitle">数据质量、采集缺口、监控事件与导出。</p>
           </div>
         </div>
 
@@ -465,7 +474,7 @@
         <div class="section">
           <div class="section-header">
             <span class="sh-title">数据质量</span>
-            <span class="sh-actions"><span class="sh-sub">覆盖率为监控时间，非 Token 精度</span></span>
+            <span class="sh-actions"><span class="sh-sub">采集覆盖率衡量监控数据的时间完整性，不代表 Token 统计精度</span></span>
           </div>
           <div class="section-body">
             <div class="card">
@@ -476,7 +485,7 @@
                   <div class="stat-hint" id="hqDbHint"></div>
                 </div>
                 <div class="stat">
-                  <div class="stat-label">今日覆盖率</div>
+                  <div class="stat-label">今日采集覆盖率</div>
                   <div class="stat-value mid" id="hqCoverage">--</div>
                 </div>
                 <div class="stat">
@@ -509,7 +518,7 @@
             <div class="table-wrap table-flat card-like" id="gapsTableWrap">
               <table class="table-full table-gap">
                 <thead><tr>
-                  <th>开始</th><th>结束</th><th>时长</th><th>来源</th><th>原因</th><th>Token 丢失？</th>
+                  <th>开始时间</th><th>结束时间</th><th>持续时间</th><th>来源</th><th>原因</th><th>Token 可能缺失</th>
                 </tr></thead>
                 <tbody id="gapsTbody"></tbody>
               </table>
@@ -577,8 +586,8 @@
         <div class="settings-pane">
 
           <div class="settings-card" id="sec-server" data-sec="server">
-            <h2>服务器</h2>
-            <p class="settings-desc">llama-server 基础地址。监控只 GET metrics 端点，绝不触碰服务器本身。</p>
+            <h2>llama-server</h2>
+            <p class="settings-desc">配置 llama-server 监控端点。LlamaMonitor 仅通过 HTTP GET 读取指标数据，不代理或修改推理请求。</p>
             <!-- Phase 16C §21：轻量连接状态（复用已有状态/测试结果，不额外高频探测） -->
             <div class="conn-status" id="serverConnStatus">
               <span class="cs-dot"></span>
@@ -588,20 +597,20 @@
             <div class="setting-row">
               <div class="setting-info">
                 <div class="setting-title">llama-server 地址</div>
-                <div class="setting-desc">基础地址（http/https），例如 http://192.168.1.100:9091。不要包含 metrics 路径。</div>
+                <div class="setting-desc">基础地址（http/https），例如 http://192.168.1.100:9091，不含指标路径。</div>
               </div>
               <div class="setting-control">
                 <input class="input w-l" id="setServerUrl" type="text" spellcheck="false" placeholder="http://127.0.0.1:9091" aria-label="llama-server 地址">
               </div>
             </div>
             <div class="setting-row">
-              <div class="setting-info"><div class="setting-title">Metrics 路径</div></div>
+              <div class="setting-info"><div class="setting-title">指标端点路径</div><div class="setting-desc">llama-server 的 Prometheus 指标端点，例如 /metrics。</div></div>
               <div class="setting-control">
-                <input class="input w-l" id="setMetricsPath" type="text" spellcheck="false" aria-label="Metrics 路径">
+                <input class="input w-l" id="setMetricsPath" type="text" spellcheck="false" aria-label="指标端点路径">
               </div>
             </div>
             <div class="setting-row">
-              <div class="setting-info"><div class="setting-title">连接超时</div><div class="setting-desc">秒。</div></div>
+              <div class="setting-info"><div class="setting-title">连接超时</div><div class="setting-desc">请求超时时间（秒）。</div></div>
               <div class="setting-control">
                 <input class="input w-s" id="setTimeoutSec" type="number" min="0.5" max="60" step="0.5" aria-label="连接超时秒数">
               </div>
@@ -616,16 +625,16 @@
           </div>
 
           <div class="settings-card" id="sec-collector" data-sec="collector">
-            <h2>采集器</h2>
+            <h2>指标采集</h2>
             <p class="settings-desc">指标采集参数。更改在重启后生效。</p>
             <div class="setting-row">
-              <div class="setting-info"><div class="setting-title">轮询间隔</div><div class="setting-desc">指标采集频率（秒）。</div></div>
+              <div class="setting-info"><div class="setting-title">指标采集间隔</div><div class="setting-desc">从 llama-server 采集指标的间隔（秒）。</div></div>
               <div class="setting-control">
-                <input class="input w-s" id="setPollInterval" type="number" min="1" max="3600" aria-label="轮询间隔秒数">
+                <input class="input w-s" id="setPollInterval" type="number" min="1" max="3600" aria-label="指标采集间隔秒数">
               </div>
             </div>
             <div class="setting-row">
-              <div class="setting-info"><div class="setting-title">实时数据保留</div><div class="setting-desc">保留的实时采样时长（小时）。</div></div>
+              <div class="setting-info"><div class="setting-title">实时采样保留时长</div><div class="setting-desc">实时采样数据的保留时长（小时）。</div></div>
               <div class="setting-control">
                 <input class="input w-s" id="setLiveRetention" type="number" min="1" max="8760" aria-label="实时保留小时数">
               </div>
@@ -646,22 +655,22 @@
               </div>
             </div>
             <div class="setting-row">
-              <div class="setting-info"><div class="setting-title">面板刷新间隔</div><div class="setting-desc">秒。</div></div>
+              <div class="setting-info"><div class="setting-title">界面刷新间隔</div><div class="setting-desc">前端实时数据的刷新周期（秒）。</div></div>
               <div class="setting-control">
                 <input class="input w-s" id="setRefreshInterval" type="number" min="1" max="3600" aria-label="刷新间隔秒数">
               </div>
             </div>
             <div class="setting-row">
-              <div class="setting-info"><div class="setting-title">默认历史范围</div><div class="setting-desc">天数，用作用量页默认值。</div></div>
+              <div class="setting-info"><div class="setting-title">默认统计范围</div><div class="setting-desc">天数，用作用量页默认显示范围。</div></div>
               <div class="setting-control">
-                <input class="input w-s" id="setDefaultDays" type="number" min="1" max="3650" aria-label="默认历史范围天数">
+                <input class="input w-s" id="setDefaultDays" type="number" min="1" max="3650" aria-label="默认统计范围天数">
               </div>
             </div>
           </div>
 
           <div class="settings-card" id="sec-gpu" data-sec="gpu">
             <h2>GPU</h2>
-            <p class="settings-desc">Windows NVIDIA 只读监控（数据来自 NVIDIA 驱动的 nvidia-smi；绝不控制 GPU）。更改在重启后生效。</p>
+            <p class="settings-desc">通过 NVIDIA nvidia-smi 读取 GPU 状态。LlamaMonitor 仅采集监控数据，不修改 GPU 配置。更改在重启后生效。</p>
             <div class="setting-row">
               <div class="setting-info"><div class="setting-title">启用 GPU 监控</div></div>
               <div class="setting-control">
@@ -669,20 +678,20 @@
               </div>
             </div>
             <div class="setting-row">
-              <div class="setting-info"><div class="setting-title">轮询间隔</div><div class="setting-desc">秒。</div></div>
+              <div class="setting-info"><div class="setting-title">GPU 采集间隔</div><div class="setting-desc">秒。</div></div>
               <div class="setting-control">
-                <input class="input w-s" id="setGpuPoll" type="number" min="1" max="3600" aria-label="GPU 轮询间隔秒数">
+                <input class="input w-s" id="setGpuPoll" type="number" min="1" max="3600" aria-label="GPU 采集间隔秒数">
               </div>
             </div>
             <div class="setting-row">
-              <div class="setting-info"><div class="setting-title">历史保留</div><div class="setting-desc">小时。</div></div>
+              <div class="setting-info"><div class="setting-title">GPU 实时采样保留时长</div><div class="setting-desc">小时。</div></div>
               <div class="setting-control">
                 <input class="input w-s" id="setGpuRetention" type="number" min="1" max="8760" aria-label="GPU 保留小时数">
               </div>
             </div>
             <!-- BUG-G 修复：设备选择改为整行（checkbox+名称 / UUID 缩进第二行），不再挤在一行 -->
             <div class="setting-row">
-              <div class="setting-info"><div class="setting-title">检测到的 GPU</div><div class="setting-desc">不勾选 = 监控所有检测到的 GPU。</div></div>
+              <div class="setting-info"><div class="setting-title">监控的 GPU</div><div class="setting-desc">未选择时监控所有已检测到的 GPU。</div></div>
               <div class="setting-control" style="flex-direction:column;align-items:stretch;flex:1;max-width:640px">
                 <div class="gpu-detected" id="gpuDetected"></div>
               </div>
@@ -699,7 +708,7 @@
               </div>
             </div>
             <div class="setting-row">
-              <div class="setting-info"><div class="setting-title">SQLite WAL</div><div class="setting-desc">预写日志（推荐）。</div></div>
+              <div class="setting-info"><div class="setting-title">SQLite WAL</div><div class="setting-desc">Write-Ahead Logging，预写日志模式（推荐）。</div></div>
               <div class="setting-control">
                 <select class="select" id="setWal" aria-label="SQLite WAL">
                   <option value="true">启用</option>
@@ -711,7 +720,7 @@
 
           <div class="settings-card" id="sec-backup" data-sec="data">
             <h2>备份</h2>
-            <p class="settings-desc">自动一致性快照（SQLite Backup API，WAL 安全）。更改在重启后生效。</p>
+            <p class="settings-desc">定期创建一致性数据库备份。更改在重启后生效。</p>
             <div class="setting-row">
               <div class="setting-info"><div class="setting-title">自动备份</div></div>
               <div class="setting-control">
@@ -744,15 +753,15 @@
               </div>
             </div>
             <div class="setting-row">
-              <div class="setting-info"><div class="setting-title">最大日志大小</div><div class="setting-desc">MB。</div></div>
+              <div class="setting-info"><div class="setting-title">单个日志文件上限</div><div class="setting-desc">MB。</div></div>
               <div class="setting-control">
                 <input class="input w-s" id="setMaxLogSize" type="number" min="1" max="1024" aria-label="最大日志大小 MB">
               </div>
             </div>
             <div class="setting-row">
-              <div class="setting-info"><div class="setting-title">备份数量</div><div class="setting-desc">保留的轮转日志文件数量。</div></div>
+              <div class="setting-info"><div class="setting-title">轮转文件保留数</div><div class="setting-desc">保留的轮转日志文件数量。</div></div>
               <div class="setting-control">
-                <input class="input w-s" id="setLogBackupCount" type="number" min="1" max="100" aria-label="日志备份数量">
+                <input class="input w-s" id="setLogBackupCount" type="number" min="1" max="100" aria-label="轮转文件保留数">
               </div>
             </div>
           </div>
@@ -762,9 +771,9 @@
             <p class="settings-desc">数据库状态、备份与数据操作。</p>
             <div id="dataInfo" class="kv-list" style="margin-bottom:var(--spacing-md)"></div>
             <div class="btn-row" style="margin-bottom:var(--spacing-md)">
-              <button class="btn" id="btnRefreshData">刷新</button>
-              <button class="btn" id="btnBackup">备份数据库</button>
-              <button class="btn" id="btnRunCheck">数据库检查</button>
+              <button class="btn" id="btnRefreshData">刷新状态</button>
+              <button class="btn" id="btnBackup">立即备份</button>
+              <button class="btn" id="btnRunCheck">检查数据库完整性</button>
               <span class="inline-result" id="dbCheckResult"></span>
             </div>
             <div class="backup-list" id="backupList"></div>
@@ -772,12 +781,12 @@
 
           <div class="settings-card" id="sec-application" data-sec="application">
             <h2>应用</h2>
-            <p class="settings-desc">运行状态、开机自启与应用服务器。API 主机/端口更改在重启后生效。</p>
+            <p class="settings-desc">运行状态、自动启动与监听设置。监听地址/端口更改在重启后生效。</p>
             <div id="appInfo" class="kv-list" style="margin-bottom:var(--spacing-md)"></div>
             <div class="setting-row">
-              <div class="setting-info"><div class="setting-title">随 Windows 启动</div><div class="setting-status" id="autostartStatus"></div></div>
+              <div class="setting-info"><div class="setting-title">登录时自动启动</div><div class="setting-status" id="autostartStatus"></div></div>
               <div class="setting-control">
-                <label class="switch"><input type="checkbox" id="setAutostart" aria-label="随 Windows 启动"><span class="track"></span></label>
+                <label class="switch"><input type="checkbox" id="setAutostart" aria-label="登录时自动启动"><span class="track"></span></label>
               </div>
             </div>
             <div class="setting-row" id="autostartRepairRow" style="display:none">
@@ -785,15 +794,15 @@
               <div class="setting-control"><button class="btn" id="btnAutostartRepair">修复</button></div>
             </div>
             <div class="setting-row">
-              <div class="setting-info"><div class="setting-title">API 主机</div></div>
+              <div class="setting-info"><div class="setting-title">监听地址</div><div class="setting-desc" id="webHostHint"></div></div>
               <div class="setting-control">
-                <input class="input w-m" id="setWebHost" type="text" spellcheck="false" aria-label="API 主机">
+                <input class="input w-m" id="setWebHost" type="text" spellcheck="false" aria-label="监听地址">
               </div>
             </div>
             <div class="setting-row">
-              <div class="setting-info"><div class="setting-title">API 端口</div></div>
+              <div class="setting-info"><div class="setting-title">监听端口</div></div>
               <div class="setting-control">
-                <input class="input w-m" id="setWebPort" type="number" min="1" max="65535" aria-label="API 端口">
+                <input class="input w-m" id="setWebPort" type="number" min="1" max="65535" aria-label="监听端口">
               </div>
             </div>
             <div class="setting-row">
@@ -812,13 +821,13 @@
 
           <div class="settings-card" id="sec-updates" data-sec="updates">
             <h2>更新</h2>
-            <p class="settings-desc">来自 GitHub Release 的安全更新。每次更新安装前都经过 Ed25519 签名与 SHA-256 校验。</p>
+            <p class="settings-desc">通过 GitHub Releases 检查和安装更新。更新包会经过 Ed25519 签名与 SHA-256 完整性校验。</p>
             <div class="kv-list" style="margin-bottom:var(--spacing-md)">
               <span class="k">当前版本</span><span class="v" id="updCurrentVersion">--</span>
-              <span class="k">安装模式</span><span class="v" id="updInstallMode">--</span>
+              <span class="k">安装类型</span><span class="v" id="updInstallMode">--</span>
               <span class="k">上次检查</span><span class="v" id="updLastCheck">从未</span>
-              <span class="k">最新 Release</span><span class="v" id="updLatestVersion">--</span>
-              <span class="k">状态</span><span class="v"><span class="update-state" id="updStatus">--</span></span>
+              <span class="k">最新版本</span><span class="v" id="updLatestVersion">--</span>
+              <span class="k">更新状态</span><span class="v"><span class="update-state" id="updStatus">--</span></span>
             </div>
             <div class="setting-row">
               <div class="setting-info"><div class="setting-title">自动检查更新</div></div>
@@ -833,7 +842,7 @@
               </div>
             </div>
             <div class="setting-row">
-              <div class="setting-info"><div class="setting-title">自动下载</div><div class="setting-desc">发现新版本时下载（仍绝不自动安装）。</div></div>
+              <div class="setting-info"><div class="setting-title">自动下载</div><div class="setting-desc">发现新版本时自动下载（不会自动安装）。</div></div>
               <div class="setting-control">
                 <label class="switch"><input type="checkbox" id="setUpdateAutoDownload" aria-label="自动下载"><span class="track"></span></label>
               </div>
@@ -862,10 +871,10 @@
           <!-- 危险区（spec §63：页面最底部，与常规设置视觉分离） -->
           <div class="settings-card danger-zone" id="sec-danger" data-sec="data">
             <h2>危险操作</h2>
-            <p class="settings-desc">以下操作不可撤销（重置统计有确认输入）。更改在重启后生效。</p>
+            <p class="settings-desc">以下操作不可撤销。确认后立即生效（重置统计数据需输入确认词）。</p>
             <div class="btn-row">
-              <button class="btn danger" id="btnClearLive">清空实时历史</button>
-              <button class="btn danger" id="btnResetStats">重置所有统计</button>
+              <button class="btn danger" id="btnClearLive" title="删除所有实时采样数据。每日统计汇总与计数器基线会保留。">清除实时采样历史</button>
+              <button class="btn danger" id="btnResetStats" title="删除 Token 用量历史、实时采样与监控缺口记录。计数器基线会保留，计数从当前会话继续。">重置统计数据</button>
             </div>
           </div>
 
@@ -897,7 +906,7 @@
             <div>
               <div class="ah-name">LlamaMonitor</div>
               <div class="ah-ver"><span id="aboutVersion">--</span></div>
-              <div class="ah-tag">llama.cpp 的本地只读监控工具</div>
+              <div class="ah-tag">llama.cpp 本地只读监控工具</div>
             </div>
           </div>
         </div>
@@ -912,9 +921,9 @@
               <div class="kv-list">
                 <span class="k">应用</span><span class="v" id="aboutName">LlamaMonitor</span>
                 <span class="k">版本</span><span class="v" id="aboutVersionRow">--</span>
-                <span class="k">数据库 Schema</span><span class="v" id="aboutSchema">--</span>
+                <span class="k">数据库 Schema 版本</span><span class="v" id="aboutSchema">--</span>
                 <span class="k">平台</span><span class="v" id="aboutPlatform">Windows x64</span>
-                <span class="k">数据目录</span><span class="v" id="aboutDataDir">--</span>
+                <span class="k">数据库文件</span><span class="v" id="aboutDataDir">--</span>
               </div>
               <div class="card-footer">
                 <div class="btn-row">
@@ -924,7 +933,7 @@
                 </div>
               </div>
               <p class="about-note">
-                LlamaMonitor 通过读取 llama.cpp 的 /metrics 端点进行监控，不代理或修改推理请求。
+                LlamaMonitor 仅通过 HTTP GET 读取 llama-server 指标数据进行监控，不代理或修改推理请求。
               </p>
             </div>
           </div>

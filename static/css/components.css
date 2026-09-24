@@ -656,11 +656,11 @@
 
 /* 历史页「最近缺口」表 */
 .table-gap { table-layout: fixed; min-width: 780px; }
-.table-gap th:nth-child(1), .table-gap td:nth-child(1) { width: 120px; } /* 开始 */
-.table-gap th:nth-child(2), .table-gap td:nth-child(2) { width: 120px; } /* 结束 */
-.table-gap th:nth-child(3), .table-gap td:nth-child(3) { width: 88px; }  /* 时长 */
-.table-gap th:nth-child(4), .table-gap td:nth-child(4) { width: 76px; }  /* 来源 */
-.table-gap th:nth-child(6), .table-gap td:nth-child(6) { width: 104px; } /* Token 丢失？ */
+.table-gap th:nth-child(1), .table-gap td:nth-child(1) { width: 120px; } /* 开始时间 */
+.table-gap th:nth-child(2), .table-gap td:nth-child(2) { width: 120px; } /* 结束时间 */
+.table-gap th:nth-child(3), .table-gap td:nth-child(3) { width: 88px; }  /* 持续时间 */
+.table-gap th:nth-child(4), .table-gap td:nth-child(4) { width: 100px; } /* 来源 */
+.table-gap th:nth-child(6), .table-gap td:nth-child(6) { width: 112px; } /* Token 可能缺失 */
 .table-gap th:nth-child(5), .table-gap td:nth-child(5) { width: auto; }  /* 原因（弹性） */
 .table-gap td:nth-child(5) { white-space: normal; }
 .table-gap td { overflow-wrap: break-word; }

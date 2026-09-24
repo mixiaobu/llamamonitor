@@ -240,13 +240,13 @@
           var logicalTotal = day ? (day.logical_tokens != null ? day.logical_tokens :
             (day.prompt_tokens || 0) + (day.cached_tokens || 0) + (day.output_tokens || 0)) : null;
           lines += "<div style='display:flex;justify-content:space-between;gap:16px;border-top:1px solid " + p.split +
-            ";margin-top:4px;padding-top:4px'><span>逻辑合计</span><span style='font-variant-numeric:tabular-nums'>" +
+            ";margin-top:4px;padding-top:4px'><span>Token 总量</span><span style='font-variant-numeric:tabular-nums'>" +
             F.formatTokenCount(logicalTotal) + "</span></div>";
           return lines;
         },
       }),
       legend: {
-        data: ["提示", "缓存", "输出"],
+        data: ["输入 Token", "缓存复用 Token", "输出 Token"],
         textStyle: { color: p.axis, fontSize: 12 },
         top: 0, right: 0, icon: "rect", itemWidth: 10, itemHeight: 10, itemGap: 14,
       },
@@ -271,19 +271,19 @@
       },
       series: [
         {
-          name: "提示", type: "bar", stack: "tok", barMaxWidth: 28,
+          name: "输入 Token", type: "bar", stack: "tok", barMaxWidth: 28,
           itemStyle: { color: col.prompt, borderRadius: [0, 0, 0, 0] },
           emphasis: { focus: "series" },
           data: rows.map(function (r) { return r.prompt_tokens; }),
         },
         {
-          name: "缓存", type: "bar", stack: "tok", barMaxWidth: 28,
+          name: "缓存复用 Token", type: "bar", stack: "tok", barMaxWidth: 28,
           itemStyle: { color: col.cached },
           emphasis: { focus: "series" },
           data: rows.map(function (r) { return r.cached_tokens; }),
         },
         {
-          name: "输出", type: "bar", stack: "tok", barMaxWidth: 28,
+          name: "输出 Token", type: "bar", stack: "tok", barMaxWidth: 28,
           itemStyle: { color: col.output, borderRadius: [3, 3, 0, 0] },
           emphasis: { focus: "series" },
           data: rows.map(function (r) { return r.output_tokens; }),
@@ -338,7 +338,7 @@
         valueFormatter: function (v) { return v == null ? "--" : F.formatTps(v) + " tok/s"; },
       }),
       legend: {
-        data: ["提示 TPS", "解码 TPS"],
+        data: ["Prompt TPS", "Decode TPS"],
         textStyle: { color: p.axis, fontSize: 12 }, top: 0, right: 0,
         icon: "rect", itemWidth: 10, itemHeight: 10, itemGap: 14,
       },
@@ -350,8 +350,8 @@
         splitLine: { lineStyle: { color: p.split } },
       },
       series: [
-        series("提示 TPS", "prompt_tps", col.tpsPrompt),
-        series("解码 TPS", "decode_tps", col.tpsDecode),
+        series("Prompt TPS", "prompt_tps", col.tpsPrompt),
+        series("Decode TPS", "decode_tps", col.tpsDecode),
       ],
     }, true);
   }
@@ -368,7 +368,7 @@
       return [r.date, r.mtp_accept_rate == null ? null : Number(r.mtp_accept_rate)];
     }).filter(function (d) { return d[1] != null; });
     setEmpty(containerId, data.length === 0, "无 MTP 数据",
-      "服务器报告投机解码（MTP）指标后显示接受率。");
+      "llama-server 报告推测解码（MTP）指标后显示 Draft Token 接受率。");
     if (!data.length) return;
     c.setOption({
       animation: false,
@@ -391,7 +391,7 @@
         splitLine: { lineStyle: { color: p.split } },
       },
       series: [Object.assign({
-        name: "接受率", type: "line",
+        name: "Draft Token 接受率", type: "line",
         symbol: "circle",
         lineStyle: { width: 2, color: col.mtp },
         itemStyle: { color: col.mtp },
@@ -412,7 +412,7 @@
     var p = pal(), col = colors();
     var pos = positions || [];
     setEmpty(containerId, pos.length === 0, "无位置数据",
-      "服务器今日尚未报告按位置的接受数据。");
+      "llama-server 今日尚未报告按 Draft 位置的接受数据。");
     if (!pos.length) return;
     var base = pos[0] && pos[0].accepted_tokens ? pos[0].accepted_tokens : 0;
     c.setOption({
@@ -424,14 +424,14 @@
           var it = params[0];
           var rel = base > 0 && it.value != null ? (it.value / base * 100).toFixed(1) + "%" : "--";
           return "<div style='font-weight:600;margin-bottom:4px'>" + it.name + "</div>" +
-            "已接受 Token：<b>" + F.formatTokenCount(it.value) + "</b><br/>" +
-            "相对位置 0：" + rel;
+            "已接受 Draft Token：<b>" + F.formatTokenCount(it.value) + "</b><br/>" +
+            "相对 Draft 位置 0：" + rel;
         },
       }),
       grid: { left: 8, right: 8, top: 24, bottom: 4, containLabel: true },
       xAxis: {
         type: "category",
-        data: pos.map(function (x) { return "位置 " + x.position; }),
+        data: pos.map(function (x) { return "Draft 位置 " + x.position; }),
         axisLabel: baseAxisLabel(p),
         axisLine: { lineStyle: { color: p.split } },
         axisTick: { show: false },
@@ -442,7 +442,7 @@
         splitLine: { lineStyle: { color: p.split } },
       },
       series: [{
-        name: "已接受 Token", type: "bar", barMaxWidth: 28,
+        name: "已接受 Draft Token", type: "bar", barMaxWidth: 28,
         itemStyle: { color: col.mtp, borderRadius: [3, 3, 0, 0] },
         data: pos.map(function (x) { return x.accepted_tokens; }),
       }],
@@ -514,16 +514,16 @@
     var gpus = (data && data.gpus || []).filter(function (g) { return !visible || visible[g.uuid] !== false; });
     var subset = { gpus: gpus };
     setEmpty(containerId, !_hasGpuField(subset, "utilization_percent"), "无 GPU 样本",
-      "GPU 监控采集到样本后显示利用率与显存历史。");
+      "GPU 监控采集到样本后显示 GPU 利用率与显存占用历史。");
     if (!gpus.length) return;
     var series = [];
     gpus.forEach(function (g) {
       var u = _gpuSeries(g, "utilization_percent", col, { suffix: "利用率" });
-      var m = _gpuSeries(g, "memory_usage_percent", col, { suffix: "显存", dashed: true });
+      var m = _gpuSeries(g, "memory_usage_percent", col, { suffix: "显存占用", dashed: true });
       if (u) series.push(u);
       if (m) series.push(m);
     });
-    if (!series.length) { setEmpty(containerId, true, "无 GPU 样本", "GPU 监控采集到样本后显示利用率与显存历史。"); return; }
+    if (!series.length) { setEmpty(containerId, true, "无 GPU 样本", "GPU 监控采集到样本后显示 GPU 利用率与显存占用历史。"); return; }
     c.setOption({
       animation: false,
       tooltip: Object.assign(baseTooltip(), {

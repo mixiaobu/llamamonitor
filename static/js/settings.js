@@ -118,6 +118,7 @@
     $("setUpdateAutoDownload").checked = !!(c.updates && c.updates.auto_download);
     if (c.paths) lastPaths = c.paths;
     updateDbPathHint();
+    updateWebHostHint();
   }
 
   function markDirty() {
@@ -138,6 +139,20 @@
     var v = $("setDbPath").value.trim();
     var hint = $("dbPathHint");
     if (hint) hint.textContent = v ? "当前：" + v : "默认：" + (lastPaths ? lastPaths.database : "--");
+  }
+
+  // 16F 术语审计：监听地址轻量提示（仅展示，不加逻辑）
+  function updateWebHostHint() {
+    var hint = $("webHostHint");
+    if (!hint) return;
+    var v = $("setWebHost").value.trim().toLowerCase();
+    if (v === "0.0.0.0") {
+      hint.textContent = "当前服务监听所有网络接口。只读监控接口可能可被局域网访问；管理操作仍仅允许本机执行。";
+    } else if (v === "127.0.0.1" || v === "localhost") {
+      hint.textContent = "仅本机访问。";
+    } else {
+      hint.textContent = "";
+    }
   }
 
   async function loadSettings() {
@@ -211,7 +226,7 @@
       fillForm(d);
       if (window.LM && LM.app && LM.app.applyTheme) LM.app.applyTheme(d.ui.theme); // 主题即时预览
       markDirty();
-      ui.toast("表单已恢复默认值。点击“保存”写入 config.json。", "warn");
+      ui.toast("表单已恢复默认值。点击“保存”生效。", "warn");
     } catch (e) {
       ui.toast("加载默认值失败：" + (e.message || e), "err");
     }
@@ -233,7 +248,7 @@
       }, 15000);
       if (data.success) {
         out.className = "inline-result ok";
-        out.textContent = "成功 - " + data.latency_ms + " ms" + (data.metrics_detected ? "" : "（未检测到 llamacpp 指标）");
+        out.textContent = "成功 - " + data.latency_ms + " ms" + (data.metrics_detected ? "" : "（未检测到 llama.cpp 指标）");
         ui.toast("连接成功：" + data.latency_ms + " ms", "ok");
         lastTestConn = { at: Date.now(), ok: true, latencyMs: data.latency_ms };
       } else {
@@ -318,7 +333,7 @@
     var hint = document.createElement("div");
     hint.className = "caption";
     hint.style.marginTop = "var(--spacing-sm)";
-    hint.textContent = "不勾选 = 监控所有检测到的 GPU。";
+    hint.textContent = "未选择时监控所有已检测到的 GPU。";
     box.appendChild(hint);
   }
 
@@ -341,7 +356,7 @@
     try {
       var d = await api.get("/api/data/info");
       [
-        ["数据库", d.database_path],
+        ["数据库文件", d.database_path],
         ["数据库大小", F.formatBytes(d.database_size_bytes)],
         ["首次记录日期", d.first_recorded_date || "无"],
         ["最近记录日期", d.last_recorded_date || "无"],
@@ -418,7 +433,7 @@
     try {
       var data = await api.post("/api/data/clear-live", { confirm: true });
       if (data.success) {
-        ui.toast("实时历史已清空（" + data.deleted + " 条样本）。", "ok");
+        ui.toast("实时采样历史已清除（" + data.deleted + " 条样本）。", "ok");
         refreshDataInfo();
         if (LM.app) {
           LM.app.refreshLiveNow();     // 性能页吞吐图
@@ -439,8 +454,8 @@
 
   function clearLive() {
     ui.modal({
-      title: "清空实时历史",
-      text: "这将永久删除所有实时样本。\n每日汇总与当前计数器基线会保留。",
+      title: "清除实时采样历史",
+      text: "这将永久删除所有实时采样数据。\n每日统计汇总与当前计数器基线会保留。",
       okLabel: "清空",
       danger: true,
       onDone: function (ok) { if (ok) doClearLive(); },
@@ -477,8 +492,8 @@
 
   function resetStats() {
     ui.modal({
-      title: "重置所有统计",
-      text: "这将永久删除所有 Token 用量历史、实时样本与已知监控缺口记录。\n\n配置与当前 llama.cpp 计数器基线会保留。",
+      title: "重置统计数据",
+      text: "这将永久删除所有 Token 用量历史、实时采样与监控缺口记录。\n\n配置与当前计数器基线会保留（计数从当前会话继续，不会重复累计）。",
       okLabel: "重置",
       danger: true,
       needsInput: true,
@@ -545,12 +560,12 @@
     }
     try {
       var d = await api.get("/api/app/integration");
-      kvRow(box, "应用模式", d.background ? "后台（托盘）" : "前台");
+      kvRow(box, "运行模式", d.background ? "后台（系统托盘）" : "前台");
       kvRow(box, "系统托盘", d.tray_supported ? "可用" : "不可用");
-      kvRow(box, "单实例", d.single_instance ? "启用" : "禁用");
-      kvRow(box, "平台", (d.platform || "未知") + (d.frozen ? "（EXE）" : "（开发）"));
+      kvRow(box, "单实例运行", d.single_instance ? "启用" : "禁用");
+      kvRow(box, "运行环境", (d.platform || "未知") + (d.frozen ? "（EXE）" : "（开发）"));
       kvRow(box, "可执行文件", d.executable || "\u2014");
-      kvRow(box, "应用数据", d.app_data || "\u2014");
+      kvRow(box, "应用数据目录", d.app_data || "\u2014");
       if (d.uptime_seconds != null) kvRow(box, "运行时长", fmtUptime(d.uptime_seconds));
       renderAutostart(d.autostart || {});
     } catch (e) {
@@ -590,7 +605,7 @@
     try {
       var data = await api.put("/api/app/autostart", { enabled: enabled });
       if (data.success) {
-        ui.toast(enabled ? "已启用随 Windows 启动" : "已禁用随 Windows 启动", "ok");
+        ui.toast(enabled ? "已启用登录时自动启动" : "已禁用登录时自动启动", "ok");
       } else {
         ui.toast("失败：" + ((data.error && data.error.message) || "未知"), "err");
       }
@@ -637,7 +652,7 @@
     $("updLastCheck").textContent = st.last_check || "从未";
     $("updLatestVersion").textContent = st.available_version || "--";
     var stEl = $("updStatus");
-    var _stMap = { "UP_TO_DATE": "已是最新", "UPDATE_AVAILABLE": "有可用更新", "CHECKING": "检查中", "DOWNLOADING": "下载中", "VERIFYING": "校验中", "READY_TO_INSTALL": "可安装", "INSTALLING": "安装中", "ERROR": "错误", "IDLE": "空闲" };
+    var _stMap = { "UP_TO_DATE": "已是最新版本", "UPDATE_AVAILABLE": "发现新版本", "CHECKING": "正在检查", "DOWNLOADING": "正在下载", "VERIFYING": "正在验证", "READY_TO_INSTALL": "已准备安装", "INSTALLING": "正在安装", "ERROR": "检查失败", "IDLE": "未检查" };
     stEl.textContent = (_stMap[st.state] || st.state || "--") + (st.error ? " - " + st.error : "");
     stEl.className = "update-state" +
       (st.state === "ERROR" ? " error" : st.state === "UPDATE_AVAILABLE" ? " available" : "");
@@ -650,9 +665,9 @@
       mode === "development" || mode === "portable";
     $("btnUpdateCancel").hidden = st.state !== "DOWNLOADING";
     $("btnUpdateCheck").textContent =
-      st.state === "CHECKING" ? "检查中..." :
-      st.state === "DOWNLOADING" ? "下载中..." :
-      st.state === "VERIFYING" ? "校验中..." : "检查更新";
+      st.state === "CHECKING" ? "正在检查..." :
+      st.state === "DOWNLOADING" ? "正在下载..." :
+      st.state === "VERIFYING" ? "正在验证..." : "检查更新";
 
     var showProgress = st.state === "DOWNLOADING" && st.total_bytes > 0;
     $("updProgressWrap").hidden = !showProgress;
@@ -670,7 +685,7 @@
 
     $("updSignatureNote").textContent =
       st.state === "READY_TO_INSTALL"
-        ? "✓ 签名已验证 - SHA-256 已验证 - 可安装（会先创建更新前备份）。"
+        ? "✓ Ed25519 签名已验证，SHA-256 完整性校验通过，已准备安装（会先创建更新前备份）。"
         : (st.state === "UPDATE_AVAILABLE" && rel
             ? "签名已验证。下载后、安装前将再次校验安装包（SHA-256）。"
             : "");
@@ -905,6 +920,7 @@
       if (LM.app && LM.app.applyTheme) LM.app.applyTheme($("setTheme").value);
     });
     bind("setDbPath", "input", updateDbPathHint);
+    bind("setWebHost", "input", updateWebHostHint);
 
     // 表单输入 -> dirty 标记
     [

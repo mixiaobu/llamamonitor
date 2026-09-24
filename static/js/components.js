@@ -14,12 +14,12 @@
      state: online | offline | warning | error | updating | paused
      文案统一（UI-003）：Online / Offline / Warning / Error / Updating / Paused */
   var STATE_TEXT = {
-    online: "在线",
-    offline: "离线",
+    online: "已连接",
+    offline: "连接中断",
     warning: "警告",
     error: "错误",
     updating: "更新中",
-    paused: "已暂停",
+    paused: "检测中",
   };
 
   function setStatusBadge(el, state, textOverride) {
@@ -326,15 +326,25 @@
         return "持续 " + fmtDurHm(sec);
       }
       case "monitor_start":
-        return d.poll_interval_seconds != null ? "轮询间隔 " + num(d.poll_interval_seconds) + "秒" : "";
+        return d.poll_interval_seconds != null ? "指标采集间隔 " + num(d.poll_interval_seconds) + " 秒" : "";
+      case "migration": {
+        if (d.from != null && d.to != null) return "Schema " + num(d.from) + " → " + num(d.to);
+        return "";
+      }
       case "monitor_stop":
         return d.reason ? String(d.reason) : "";
       case "server_online":
       case "server_offline":
         return d.url ? hostUrl(d.url) : "";
       case "counter_reset": {
+        // 16F 术语审计：内部 counter 名不直接显示，映射为中文计数名
+        var COUNTER_LABELS = {
+          "prompt_tokens_total": "输入 Token 计数",
+          "prompt_tokens_cached_total": "缓存复用 Token 计数",
+          "tokens_predicted_total": "输出 Token 计数",
+        };
         var parts = [];
-        if (d.counter_name) parts.push(String(d.counter_name) + ":");
+        if (d.counter_name) parts.push((COUNTER_LABELS[d.counter_name] || String(d.counter_name)) + ":");
         if (d.previous != null || d.current != null) {
           parts.push((d.previous != null ? num(d.previous) : "?") + " → " + (d.current != null ? num(d.current) : "?"));
         }
