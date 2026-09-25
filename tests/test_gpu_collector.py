@@ -33,8 +33,12 @@ from configutil import make_config
 
 T0 = 1_700_000_000.0
 
-ROW_A = "0, GPU-E1, Test GPU A, 100, 2048, 50, 55, 280.0, 60, 1700, 9501, 3, 16"
-ROW_B = "1, GPU-E2, Test GPU B, 200, 4096, 60, 56, 300.0, 61, 1800, 9501, 3, 16"
+# 1.1.0：20 列 fast query（列序见 NVSMI_QUERY；新增列 6=util.memory 9=power.limit
+# 13=pstate 16/17=pcie max 18=driver 19=throttle）
+ROW_A = ("0, GPU-E1, Test GPU A, 100, 2048, 50, 55, 55, 280.0, 350.0, 60, "
+         "1700, 9501, P8, 3, 16, 3, 16, 550.55, 0x0")
+ROW_B = ("1, GPU-E2, Test GPU B, 200, 4096, 60, 61, 56, 300.0, 350.0, 61, "
+         "1800, 9501, P8, 3, 16, 3, 16, 550.55, 0x0")
 
 
 def _snap(text: str, now: float) -> list[GpuSnapshot]:
@@ -185,7 +189,9 @@ class MidnightAndDailyTests(unittest.TestCase):
         self.assertEqual(self.db.get_gpu_sample_count(), 0)
 
     def test_na_fields_stored_null(self):
-        row = "0, GPU-N1, X, 100, 2048, 50, Not Supported, [N/A], 60, 1700, 9501, 3, 16"
+        # 1.1.0：20 列；temperature=Not Supported / power.draw=[N/A] -> 存 NULL
+        row = ("0, GPU-N1, X, 100, 2048, 50, 60, Not Supported, [N/A], 350.0, 60, "
+               "1700, 9501, P8, 3, 16, 3, 16, 550.55, 0x0")
         c = _make_collector(self.cfg, self.db, text=row)
         c.poll_once_sync(_snap(row, T0))
         latest = self.db.get_gpu_latest()[0]
@@ -267,6 +273,29 @@ class StateMachineTests(unittest.TestCase):
         self.assertEqual(r, [])
         self.assertFalse(c.available)
 
+    def test_driver_version_populated_and_sticky(self):
+        """driver_version 从 fast query 解析到 collector 属性（/api/gpu/status 用）；
+        后续 N/A 轮不抹掉已有值（sticky last-known）。"""
+        row_na_driver = ("0, GPU-E1, Test GPU A, 100, 2048, 50, 55, 55, 280.0, 350.0, 60, "
+                         "1700, 9501, P8, 3, 16, 3, 16, [N/A], 0x0")
+        rows = iter([ROW_A, ROW_A, row_na_driver])
+
+        async def runner(args, timeout):
+            if "--query-compute-apps" in " ".join(args):
+                return 0, ""
+            if "ecc.mode.current" in " ".join(args):
+                return 0, "GPU-E1, N/A, N/A, N/A, N/A, N/A, N/A, N/A, N/A, N/A\n"
+            return 0, next(rows, row_na_driver)
+
+        c = GpuCollector(self.cfg, self.db, runner=runner)
+        with mock.patch("gpu_collector.find_nvidia_smi", return_value=Path("/fake/nvidia-smi")):
+            self._run(c.poll_once)
+            self.assertEqual(c.driver_version, "550.55")
+            self._run(c.poll_once)
+            self.assertEqual(c.driver_version, "550.55")
+            self._run(c.poll_once)   # 本轮 driver = [N/A]
+            self.assertEqual(c.driver_version, "550.55")
+
     def test_transition_logging_only_on_flip(self):
         """available 翻转各记一条日志；同状态重复轮次不刷屏。"""
         state = {"ok": True}
@@ -341,8 +370,11 @@ class AuditRegressionTests(unittest.TestCase):
     def test_prev_power_none_skips_segment(self):
         """AUDIT-WIN-002：上一轮 power 缺失（N/A）时该段不积分（与 docstring 一致；
         原实现把 None 当 0W 参与梯形积分，系统性低估能耗）。"""
-        row_na = "0, GPU-N1, X, 100, 2048, 50, [N/A], [N/A], 60, 1700, 9501, 3, 16"
-        row = "0, GPU-N1, X, 100, 2048, 50, [N/A], 300.0, 60, 1700, 9501, 3, 16"
+        # 1.1.0：20 列 fast query
+        row_na = ("0, GPU-N1, X, 100, 2048, 50, 60, [N/A], [N/A], 350.0, 60, "
+                  "1700, 9501, P8, 3, 16, 3, 16, 550.55, 0x0")
+        row = ("0, GPU-N1, X, 100, 2048, 50, 60, [N/A], 300.0, 350.0, 60, "
+               "1700, 9501, P8, 3, 16, 3, 16, 550.55, 0x0")
         c = _make_collector(self.cfg, self.db)
         snaps0 = _snap(row_na, T0)
         snaps0[0].power_draw_w = None
@@ -399,7 +431,14 @@ class AuditRegressionTests(unittest.TestCase):
         state = {"fail_next": False}
 
         async def runner(args, timeout):
-            row = "0, GPU-R1, X, 100, 2048, 50, [N/A], %.1f, 60, 1700, 9501, 3, 16" % powers[0]
+            joined = " ".join(args)
+            if "--query-compute-apps" in joined:
+                return 0, ""  # 无进程
+            if "ecc.mode.current" in joined:
+                return 0, "GPU-R1, N/A, N/A, N/A, N/A, N/A, N/A, N/A, N/A, N/A\n"  # 不支持 ECC
+            # 1.1.0：20 列 fast query（power.draw 在列 8）
+            row = ("0, GPU-R1, X, 100, 2048, 50, 60, [N/A], %.1f, 350.0, 60, "
+                   "1700, 9501, P8, 3, 16, 3, 16, 550.55, 0x0") % powers[0]
             powers.pop(0)
             return 0, row
 

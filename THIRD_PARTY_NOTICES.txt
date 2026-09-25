@@ -7,6 +7,8 @@ Phase 14 重新生成（2026-09-19）：许可信息逐项取自**已安装 whee
 
 生产运行时依赖（requirements.txt 固定版本）：
 - fastapi 0.141.1 — MIT（捆绑 LICENSE，Sebastián Ramírez）
+- psutil 7.2.2 — BSD-3-Clause（dist-info METADATA License 字段 + 捆绑 LICENSE，
+  Giampaolo Rodola；1.1.0 System & Hardware Telemetry 基础系统遥测）
 - uvicorn 0.53.0 — BSD-3-Clause（捆绑 LICENSE.md，Encode OSS Ltd）
 - httpx 0.28.1 — BSD-3-Clause（捆绑 LICENSE.md，Encode OSS Ltd）
 - pywebview 6.2.1 — BSD-3-Clause（捆绑 LICENSE，Roman Sirokov）
@@ -51,6 +53,13 @@ Phase 14 重新生成（2026-09-19）：许可信息逐项取自**已安装 whee
 前端本地 vendored：
 - Apache ECharts（static/echarts.min.js，bundled）— Apache-2.0
 - （无 jQuery/无其他运行时库；前端为标准 JS + ECharts）
+
+原生硬件传感器桥（1.1.0，native/hardware_bridge/）：
+- LibreHardwareMonitorLib 0.9.2 — BSD-3-Clause（官方 NuGet nupkg 提取 net472 构建
+  的 LibreHardwareMonitorLib.dll，随 HardwareSensorBridge.exe 分发；
+  上游 https://github.com/LibreHardwareMonitor/LibreHardwareMonitor ）。
+  HardwareSensorBridge.cs 为 LlamaMonitor 自研只读桥（C#，.NET Framework 4.8，
+  仅调用 Read()，不写任何硬件状态）。
 
 说明：
 - 除 pystray（LGPL-3.0，动态链接式使用：仅 import，无源码修改，独立进程调用

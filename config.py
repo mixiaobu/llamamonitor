@@ -111,6 +111,18 @@ class GpuConfig:
 
 
 @dataclass
+class SystemConfig:
+    """系统监控（1.1.0 System & Hardware Telemetry）：CPU/内存/磁盘/网络 + 高级硬件传感器。"""
+
+    enabled: bool = True
+    poll_interval_seconds: float = 2.0        # 1 ~ 3600（实时采集间隔）
+    history_interval_seconds: float = 5.0     # 1 ~ 3600（system_samples 落库间隔）
+    history_retention_hours: float = 48.0     # 1 ~ 8760（system_samples 保留时长）
+    advanced_sensors: bool = True             # 启用 LibreHardwareMonitor 高级传感器
+    advanced_sensor_interval_seconds: float = 5.0  # 1 ~ 3600（Bridge 输出周期）
+
+
+@dataclass
 class WebConfig:
     host: str = "127.0.0.1"
     port: int = 8765                          # 1 ~ 65535
@@ -167,6 +179,7 @@ class AppConfig:
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     backup: BackupConfig = field(default_factory=BackupConfig)  # Phase 11（放末尾：位置构造兼容）
     updates: UpdatesConfig = field(default_factory=UpdatesConfig)  # Phase 13（追加在 backup 之后）
+    system: SystemConfig = field(default_factory=SystemConfig)  # 1.1.0（追加在 updates 之后）
 
     @classmethod
     def default(cls) -> "AppConfig":
@@ -240,6 +253,14 @@ DEFAULT_CONFIG: dict = {
         "check_enabled": False,
         "check_interval_hours": 24,
         "auto_download": False,
+    },
+    "system": {
+        "enabled": True,
+        "poll_interval_seconds": 2,
+        "history_interval_seconds": 5,
+        "history_retention_hours": 48,
+        "advanced_sensors": True,
+        "advanced_sensor_interval_seconds": 5,
     },
 }
 
@@ -505,10 +526,34 @@ def _build_app_config(merged: dict) -> tuple[AppConfig, list[str]]:
             lambda v: isinstance(v, bool), bool, False,
         ),
     )
+    sys_sec = _section("system")
+    system_config = SystemConfig(
+        enabled=_check("system", "enabled", sys_sec.get("enabled"),
+                       lambda v: isinstance(v, bool), bool, True),
+        poll_interval_seconds=_check(
+            "system", "poll_interval_seconds", sys_sec.get("poll_interval_seconds"),
+            lambda v: _in_range(v, 1, 3600), float, 2.0,
+        ),
+        history_interval_seconds=_check(
+            "system", "history_interval_seconds", sys_sec.get("history_interval_seconds"),
+            lambda v: _in_range(v, 1, 3600), float, 5.0,
+        ),
+        history_retention_hours=_check(
+            "system", "history_retention_hours", sys_sec.get("history_retention_hours"),
+            lambda v: _in_range(v, 1, 8760), float, 48.0,
+        ),
+        advanced_sensors=_check("system", "advanced_sensors", sys_sec.get("advanced_sensors"),
+                                lambda v: isinstance(v, bool), bool, True),
+        advanced_sensor_interval_seconds=_check(
+            "system", "advanced_sensor_interval_seconds",
+            sys_sec.get("advanced_sensor_interval_seconds"),
+            lambda v: _in_range(v, 1, 3600), float, 5.0,
+        ),
+    )
     return (
         AppConfig(
             llama_server, collector, gpu, web_config, database, ui_config,
-            logging_config, backup_config, updates_config,
+            logging_config, backup_config, updates_config, system_config,
         ),
         errors,
     )

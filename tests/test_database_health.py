@@ -212,9 +212,9 @@ class MigrationEventTests(TestBase):
         try:
             events = d.get_events(limit=100)
             migration = [e for e in events if e["event_type"] == "migration"]
-            # v1->v2 迁移不记事件；v2->v3 / v3->v4 记事件。事件结构必须合法。
+            # v1->v2 迁移不记事件；v2->v3 / v3->v4 / v4->v5 记事件。事件结构必须合法。
             for e in migration:
-                self.assertIn(e["details"].get("to"), (3, 4, None))
+                self.assertIn(e["details"].get("to"), (3, 4, 5, None))
         finally:
             d.close()
 

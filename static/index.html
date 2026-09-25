@@ -30,6 +30,7 @@
 <script src="/static/js/navigation.js"></script>
 <script src="/static/js/polling.js"></script>
 <script src="/static/js/settings.js"></script>
+<script src="/static/js/system.js"></script>
 <script src="/static/js/app.js"></script>
 </head>
 <body>
@@ -44,10 +45,12 @@
     <div class="nav-items">
       <button class="nav-item" data-page="overview" title="概览">
         <span class="nav-icon" data-icon="overview"></span><span class="nav-label">概览</span></button>
-      <button class="nav-item" data-page="usage" title="用量">
-        <span class="nav-icon" data-icon="usage"></span><span class="nav-label">用量</span></button>
-      <button class="nav-item" data-page="performance" title="性能">
-        <span class="nav-icon" data-icon="performance"></span><span class="nav-label">性能</span></button>
+      <button class="nav-item" data-page="usage" title="Token 用量">
+        <span class="nav-icon" data-icon="usage"></span><span class="nav-label">Token 用量</span></button>
+      <button class="nav-item" data-page="performance" title="推理性能">
+        <span class="nav-icon" data-icon="performance"></span><span class="nav-label">推理性能</span></button>
+      <button class="nav-item" data-page="system" title="系统">
+        <span class="nav-icon" data-icon="system"></span><span class="nav-label">系统</span></button>
       <button class="nav-item" data-page="gpu" title="GPU">
         <span class="nav-icon" data-icon="gpu"></span><span class="nav-label">GPU</span></button>
       <button class="nav-item" data-page="history" title="监控历史">
@@ -86,6 +89,7 @@
                 <span id="ovServerState" class="status-badge paused"><span class="dot"></span><span class="status-text">检测中</span></span>
               </span>
               <span class="ss-url" id="ovServerUrl"></span>
+              <span class="ss-model" id="ovModelLine"></span>
             </span>
           </div>
           <div class="ss-right">
@@ -145,6 +149,40 @@
           </div>
         </div>
 
+        <!-- 4.5 主机状态（1.1：系统摘要卡——CPU/内存/磁盘IO/网络/组件功耗；详情去系统页） -->
+        <div class="section">
+          <div class="section-header">
+            <span class="sh-title">主机状态</span>
+            <span class="sh-actions"><a class="link" href="#" data-goto="system">查看系统详情 <span class="arr">→</span></a></span>
+          </div>
+          <div class="section-body">
+            <div class="card">
+              <div class="stat-grid">
+                <div class="stat">
+                  <div class="stat-label">CPU</div>
+                  <div class="stat-value mid" id="ovHostCpu">--</div>
+                </div>
+                <div class="stat">
+                  <div class="stat-label">内存</div>
+                  <div class="stat-value mid" id="ovHostMem">--</div>
+                </div>
+                <div class="stat">
+                  <div class="stat-label">磁盘 I/O</div>
+                  <div class="stat-value mid" id="ovHostDisk">--</div>
+                </div>
+                <div class="stat">
+                  <div class="stat-label">网络</div>
+                  <div class="stat-value mid" id="ovHostNet">--</div>
+                </div>
+                <div class="stat">
+                  <div class="stat-label">已监测组件功耗 <span class="info-tip-slot" data-tip="仅统计可读取功耗传感器的组件（CPU + GPU），非整机墙插功耗。"></span></div>
+                  <div class="stat-value mid" id="ovHostPower">--</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- 5. GPU（§18.5：摘要行 + mini cards；动作归位 Section Header 右侧） -->
         <div class="section">
           <div class="section-header">
@@ -196,7 +234,7 @@
       <section class="page" id="page-usage">
         <div class="page-header">
           <div class="ph-head">
-            <h1 class="page-title">用量</h1>
+            <h1 class="page-title">Token 用量</h1>
             <p class="page-subtitle">所选时间范围的 Token 用量：汇总、趋势与每日明细。</p>
           </div>
           <div class="ph-actions"><div class="seg" id="usageRange" role="group" aria-label="时间范围"></div></div>
@@ -271,7 +309,7 @@
       <section class="page" id="page-performance">
         <div class="page-header">
           <div class="ph-head">
-            <h1 class="page-title">性能</h1>
+            <h1 class="page-title">推理性能</h1>
             <p class="page-subtitle">实时生成性能、服务器运行状态与 MTP（Multi-Token 预测）运行效果。</p>
           </div>
         </div>
@@ -345,6 +383,56 @@
           </div>
         </div>
 
+        <!-- 模型与 Slot（1.1：llama.cpp Runtime——模型信息 + 当前 Slot 状态；只读） -->
+        <div class="section">
+          <div class="section-header">
+            <span class="sh-title">模型与服务</span>
+            <span class="sh-actions"><span class="sh-sub">来自 /props · /v1/models · /slots（只读）</span></span>
+          </div>
+          <div class="section-body">
+            <div class="card">
+              <div class="stat-grid">
+                <div class="stat">
+                  <div class="stat-label">模型别名</div>
+                  <div class="stat-value small" id="llmAlias">--</div>
+                </div>
+                <div class="stat">
+                  <div class="stat-label">量化</div>
+                  <div class="stat-value small" id="llmFtype">--</div>
+                </div>
+                <div class="stat">
+                  <div class="stat-label">参数量</div>
+                  <div class="stat-value small" id="llmParams">--</div>
+                </div>
+                <div class="stat">
+                  <div class="stat-label">模型大小</div>
+                  <div class="stat-value small" id="llmSize">--</div>
+                </div>
+                <div class="stat">
+                  <div class="stat-label">上下文窗口</div>
+                  <div class="stat-value small" id="llmContext">--</div>
+                </div>
+                <div class="stat">
+                  <div class="stat-label">并行 Slot</div>
+                  <div class="stat-value small" id="llmSlots">--</div>
+                </div>
+                <div class="stat">
+                  <div class="stat-label">模态</div>
+                  <div class="stat-value small" id="llmModal">--</div>
+                </div>
+                <div class="stat">
+                  <div class="stat-label">llama.cpp 构建</div>
+                  <div class="stat-value small" id="llmBuild">--</div>
+                </div>
+              </div>
+            </div>
+            <div class="card" style="margin-top:var(--spacing-md)">
+              <div class="card-title">当前 Slot <span class="sh-sub" style="margin-left:var(--spacing-xs)">只读，不展示 Prompt 文本</span></div>
+              <div id="llmSlotList"><div class="stat-hint" id="llmSlotEmpty">暂无 Slot 数据</div></div>
+            </div>
+          </div>
+        </div>
+
         <!-- 5. MTP（§20.5：summary metrics + 两张并排图，作为一个整体） -->
         <div class="section">
           <div class="section-header">
@@ -382,6 +470,186 @@
         </div>
       </section>
 
+      <!-- ================= 系统（1.1：CPU/内存/存储/网络/功耗/传感器/硬件信息） ================= -->
+      <section class="page" id="page-system">
+        <div class="page-header">
+          <div class="ph-head">
+            <h1 class="page-title">系统</h1>
+            <p class="page-subtitle">
+              监控 CPU、内存、存储、网络、功耗与硬件传感器。
+              <span id="systemPageState" class="status-badge paused" style="margin-left:var(--spacing-sm)"><span class="dot"></span><span class="status-text">--</span></span>
+            </p>
+          </div>
+          <div class="ph-actions"><div class="seg" id="systemRange" role="group" aria-label="系统历史范围"></div></div>
+        </div>
+
+        <!-- 1. 系统概览（Summary Strip） -->
+        <div class="section">
+          <div class="section-header">
+            <span class="sh-title">系统概览</span>
+          </div>
+          <div class="section-body">
+            <div class="card">
+              <div class="stat-grid">
+                <div class="stat"><div class="stat-label">CPU 使用率</div><div class="stat-value mid" id="sysCpuUsage">--</div></div>
+                <div class="stat">
+                  <div class="stat-label">内存使用率</div>
+                  <div class="stat-value mid" id="sysMemUsage">--</div>
+                  <div class="stat-hint" id="sysMemDetail"></div>
+                </div>
+                <div class="stat">
+                  <div class="stat-label">已监测组件功耗 <span class="info-tip-slot" data-tip="仅统计当前能够读取功耗传感器的组件（CPU Package + GPU），不代表整机墙插功耗。"></span></div>
+                  <div class="stat-value mid" id="sysCompPower">--</div>
+                </div>
+                <div class="stat"><div class="stat-label">系统运行时长</div><div class="stat-value mid" id="sysUptime">--</div></div>
+                <div class="stat"><div class="stat-label">CPU 频率</div><div class="stat-value mid" id="sysCpuFreq">--</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. CPU 负载 -->
+        <div class="section">
+          <div class="section-header">
+            <span class="sh-title">CPU 负载</span>
+            <span class="sh-actions"><span class="sh-sub">CPU 利用率 / 温度 / 功耗</span></span>
+          </div>
+          <div class="section-body">
+            <div class="card chart-box" id="chartSysCpuBox">
+              <div class="chart" id="chartSysCpu" data-chart="chartSysCpu"></div>
+              <div class="chart-empty-overlay"></div>
+            </div>
+            <div class="card" style="margin-top:var(--spacing-md)">
+              <div class="stat-grid">
+                <div class="stat"><div class="stat-label">当前频率</div><div class="stat-value small" id="sysCpuFreq2">--</div></div>
+                <div class="stat"><div class="stat-label">Package 温度</div><div class="stat-value small" id="sysCpuTemp">--</div></div>
+                <div class="stat"><div class="stat-label">Package 功耗</div><div class="stat-value small" id="sysCpuPower">--</div></div>
+              </div>
+              <details class="core-heat">
+                <summary>每核心负载（逻辑 CPU &gt; 16 时建议查看）</summary>
+                <div class="core-heat-body" id="sysCoreHeat"></div>
+              </details>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. 内存 -->
+        <div class="section">
+          <div class="section-header">
+            <span class="sh-title">内存</span>
+          </div>
+          <div class="section-body">
+            <div class="card">
+              <div class="stat-grid">
+                <div class="stat">
+                  <div class="stat-label">已用 / 总量</div>
+                  <div class="stat-value mid" id="sysMemUsed">--</div>
+                  <div class="stat-hint" id="sysMemTotal"></div>
+                </div>
+                <div class="stat"><div class="stat-label">使用率</div><div class="stat-value mid" id="sysMemPct">--</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 4. 存储 -->
+        <div class="section">
+          <div class="section-header">
+            <span class="sh-title">存储</span>
+            <span class="sh-actions"><span class="sh-sub">上：物理磁盘 I/O 速率；下：卷容量（两者不同概念）</span></span>
+          </div>
+          <div class="section-body">
+            <div class="card chart-box" id="chartSysDiskBox">
+              <div class="card-title">磁盘 I/O</div>
+              <div class="chart" id="chartSysDisk" data-chart="chartSysDisk"></div>
+              <div class="chart-empty-overlay"></div>
+            </div>
+            <div class="card" style="margin-top:var(--spacing-md)">
+              <div class="card-title">卷容量</div>
+              <div class="disk-list" id="sysDiskList"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 5. 网络 -->
+        <div class="section">
+          <div class="section-header">
+            <span class="sh-title">网络</span>
+          </div>
+          <div class="section-body">
+            <div class="card chart-box" id="chartSysNetBox">
+              <div class="chart" id="chartSysNet" data-chart="chartSysNet"></div>
+              <div class="chart-empty-overlay"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 6. 功耗与能耗 -->
+        <div class="section">
+          <div class="section-header">
+            <span class="sh-title">功耗与能耗</span>
+            <span class="sh-actions"><span class="sh-sub">已监测组件功耗 = CPU Package + GPU 实际功耗，非整机墙插功耗。</span></span>
+          </div>
+          <div class="section-body">
+            <div class="card">
+              <div class="stat-grid">
+                <div class="stat">
+                  <div class="stat-label">已监测组件功耗</div>
+                  <div class="stat-value mid" id="sysPowerComp">--</div>
+                </div>
+                <div class="stat"><div class="stat-label">CPU Package</div><div class="stat-value mid" id="sysPowerCpu">--</div></div>
+                <div class="stat"><div class="stat-label">GPU 合计</div><div class="stat-value mid" id="sysPowerGpu">--</div></div>
+                <div class="stat">
+                  <div class="stat-label">整机墙插功耗 <span class="info-tip-slot" data-tip="需外部功率计或支持功耗遥测的 UPS/电源设备；1.1 无内置测量源。"></span></div>
+                  <div class="stat-value mid" id="sysWallPower">--</div>
+                </div>
+                <div class="stat">
+                  <div class="stat-label">已监测组件今日能耗 <span class="info-tip-slot" data-tip="根据采样功耗随时间积分估算（CPU + GPU），仅供参考。"></span></div>
+                  <div class="stat-value mid" id="sysEnergyToday">--</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 7. 散热与传感器 -->
+        <div class="section">
+          <div class="section-header">
+            <span class="sh-title">散热与传感器</span>
+            <span class="sh-actions">
+              <span id="sensorState" class="status-badge paused"><span class="dot"></span><span class="status-text">--</span></span>
+            </span>
+          </div>
+          <div class="section-body">
+            <div class="card">
+              <div id="sysFans"></div>
+              <div class="sensor-list" id="sysSensorList"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 8. 硬件信息 -->
+        <div class="section">
+          <div class="section-header">
+            <span class="sh-title">硬件信息</span>
+            <span class="sh-actions"><button class="btn small subtle" id="btnRefreshInventory">手动刷新</button></span>
+          </div>
+          <div class="section-body">
+            <div class="card">
+              <div class="kv-list">
+                <span class="k">操作系统</span><span class="v" id="hwOs">--</span>
+                <span class="k">主机名</span><span class="v" id="hwHost">--</span>
+                <span class="k">CPU</span><span class="v" id="hwCpu">--</span>
+                <span class="k">核心 / 线程</span><span class="v" id="hwCores">--</span>
+                <span class="k">已安装内存</span><span class="v" id="hwRam">--</span>
+                <span class="k">主板</span><span class="v" id="hwMotherboard">--</span>
+                <span class="k">BIOS</span><span class="v" id="hwBios">--</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- ================= GPU（Phase 16D §21） ================= -->
       <section class="page" id="page-gpu">
         <div class="page-header">
@@ -389,6 +657,7 @@
             <h1 class="page-title">GPU 监控</h1>
             <p class="page-subtitle">
               通过 nvidia-smi 监控 NVIDIA GPU 的利用率、显存占用、功耗与温度。
+              <span id="gpuDriverVer" class="stat-hint" style="display:none"></span>
               <span id="gpuPageState" class="status-badge paused" style="margin-left:var(--spacing-sm)"><span class="dot"></span><span class="status-text">--</span></span>
               <span class="stat-hint bad" id="gpuUnavailReason" style="display:none"></span>
             </p>
@@ -456,6 +725,23 @@
           <div class="section-body">
             <div class="card">
               <div id="gpuEnergy"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 7. GPU 进程（1.1：只读；WDDM 下 VRAM 可能为 --） -->
+        <div class="section">
+          <div class="section-header">
+            <span class="sh-title">GPU 进程（只读）</span>
+          </div>
+          <div class="section-body">
+            <div class="card">
+              <table class="table-full" id="gpuProcTableWrap" style="width:100%">
+                <thead><tr>
+                  <th>PID</th><th>进程</th><th>GPU</th><th>显存</th>
+                </tr></thead>
+                <tbody id="gpuProcTable"></tbody>
+              </table>
             </div>
           </div>
         </div>
@@ -579,6 +865,7 @@
           <button class="rail-item" type="button" data-sec="collector">采集</button>
           <button class="rail-item" type="button" data-sec="appearance">外观</button>
           <button class="rail-item" type="button" data-sec="gpu">GPU</button>
+          <button class="rail-item" type="button" data-sec="system">系统监控</button>
           <button class="rail-item" type="button" data-sec="data">数据与备份</button>
           <button class="rail-item" type="button" data-sec="application">应用</button>
           <button class="rail-item" type="button" data-sec="updates">更新</button>
@@ -694,6 +981,60 @@
               <div class="setting-info"><div class="setting-title">监控的 GPU</div><div class="setting-desc">未选择时监控所有已检测到的 GPU。</div></div>
               <div class="setting-control" style="flex-direction:column;align-items:stretch;flex:1;max-width:640px">
                 <div class="gpu-detected" id="gpuDetected"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-card" id="sec-system" data-sec="system">
+            <h2>系统监控</h2>
+            <p class="settings-desc">采集本机 CPU / 内存 / 存储 / 网络与硬件传感器（只读）。基础指标不依赖高级传感器；更改在重启后生效。</p>
+            <!-- Provider 状态（只读） -->
+            <div class="conn-status" id="sysMonState">
+              <span class="cs-dot"></span>
+              <span class="cs-text">未检测</span>
+              <span class="cs-sub" id="sysMonStateSub"></span>
+            </div>
+            <!-- 检测到的传感器（只读，按 CPU/主板/散热/存储 分类） -->
+            <div class="setting-row">
+              <div class="setting-info"><div class="setting-title">检测到的硬件传感器</div><div class="setting-desc">只读，LlamaMonitor 不修改传感器设置。</div></div>
+              <div class="setting-control" style="flex:1;max-width:640px">
+                <div class="sensor-list" id="sysMonSensorList"><div class="stat-hint">加载中…</div></div>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-info"><div class="setting-title">启用系统监控</div></div>
+              <div class="setting-control">
+                <label class="switch"><input type="checkbox" id="setSysEnabled" aria-label="启用系统监控"><span class="track"></span></label>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-info"><div class="setting-title">基础采集间隔</div><div class="setting-desc">CPU/内存/存储/网络 实时采样间隔（秒）。</div></div>
+              <div class="setting-control">
+                <input class="input w-s" id="setSysPoll" type="number" min="1" max="3600" aria-label="系统采集间隔秒数">
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-info"><div class="setting-title">实时历史保存间隔</div><div class="setting-desc">写入数据库的采样间隔（秒）。</div></div>
+              <div class="setting-control">
+                <input class="input w-s" id="setSysHistory" type="number" min="1" max="3600" aria-label="系统历史保存间隔秒数">
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-info"><div class="setting-title">历史保留时长</div><div class="setting-desc">小时。</div></div>
+              <div class="setting-control">
+                <input class="input w-s" id="setSysRetention" type="number" min="1" max="8760" aria-label="系统历史保留小时数">
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-info"><div class="setting-title">启用高级硬件传感器</div><div class="setting-desc">通过 LibreHardwareMonitor Bridge 读取温度/功耗/风扇等。</div></div>
+              <div class="setting-control">
+                <label class="switch"><input type="checkbox" id="setSysAdvanced" aria-label="启用高级硬件传感器"><span class="track"></span></label>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-info"><div class="setting-title">高级传感器采集间隔</div><div class="setting-desc">秒。</div></div>
+              <div class="setting-control">
+                <input class="input w-s" id="setSysAdvPoll" type="number" min="1" max="3600" aria-label="高级传感器采集间隔秒数">
               </div>
             </div>
           </div>

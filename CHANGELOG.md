@@ -7,6 +7,60 @@
 > 互相视为"不同系列"：安装器降级保护按数值比较（1.0.0 > 0.13.x），从 1.0.0 安装
 > 0.13.x 会被识别为降级并拒绝（实测行为，非缺陷）。
 
+## [1.1.0] - 2026-09-26
+
+**System & Hardware Telemetry**。新增系统页（8 个区块）、llama.cpp Runtime
+只读遥测、GPU 高级遥测与能耗修正；全程只读，不改变既有 Token / GPU
+监控语义。数据库 schema 4 → 5（迁移前自动备份 `pre_migration_v4_to_v5_*.db`）。
+
+### 新增
+- **系统监控**（`system_collector.py`，psutil 7.2.2 只读）：CPU 使用率/频率、
+  内存、磁盘/网络速率、系统启动时间、静态硬件库存（OS/CPU/主板/BIOS/RAM/
+  磁盘）、CPU 能耗积分（CPU Package Power 可用时）。
+- **高级硬件传感器**（`hardware_sensor_provider.py` + `native/hardware_bridge/`
+  C# 只读桥，LibreHardwareMonitorLib 0.9.2）：CPU 温度/功耗、主板温度、
+  风扇转速等；provider 不可用时字段保持 **null**（UI 显示 `--`，绝不 None→0）。
+- **llama.cpp Runtime 只读遥测**（`llama_runtime_collector.py`）：/health、
+  /slots、/props、/v1/models 分频采集（模型信息 / 当前 Slot 状态 /
+  capabilities）；只读，不代理推理请求。
+- **GPU 高级遥测**（nvidia-smi fast query 扩展列）：显存控制器利用率、
+  功耗上限与功耗百分比、PCIe 链路当前 vs 最大、P-State、驱动版本、
+  性能限制原因（位掩码解码）、ECC 错误计数（60s 低频慢查询，
+  不支持的卡整组 None → UI 隐藏 ECC 区）、GPU 进程列表（只读，
+  WDDM 下显存常 null）。
+- **设置页「系统监控」分区**：启用/轮询间隔/历史落库间隔/保留时长/
+  高级传感器开关与轮询；`config` 新增 `[system]` 段。
+- 新增 API：`/api/system/status|live|daily|inventory|sensors`、
+  `/api/runtime`、`/api/mtp`（含 per-position）；GPU API 扩展新字段
+  （旧字段全部保留）。
+
+### 修复（1.1.0 审计，逐页实测发现）
+- `gpu_collector.driver_version` 从未从解析结果赋值 → `/api/gpu/status`
+  驱动版本恒 null（nvidia-smi 明明报告 580.88）。现取任一轮非空值并保留
+  最后已知值（N/A 不抹掉已有值）。回归测试
+  `test_driver_version_populated_and_sticky`。
+- 系统每日「已监测组件能耗」只累加 CPU 部分，与 UI 承诺的「CPU + GPU」
+  矛盾（本机 GPU 当日 2000+ Wh 却显示 0 Wh）。现按 design comment 在
+  API 层（`api_system_daily`）把 `gpu_daily.energy_wh`（只含被监控卡）
+  按日相加。回归测试 `test_daily_component_energy_includes_gpu`。
+- GPU 页把**未选中监控**的卡（升级前监控过、后来取消勾选）的陈旧
+  最新采样当"还在监控"展示（一排 `--`）。现 `/api/gpu/status` 的
+  `gpus` 按 `device_uuids` 过滤；`detected` 保留全集，GPU 页筛选条对
+  未监控卡打虚线"未监控"标记（默认不勾选，可手动查看历史）。
+  回归测试 `test_status_filters_unmonitored_gpus`。
+
+### 语义与约束
+- **只读**：psutil 只查询；LibreHardwareMonitor 桥只调 `Read()`；
+  llama Runtime 只发 GET；nvidia-smi 只读查询。
+- **null = 不可用**：API 字段 null 时 UI 一律 `--`（高级传感器不可用、
+  WDDM 下 GPU 进程显存、消费者卡无 ECC 等）；不拿 0 冒充缺失值。
+- 系统采样状态 available / partial / unavailable 三态；provider 故障
+  隔离（不影响基础 psutil 监控，更不影响 Token/GPU 采集）。
+
+### 测试
+- 全量 `python -m unittest discover -s tests`：**487 例全绿**
+  （新增系统采集/系统 API/传感器 provider/运行时隐私/GPU 扩展等模块）。
+
 ## [1.0.1] - 2026-09-25
 
 **术语审计与 UI 文案修订版（UI/Text Freeze）**。不改布局、功能、数据库统计逻辑

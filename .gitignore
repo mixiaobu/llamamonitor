@@ -10,6 +10,10 @@ build/
 dist/
 *.spec
 
+# LibreHardwareMonitorLib NuGet 缓存（scripts/build_bridge.py 按固定版本从
+# 官方 NuGet 重新下载；vendor/ 与根目录 DLL 重复，不进仓库）
+native/hardware_bridge/vendor/
+
 # Release 产物（由 scripts/build_release.py 生成）
 release/
 

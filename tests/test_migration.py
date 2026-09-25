@@ -60,7 +60,7 @@ class FreshDatabaseTests(unittest.TestCase):
             d = Database(Path(td) / "fresh.db", wal=False)
             try:
                 self.assertEqual(d.get_schema_version(), CURRENT_SCHEMA_VERSION)
-                self.assertEqual(d.get_schema_version(), 4)  # Phase 13
+                self.assertEqual(d.get_schema_version(), 5)  # 1.1.0
                 tables = {
                     r[0]
                     for r in d._connect().execute(
@@ -74,8 +74,31 @@ class FreshDatabaseTests(unittest.TestCase):
                     "monitor_events", "data_gaps", "backup_history",
                     # v4 runtime metadata 表
                     "app_state",
+                    # v5（1.1.0）系统遥测表
+                    "system_samples", "system_daily",
                 ):
                     self.assertIn(expected, tables)
+                # v5 系统遥测表关键列
+                sys_sample_cols = {r[1] for r in d._connect().execute("PRAGMA table_info(system_samples)")}
+                for col in ("timestamp", "cpu_usage_percent", "cpu_frequency_mhz",
+                            "cpu_temperature_c", "cpu_package_power_w", "memory_used_bytes",
+                            "memory_total_bytes", "memory_usage_percent", "disk_read_bps",
+                            "disk_write_bps", "network_rx_bps", "network_tx_bps",
+                            "monitored_component_power_w"):
+                    self.assertIn(col, sys_sample_cols)
+                sys_daily_cols = {r[1] for r in d._connect().execute("PRAGMA table_info(system_daily)")}
+                for col in ("date", "cpu_usage_count", "cpu_usage_sum", "cpu_usage_max",
+                            "cpu_energy_wh", "monitored_component_energy_wh",
+                            "disk_read_bytes", "disk_write_bytes",
+                            "network_rx_bytes", "network_tx_bytes"):
+                    self.assertIn(col, sys_daily_cols)
+                # v5 gpu_samples 高级遥测列
+                gpu_cols = {r[1] for r in d._connect().execute("PRAGMA table_info(gpu_samples)")}
+                for col in ("memory_controller_percent", "power_limit_w", "pcie_gen_max",
+                            "pcie_width_max", "performance_state", "ecc_enabled",
+                            "ecc_corrected_volatile", "ecc_corrected_aggregate",
+                            "ecc_uncorrected_volatile", "ecc_uncorrected_aggregate"):
+                    self.assertIn(col, gpu_cols)
                 # v2 新增列
                 live_cols = {r[1] for r in d._connect().execute("PRAGMA table_info(live_samples)")}
                 self.assertIn("kv_cache_usage_ratio", live_cols)
@@ -103,7 +126,7 @@ class LegacyMigrationTests(unittest.TestCase):
 
             d = Database(p, wal=False)
             try:
-                self.assertEqual(d.get_schema_version(), 4)  # Phase 13：v0 -> v4
+                self.assertEqual(d.get_schema_version(), 5)  # 1.1.0：v0 -> v5
                 conn = d._connect()
                 # state 原样保留（baseline 不能丢）
                 state = {
@@ -159,12 +182,12 @@ class LegacyMigrationTests(unittest.TestCase):
             before = _snapshot(p)
             d2 = Database(p, wal=False)
             try:
-                self.assertEqual(d2.get_schema_version(), 4)
-                # no-op：不再插入额外 migration 事件（v0 -> v4 共 2 条：2->3/3->4；1->2 不记事件）
+                self.assertEqual(d2.get_schema_version(), 5)
+                # no-op：不再插入额外 migration 事件（v0 -> v5 共 3 条：2->3/3->4/4->5；1->2 不记事件）
                 self.assertEqual(
                     d2._connect().execute(
                         "SELECT COUNT(*) FROM monitor_events WHERE event_type='migration'"
-                    ).fetchone()[0], 2,
+                    ).fetchone()[0], 3,
                 )
                 self.assertEqual(_snapshot(p), before)
             finally:
@@ -203,10 +226,10 @@ class LegacyMigrationTests(unittest.TestCase):
             )
             conn.close()
 
-            # 重新打开：重试成功（v1 -> v2 -> v3 -> v4）
+            # 重新打开：重试成功（v1 -> v2 -> v3 -> v4 -> v5）
             d2 = Database(p, wal=False)
             try:
-                self.assertEqual(d2.get_schema_version(), 4)
+                self.assertEqual(d2.get_schema_version(), 5)
                 self.assertEqual(
                     d2._connect().execute("SELECT COUNT(*) FROM state").fetchone()[0], 2
                 )

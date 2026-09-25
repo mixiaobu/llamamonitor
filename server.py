@@ -49,6 +49,9 @@ from backup import BackupManager, CHECK_INTERVAL_SECONDS
 from collector import MetricsCollector
 from clock import default_clock
 from gpu_collector import GpuCollector
+from hardware_sensor_provider import HardwareSensorProvider
+from llama_runtime_collector import LlamaRuntimeCollector
+from system_collector import SystemCollector
 from windows_integration import FOLDER_TARGETS, is_frozen, open_folder
 from config import (
     LoadedConfig,
@@ -107,6 +110,12 @@ _GPU_LIVE_FIELDS = (
     "fan_percent",
     "sm_clock_mhz",
     "memory_clock_mhz",
+    # 1.1 高级遥测（schema v5 列；旧行 -> None）
+    "memory_controller_percent",
+    "power_limit_w",
+    "pcie_gen_max",
+    "pcie_width_max",
+    "performance_state",
 )
 
 
@@ -130,6 +139,85 @@ def _downsample(points: list[dict], max_points: int = 2000) -> list[dict]:
             merged[field] = round(sum(values) / len(values), 2) if values else None
         out.append(merged)
     return out
+
+
+def _model_summary_public(runtime, request: Request) -> dict | None:
+    """
+    模型摘要（/api/status 用；完整信息见 /api/llama/info）。
+    远程只读客户端不泄漏完整模型路径（只返回文件名）。
+    """
+    info = runtime.model_info
+    if info is None:
+        return None
+    return {
+        "model_alias": info.get("model_alias"),
+        "model_file_name": info.get("model_file_name"),
+        "model_ftype": info.get("model_ftype"),
+        "parameter_count": info.get("parameter_count"),
+        "model_size_bytes": info.get("model_size_bytes"),
+        "context_size": info.get("context_size"),
+        "total_slots": info.get("total_slots"),
+        "vision_supported": info.get("vision_supported"),
+        "video_supported": info.get("video_supported"),
+        "audio_supported": info.get("audio_supported"),
+        "build_info": info.get("build_info"),
+        "is_sleeping": info.get("is_sleeping"),
+    }
+
+
+def _slots_public(runtime) -> list[dict]:
+    """Slot 摘要（/api/status 用；完整白名单字段见 /api/llama/slots）。"""
+    out = []
+    for s in runtime.slots:
+        out.append({
+            "id": s.get("id"),
+            "is_processing": bool(s.get("is_processing")),
+            "n_ctx": s.get("n_ctx"),
+            "n_prompt_tokens": s.get("n_prompt_tokens"),
+            "n_prompt_tokens_cache": s.get("n_prompt_tokens_cache"),
+            "n_prompt_tokens_processed": s.get("n_prompt_tokens_processed"),
+            "next_token": s.get("next_token"),
+        })
+    return out
+
+
+def _power_percent(draw_w: float | None, limit_w: float | None) -> float | None:
+    """GPU 功耗占比 = draw / limit * 100。**只有两个值都存在且 limit > 0 才计算**
+    （1.1 语义：缺任一 -> None，绝不显示假数值；UI 显示 --）。"""
+    if draw_w is None or limit_w is None or limit_w <= 0:
+        return None
+    return round(draw_w / limit_w * 100.0, 1)
+
+
+def _pstate_label(state: int | None) -> str | None:
+    """P-state int -> 'P0' 标签（None -> None）。P0 只表示最高性能状态，
+    **不**等于 100% 性能（UI tooltip 说明）。"""
+    return f"P{state}" if state is not None else None
+
+
+def _gpu_ecc_payload(gpu, uuid: str) -> dict | None:
+    """
+    GPU ECC 健康 payload（slow health，60s 周期）。
+
+    - 不支持 ECC 的 GPU（ecc_enabled 未查到 / None）-> None（UI 整个 ECC 区隐藏，
+      不显示一排 --）；
+    - 支持时返回 {enabled, corrected_volatile/aggregate, uncorrected_volatile/aggregate,
+      retired_pages, remapped_rows}；细项缺失（如消费卡无 SRAM）-> 该计数 None。
+    """
+    if gpu is None or not gpu.available:
+        return None
+    health = gpu.slow_health.get(uuid)
+    if not health or health.get("ecc_enabled") is None:
+        return None
+    return {
+        "enabled": bool(health.get("ecc_enabled")),
+        "corrected_volatile": health.get("ecc_corrected_volatile"),
+        "corrected_aggregate": health.get("ecc_corrected_aggregate"),
+        "uncorrected_volatile": health.get("ecc_uncorrected_volatile"),
+        "uncorrected_aggregate": health.get("ecc_uncorrected_aggregate"),
+        "retired_pages": health.get("retired_pages"),
+        "remapped_rows": health.get("remapped_rows"),
+    }
 
 
 def _with_derived(row: dict) -> dict:
@@ -219,6 +307,9 @@ def build_app(
     gpu: GpuCollector | None = None,
     app_state: AppIntegrationState | None = None,
     update_service: UpdateService | None = None,
+    runtime: "LlamaRuntimeCollector | None" = None,
+    system: "SystemCollector | None" = None,
+    sensors: "HardwareSensorProvider | None" = None,
 ) -> FastAPI:
     """
     创建 FastAPI 应用。db / collector / gpu / loaded / app_state 注入，便于测试指向
@@ -228,6 +319,11 @@ def build_app(
     app_state 为 None（浏览器模式 / 测试）时 /api/app/* 返回降级值，不影响其他功能。
     update_service 为 None（测试/浏览器模式）时创建默认 UpdateService；测试可注入
     带 MockTransport 客户端 / 固定 installation_mode 的实例（Phase 13）。
+
+    1.1.0：runtime（llama Health/Model/Slot）/ system（CPU/内存/磁盘/网络）/
+    sensors（高级硬件传感器）均为可选注入——None（测试/浏览器模式）时相应
+    API 返回 available=false / 降级值，**绝不影响** Token 采集与其他功能
+    （四个 Collector 故障隔离）。
     """
     if update_service is None:
         update_service = UpdateService(
@@ -312,6 +408,14 @@ def build_app(
         await collector.collect_once()
         if gpu is not None and gpu.config.gpu.enabled:
             await gpu.poll_once()
+        # 1.1：启动 system / sensors / runtime（故障隔离：任何失败不影响 Token 采集）
+        if system is not None:
+            try:
+                system.inventory = system.read_inventory()  # 静态库存：启动读一次
+            except Exception:
+                logger.warning("系统静态库存读取失败（不影响基础监控）", exc_info=True)
+        if sensors is not None:
+            sensors.start()
         _refresh_app_state()
 
         async def _periodic() -> None:
@@ -326,9 +430,47 @@ def build_app(
                     # （如 DB 层非 sqlite3 异常），每轮至少留一条 debug 日志，
                     # 避免"数据悄悄不更新"却零日志
                     logger.debug("周期采集异常（内部应已处理，双保险）", exc_info=True)
+                # 1.1：metrics 在线状态同步给 runtime（metrics 失败时允许立即 health 检查）
+                if runtime is not None:
+                    try:
+                        runtime.set_metrics_online(bool((collector.last_snapshot or {}).get("online")))
+                    except Exception:
+                        pass
                 _refresh_app_state()
 
         app.state.collector_task = asyncio.create_task(_periodic())
+
+        # 1.1：System 采集任务（独立循环，每 poll_interval_seconds 一轮；故障隔离）
+        system_task = None
+        if system is not None and system.enabled:
+            async def _system_periodic() -> None:
+                while True:
+                    await asyncio.sleep(system.config.system.poll_interval_seconds)
+                    try:
+                        # 同步 GPU 功耗（组件功耗合计 = CPU + 全部 GPU；GPU 无数据 -> None）
+                        if gpu is not None:
+                            powers = [s.power_draw_w for s in gpu.latest if s.power_draw_w is not None]
+                            system.set_gpu_power_total(sum(powers) if powers else None)
+                        # 同步高级传感器（provider 不可用时字段保持 None -> UI 显示 --）
+                        if sensors is not None:
+                            snap = sensors.snapshot()
+                            system.set_advanced_sensor_values(
+                                {"cpu_temperature_c": snap["cpu_temperature_c"],
+                                 "cpu_package_power_w": snap["cpu_package_power_w"]},
+                                fans=snap["fans"], all_sensors=snap["sensors"],
+                                available=(snap["state"] == "available"),
+                            )
+                        system.poll_once()
+                    except Exception:
+                        logger.debug("System 周期采集异常（内部应已处理，双保险）", exc_info=True)
+
+            system_task = asyncio.create_task(_system_periodic())
+
+        # 1.1：llama Runtime 采集任务（/health /slots /props /v1/models 分频调度）
+        runtime_task = None
+        if runtime is not None:
+            runtime.set_metrics_online(bool((collector.last_snapshot or {}).get("online")))
+            runtime_task = asyncio.create_task(runtime.run())
 
         gpu_task = None
         if gpu is not None and gpu.config.gpu.enabled:
@@ -397,6 +539,13 @@ def build_app(
 
         update_task = asyncio.create_task(_update_auto_check())
 
+        if runtime is not None:
+            app.state.runtime = runtime
+        if system is not None:
+            app.state.system = system
+        if sensors is not None:
+            app.state.sensors = sensors
+
         yield
         # ---- 关闭：优雅停止 ----
         if update_task is not None:
@@ -422,6 +571,32 @@ def build_app(
                 await gpu_task
             except asyncio.CancelledError:
                 pass
+        # 1.1：停止 system / runtime / sensors（优雅终止，不留孤儿进程/线程）
+        if runtime_task is not None:
+            runtime_task.cancel()
+            try:
+                await runtime_task
+            except asyncio.CancelledError:
+                pass
+            try:
+                await runtime.aclose()
+            except Exception:
+                pass
+        if system_task is not None:
+            system_task.cancel()
+            try:
+                await system_task
+            except asyncio.CancelledError:
+                pass
+            try:
+                system.shutdown()
+            except Exception:
+                pass
+        if sensors is not None:
+            try:
+                sensors.stop()  # 优雅终止 Bridge（关 stdin -> 宽限 -> Terminate）
+            except Exception:
+                logger.warning("停止硬件传感器 provider 失败", exc_info=True)
         collector.shutdown()  # Phase 11：落未结束缺口 + monitor_stop 事件
         await collector.aclose()  # 关闭跨轮复用的 HTTP 客户端（幂等）
         db.checkpoint("PASSIVE")  # Phase 11：graceful shutdown 前 WAL 落盘（不用 TRUNCATE 高频）
@@ -514,6 +689,12 @@ def build_app(
                 "using_defaults": loaded.using_defaults,
                 "has_errors": loaded.has_errors,
             }
+        # 1.1：llama.cpp Runtime（Health State / 模型摘要 / 当前 Slot）。
+        # 全部内存态（llama_runtime_collector）；runtime collector 未注入时 -> None。
+        if runtime is not None:
+            result["server_state"] = runtime.server_state  # ready / loading / unavailable
+            result["llama_model"] = _model_summary_public(runtime, request)
+            result["llama_slots"] = _slots_public(runtime)
         # Phase 12：应用版本（与 /api/version、About 同一来源 version.py）
         result["version"] = __version__
         # Phase 10：应用级状态（不暴露 Mutex handle 等 Windows 内部句柄）
@@ -576,6 +757,15 @@ def build_app(
                 "poll_interval_seconds": cfg.gpu.poll_interval_seconds,
                 "history_retention_hours": cfg.gpu.history_retention_hours,
                 "device_uuids": cfg.gpu.device_uuids,
+            },
+            # 1.1：系统监控段（放在 gpu 之后，与设置页分区顺序一致）
+            "system": {
+                "enabled": cfg.system.enabled,
+                "poll_interval_seconds": cfg.system.poll_interval_seconds,
+                "history_interval_seconds": cfg.system.history_interval_seconds,
+                "history_retention_hours": cfg.system.history_retention_hours,
+                "advanced_sensors": cfg.system.advanced_sensors,
+                "advanced_sensor_interval_seconds": cfg.system.advanced_sensor_interval_seconds,
             },
             "web": {
                 "host": cfg.web.host,
@@ -711,6 +901,7 @@ def build_app(
                 "reason": "GPU 采集器未配置",
                 "last_update": None,
                 "detected": [],
+                "gpu_uuids_monitored": [],
                 "gpus": [],
             }
         if not gpu.config.gpu.enabled:
@@ -720,11 +911,19 @@ def build_app(
                 "reason": "gpu monitoring disabled",
                 "last_update": gpu.last_update,
                 "detected": gpu.detected,
+                "gpu_uuids_monitored": list(gpu.config.gpu.device_uuids),
                 "gpus": [],
             }
         gpus = []
         if gpu.available:
+            # device_uuids 非空 = 只监控指定 GPU；gpus 只列被监控的卡。
+            # 未选中的卡（如升级前曾监控、后来取消勾选）历史保留在 gpu_samples，
+            # 但 /api/gpu/status 不再展示其**陈旧**的"最新采样"——那会误导成"还在监控"。
+            # 未选中的卡仍通过 detected + gpu_uuids_monitored 暴露给前端（标记"未监控"）。
+            monitored = set(gpu.config.gpu.device_uuids)
             for row in db.get_gpu_latest():
+                if monitored and row["gpu_uuid"] not in monitored:
+                    continue
                 gpus.append({
                     "index": row["gpu_index"],
                     "uuid": row["gpu_uuid"],
@@ -742,14 +941,34 @@ def build_app(
                     "memory_clock_mhz": row["memory_clock_mhz"],
                     "pcie_generation": row["pcie_generation"],
                     "pcie_width": row["pcie_width"],
+                    # ---- 1.1 高级遥测（旧字段全部保留；新字段缺失 -> None）----
+                    "memory_controller_percent": row.get("memory_controller_percent"),
+                    "power_limit_w": row.get("power_limit_w"),
+                    "power_percent": _power_percent(row.get("power_draw_w"), row.get("power_limit_w")),
+                    "pcie_gen_max": row.get("pcie_gen_max"),
+                    "pcie_width_max": row.get("pcie_width_max"),
+                    "performance_state": _pstate_label(row.get("performance_state")),
+                    "driver_version": (gpu.driver_version or None),
+                    # slow health（60s 周期；不支持 -> None -> UI 隐藏 ECC 区）
+                    "ecc": _gpu_ecc_payload(gpu, row["gpu_uuid"]),
+                    # 性能限制原因（非故障；0x0 时 []）
+                    "throttle_reasons": list(gpu.latest_throttle.get(row["gpu_uuid"], []))
+                    if hasattr(gpu, "latest_throttle") else [],
                 })
+        # 1.1：GPU 进程（只读；WDDM 下 used_memory 常 None -> UI 显示 --）
+        processes = gpu.processes if gpu.available else []
         return {
             "available": gpu.available,
             "provider": "nvidia-smi",
             "reason": None if gpu.available else gpu.unavailable_reason,
             "last_update": gpu.last_update,
             "detected": gpu.detected,
+            # 当前被监控的 GPU uuid 集合（device_uuids；空 = 全部）。
+            # 前端据此给 detected 里"检测到但未监控"的卡打标记，而不是直接隐藏
+            # （检测列表是 Settings 勾选的数据来源，必须可见）。
+            "gpu_uuids_monitored": list(gpu.config.gpu.device_uuids),
             "gpus": gpus,
+            "processes": processes,
         }
 
     @app.get("/api/gpu/status")
@@ -825,6 +1044,230 @@ def build_app(
                 "energy_wh": round(r["energy_wh"], 3),
             })
         return {"gpus": list(per_gpu.values())}
+
+    # ---------- 1.1 llama.cpp Runtime（Health / Model / Slot） ----------
+
+    @app.get("/api/llama/info")
+    async def api_llama_info(request: Request) -> dict:
+        """
+        llama.cpp 模型与服务信息（1.1）。
+
+        - 只读端点；远程只读客户端的 model_path 只返回文件名（不泄漏完整 Windows 路径，
+          与 /api/status 的 config.path 同一策略）；
+        - 能力探测：该 llama.cpp 版本无 /props 或 /v1/models 时对应字段为 null
+          （前端按"不可用"处理，不报错）；
+        - chat_template / generation_prompt / media_marker 绝不返回（隐私边界）。
+        """
+        if runtime is None:
+            return {"available": False, "model": None, "capabilities": {}}
+        info = runtime.model_info
+        model = None
+        if info is not None:
+            model = dict(info)
+            # 完整路径只允许本机 Diagnostics 查看
+            if model.get("model_path") and not _client_is_loopback(request):
+                model["model_path"] = Path(model["model_path"]).name
+        return {
+            "available": info is not None,
+            "model": model,
+            "capabilities": dict(runtime.capabilities),
+            "server_state": runtime.server_state,
+            "last_update": runtime.last_health_update,
+        }
+
+    @app.get("/api/llama/slots")
+    async def api_llama_slots() -> dict:
+        """
+        当前 Slot 运行时（1.1，只读白名单字段：状态/计数/采样参数）。
+
+        - 隐私边界：prompt / generation_prompt / chat_template / 消息文本绝不返回；
+        - 该版本无 /slots（501）时 available=false（前端显示"不可用"，不报错）；
+        - cache_reuse_percent 仅当 n_prompt_tokens > 0 时计算
+          （n_prompt_tokens_cache / n_prompt_tokens）——当前请求缓存复用率，
+          与历史 Token 缓存复用率是不同指标。
+        """
+        if runtime is None:
+            return {"available": False, "slots": []}
+        slots = []
+        for s in runtime.slots:
+            entry = dict(s)
+            n_prompt = s.get("n_prompt_tokens")
+            n_cache = s.get("n_prompt_tokens_cache")
+            entry["cache_reuse_percent"] = (
+                round(n_cache / n_prompt * 100.0, 1)
+                if n_prompt and n_cache is not None and n_prompt > 0
+                else None
+            )
+            slots.append(entry)
+        return {
+            "available": bool(runtime.capabilities.get("slots")),
+            "slots": slots,
+            "last_update": runtime.last_slots_update,
+        }
+
+    # ---------- 1.1 System Telemetry（CPU/内存/磁盘/网络/功耗/传感器） ----------
+
+    @app.get("/api/system/status")
+    async def api_system_status() -> dict:
+        """
+        当前系统状态（1.1 实时摘要）。
+
+        - null = 不可用（前端显示 --）；**绝不**把 None 变 0（尤其风扇/功耗/温度）；
+        - monitored_component_power_w = CPU Package Power + 全部 GPU Power（已监测组件合计，
+          **非**墙插整机功耗）；无组件数据 -> null；
+        - wall_power_w 恒为 null（1.1 无外部功率计；数据模型预留）。
+        """
+        if system is None:
+            return {"available": False, "cpu": None, "memory": None, "disk": None,
+                    "network": None, "power": None, "last_update": None}
+        latest = system.latest
+        if latest is None:
+            return {"available": system.available, "cpu": None, "memory": None,
+                    "disk": None, "network": None, "power": None,
+                    "last_update": system.last_update}
+        return {
+            "available": system.available,
+            "cpu": {
+                "usage_percent": latest.cpu_usage_percent,
+                "frequency_mhz": latest.cpu_frequency_mhz,
+                "temperature_c": latest.cpu_temperature_c,
+                "package_power_w": latest.cpu_package_power_w,
+            },
+            "memory": {
+                "used_bytes": latest.memory_used_bytes,
+                "total_bytes": latest.memory_total_bytes,
+                "usage_percent": latest.memory_usage_percent,
+            },
+            "disk": {
+                "read_bps": latest.disk_read_bps,
+                "write_bps": latest.disk_write_bps,
+            },
+            "network": {
+                "rx_bps": latest.network_rx_bps,
+                "tx_bps": latest.network_tx_bps,
+            },
+            "power": {
+                "monitored_components_w": latest.monitored_component_power_w,
+                "cpu_package_w": latest.cpu_package_power_w,
+                "gpu_total_w": system.gpu_power_total_w,
+                "wall_power_w": None,  # 1.1 无外部测量源：恒 null（不显示假数值）
+            },
+            "last_update": system.last_update,
+        }
+
+    @app.get("/api/system/live")
+    async def api_system_live(minutes: int = Query(60, ge=1, le=1440)) -> dict:
+        """
+        最近 N 分钟（1~1440）的系统采样（schema v5 system_samples）。
+        超过 2000 点时后端 bucket 降采样（与 GPU live 同策略）。
+        """
+        if system is None:
+            return {"points": []}
+        since = time.time() - minutes * 60
+        rows = db.get_system_samples_since(since)
+        points = [
+            {k: r.get(k) for k in (
+                "timestamp", "cpu_usage_percent", "cpu_frequency_mhz",
+                "cpu_temperature_c", "cpu_package_power_w",
+                "memory_usage_percent", "disk_read_bps", "disk_write_bps",
+                "network_rx_bps", "network_tx_bps", "monitored_component_power_w",
+            )}
+            for r in rows
+        ]
+        return {"points": _downsample(points)}
+
+    @app.get("/api/system/daily")
+    async def api_system_daily(days: int = Query(30, ge=1, le=365)) -> dict:
+        """
+        系统每日聚合（1.1 schema v5 system_daily）。
+        avg = sum / count（count=0 -> null：只有有效采样的天才有均值）。
+        """
+        rows = db.get_system_daily(days)
+        # "已监测组件今日能耗" = CPU（system_daily 列）+ GPU（gpu_daily，同窗口按日求和）。
+        # system_daily.monitored_component_energy_wh 列只存 CPU 部分——GPU 能量由
+        # gpu_daily 维护（采集器按 device_uuids 过滤后才落库，口径与 GPU 页每日能耗
+        # 一致），组件合计按 design comment 在此 API 层相加。
+        gpu_energy_by_date: dict[str, float] = {}
+        for g in db.get_gpu_daily(days):
+            if g["energy_wh"]:
+                gpu_energy_by_date[g["date"]] = (
+                    gpu_energy_by_date.get(g["date"], 0.0) + g["energy_wh"]
+                )
+        out = []
+        for r in rows:
+            out.append({
+                "date": r["date"],
+                "cpu_usage_avg": round(r["cpu_usage_sum"] / r["cpu_usage_count"], 2) if r["cpu_usage_count"] else None,
+                "cpu_usage_max": r["cpu_usage_max"],
+                "cpu_temp_avg": round(r["cpu_temp_sum"] / r["cpu_temp_count"], 1) if r["cpu_temp_count"] else None,
+                "cpu_temp_max": r["cpu_temp_max"],
+                "memory_usage_avg": round(r["memory_usage_sum"] / r["memory_usage_count"], 2) if r["memory_usage_count"] else None,
+                "memory_usage_max": r["memory_usage_max"],
+                "disk_read_bytes": r["disk_read_bytes"],
+                "disk_write_bytes": r["disk_write_bytes"],
+                "network_rx_bytes": r["network_rx_bytes"],
+                "network_tx_bytes": r["network_tx_bytes"],
+                "cpu_energy_wh": round(r["cpu_energy_wh"], 3),
+                "monitored_component_energy_wh": round(
+                    r["monitored_component_energy_wh"] + gpu_energy_by_date.get(r["date"], 0.0), 3
+                ),
+            })
+        return {"days": out}
+
+    @app.get("/api/system/inventory")
+    async def api_system_inventory(request: Request) -> dict:
+        """
+        静态硬件库存（1.1）：OS / CPU / 主板 / BIOS / RAM / 磁盘 / BootTime。
+        启动时读取一次；manual=true 时重新读取（手动刷新，低频 CIM 安全）。
+        """
+        if system is None:
+            return {"available": False, "inventory": {}}
+        manual = request.query_params.get("manual", "").lower() == "true"
+        inv = system.refresh_inventory() if manual else system.inventory
+        return {"available": True, "inventory": inv, "refreshed_at": time.time()}
+
+    @app.get("/api/system/sensors")
+    async def api_system_sensors() -> dict:
+        """
+        高级硬件传感器（1.1）：状态 + 传感器列表 + 风扇。
+
+        - state: available / partial / unavailable（Provider 状态机）；
+        - fans：[{name, rpm, control_percent, source}]——control_percent 只有 Provider
+          真实提供 Control 传感器时才有值（绝不从 RPM 推算）；
+        - counts：分类计数（CPU / 主板 / 散热 / 存储）——Settings 页面显示。
+        """
+        if sensors is None:
+            return {"available": False, "state": "unavailable", "sensors": [],
+                    "fans": [], "counts": {}, "last_update": None}
+        snap = sensors.snapshot()
+        # 传感器列表按 (hardware_type, sensor_type) 去重计数（Settings 分类列表用）
+        grouped: dict[str, dict] = {}
+        for s in snap["sensors"]:
+            key = f"{s['hardware_type']}/{s['sensor_type']}"
+            g = grouped.setdefault(key, {
+                "hardware_type": s["hardware_type"], "sensor_type": s["sensor_type"],
+                "names": set(), "values": [],
+            })
+            g["names"].add(s["sensor_name"])
+            g["values"].append(s["value"])
+        groups = [
+            {
+                "hardware_type": g["hardware_type"], "sensor_type": g["sensor_type"],
+                "names": sorted(g["names"])[:8], "count": len(g["values"]),
+                "latest": round(sum(g["values"]) / len(g["values"]), 1),
+            }
+            for g in grouped.values()
+        ]
+        return {
+            "available": True,
+            "state": snap["state"],
+            "sensors": groups,
+            "fans": snap["fans"],
+            "counts": snap["counts"],
+            "cpu_temperature_c": snap["cpu_temperature_c"],
+            "cpu_package_power_w": snap["cpu_package_power_w"],
+            "last_update": sensors.last_bridge_update,
+        }
 
     # ---------- Server Runtime（Phase 9） ----------
 
@@ -1673,7 +2116,13 @@ def main() -> None:
         pre_migration_backup_dir=app_data_dir() / "backups",
     )
     collector, gpu = build_collector(cfg, db)
-    app = build_app(db, collector, loaded, gpu)
+    # 1.1：System & Hardware Telemetry collectors（故障隔离：各自独立，
+    # 失败绝不影响 Token 采集 / GPU 采集）
+    runtime = LlamaRuntimeCollector(cfg, db=db)
+    system = SystemCollector(cfg, db=db)
+    sensors = HardwareSensorProvider(cfg, db=db)
+    app = build_app(db, collector, loaded, gpu,
+                    runtime=runtime, system=system, sensors=sensors)
 
     log.info("启动 FastAPI: http://%s:%s（Ctrl+C 停止）", cfg.web.host, cfg.web.port)
     # log_config=None：uvicorn 不覆盖全局 logging 配置，

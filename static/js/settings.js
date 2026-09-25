@@ -88,6 +88,15 @@
         check_interval_hours: num("setUpdateInterval"),
         auto_download: $("setUpdateAutoDownload").checked,
       },
+      // 1.1 系统监控（SystemConfig；字段与 config.py 一一对应）
+      system: {
+        enabled: $("setSysEnabled").checked,
+        poll_interval_seconds: num("setSysPoll"),
+        history_interval_seconds: num("setSysHistory"),
+        history_retention_hours: num("setSysRetention"),
+        advanced_sensors: $("setSysAdvanced").checked,
+        advanced_sensor_interval_seconds: num("setSysAdvPoll"),
+      },
     };
   }
 
@@ -116,6 +125,13 @@
     $("setUpdatesEnabled").checked = !!(c.updates && c.updates.check_enabled);
     $("setUpdateInterval").value = (c.updates && c.updates.check_interval_hours) || 24;
     $("setUpdateAutoDownload").checked = !!(c.updates && c.updates.auto_download);
+    // 1.1 系统监控（c.system 缺失（旧配置）时用默认值，不报错）
+    $("setSysEnabled").checked = !!(c.system && c.system.enabled);
+    $("setSysPoll").value = (c.system && c.system.poll_interval_seconds) || 5;
+    $("setSysHistory").value = (c.system && c.system.history_interval_seconds) || 5;
+    $("setSysRetention").value = (c.system && c.system.history_retention_hours) || 48;
+    $("setSysAdvanced").checked = !(c.system && c.system.advanced_sensors === false);
+    $("setSysAdvPoll").value = (c.system && c.system.advanced_sensor_interval_seconds) || 2;
     if (c.paths) lastPaths = c.paths;
     updateDbPathHint();
     updateWebHostHint();
@@ -863,6 +879,10 @@
       b.setAttribute("aria-current", b.getAttribute("data-sec") === name ? "true" : "false");
     });
     if (name === "server") updateServerConnStatus();
+    // 1.1：进入"系统监控"分区时加载只读传感器列表（Provider 状态 + 传感器）
+    if (name === "system" && window.LM && LM.system && LM.system.refreshSensors) {
+      LM.system.refreshSensors();
+    }
   }
 
   function goToSection(name) {

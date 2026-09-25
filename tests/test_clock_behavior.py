@@ -18,7 +18,9 @@ from configutil import make_config
 from db import Database
 from gpu_collector import GpuCollector, parse_nvidia_smi_csv
 
-ROW_A = "0, GPU-E1, Test GPU A, 100, 2048, 50, 55, 280.0, 60, 1700, 9501, 3, 16"
+# 1.1.0：20 列 fast query（列序见 gpu_collector.NVSMI_QUERY）
+ROW_A = ("0, GPU-E1, Test GPU A, 100, 2048, 50, 55, 55, 280.0, 350.0, 60, "
+         "1700, 9501, P8, 3, 16, 3, 16, 550.55, 0x0")
 
 T0 = 1_789_000_000.0
 

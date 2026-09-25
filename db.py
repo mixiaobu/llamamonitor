@@ -88,8 +88,11 @@ DB_HEALTH_PROTECTIVE = (DB_HEALTH_CORRUPT, DB_HEALTH_UNAVAILABLE, DB_HEALTH_INCO
 
 # 当前 schema 版本：
 # v2 = Phase 9（GPU 表 + runtime 列扩展）；v3 = Phase 11（可靠性/数据质量表）；
+# v4 = Phase 13（app_state runtime metadata）；
+# v5 = 1.1.0（System & Hardware Telemetry：system_samples / system_daily +
+#       gpu_samples 高级遥测列扩展）
 # 版本机制见 _connect/_migrate
-CURRENT_SCHEMA_VERSION = 4
+CURRENT_SCHEMA_VERSION = 5
 
 # live_samples 默认保留时长：48 小时（实际值来自配置 collector.live_retention_hours）
 LIVE_SAMPLE_RETENTION_SECONDS = 48 * 3600
@@ -259,6 +262,53 @@ CREATE TABLE IF NOT EXISTS app_state (
 );
 """
 
+# 1.1.0（schema v5）：System & Hardware Telemetry。
+# system_samples：系统实时采样（默认 5s 一条，保留 48h 可配置）。
+# 只存核心数值列——**不**把动态主板/风扇/存储传感器每 5s 全塞进来
+# （高级传感器是 realtime + 短历史，见 system_collector）。
+# 所有高级字段可空（None = 该传感器不可用，绝不存 0 冒充）。
+# system_daily：每日聚合（avg/max + 流量累计 + 能耗 Wh），长期保留。
+_SCHEMA_V5 = """
+CREATE TABLE IF NOT EXISTS system_samples (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp REAL NOT NULL,              -- Unix 秒（采集时刻）
+    cpu_usage_percent REAL,               -- CPU 总利用率 %
+    cpu_frequency_mhz REAL,               -- 当前 CPU 频率（不可用 NULL）
+    cpu_temperature_c REAL,               -- CPU Package 温度（高级传感器；不可用 NULL）
+    cpu_package_power_w REAL,             -- CPU Package 功耗（高级传感器；不可用 NULL）
+    memory_used_bytes INTEGER,
+    memory_total_bytes INTEGER,
+    memory_usage_percent REAL,
+    disk_read_bps REAL,                   -- 物理磁盘读速率（counter delta / monotonic）
+    disk_write_bps REAL,
+    network_rx_bps REAL,
+    network_tx_bps REAL,
+    monitored_component_power_w REAL      -- 已监测组件功耗合计（CPU+GPU；非墙插功耗）
+);
+CREATE INDEX IF NOT EXISTS idx_system_samples_timestamp ON system_samples(timestamp);
+
+-- system_daily：每日聚合（与 gpu_daily 同模式：count/sum/max，API 层算 avg=sum/count）。
+-- 平均值为**样本均值**（只在有效采样的天内有数据，不拿 0 填充缺失传感器）。
+CREATE TABLE IF NOT EXISTS system_daily (
+    date TEXT PRIMARY KEY,                -- 本机系统日期 YYYY-MM-DD
+    cpu_usage_count INTEGER NOT NULL DEFAULT 0,
+    cpu_usage_sum REAL NOT NULL DEFAULT 0,
+    cpu_usage_max REAL,
+    cpu_temp_count INTEGER NOT NULL DEFAULT 0,
+    cpu_temp_sum REAL NOT NULL DEFAULT 0,
+    cpu_temp_max REAL,
+    memory_usage_count INTEGER NOT NULL DEFAULT 0,
+    memory_usage_sum REAL NOT NULL DEFAULT 0,
+    memory_usage_max REAL,
+    disk_read_bytes INTEGER NOT NULL DEFAULT 0,
+    disk_write_bytes INTEGER NOT NULL DEFAULT 0,
+    network_rx_bytes INTEGER NOT NULL DEFAULT 0,
+    network_tx_bytes INTEGER NOT NULL DEFAULT 0,
+    cpu_energy_wh REAL NOT NULL DEFAULT 0,
+    monitored_component_energy_wh REAL NOT NULL DEFAULT 0
+);
+"""
+
 
 def _table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
     return {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
@@ -301,6 +351,39 @@ def _migrate_v2_to_v3(conn: sqlite3.Connection) -> None:
         logger.warning("写入 migration 事件失败（不影响迁移本身）", exc_info=True)
 
 
+def _migrate_v4_to_v5(conn: sqlite3.Connection) -> None:
+    """
+    v4 -> v5（1.1.0 System & Hardware Telemetry）：
+    - 新建 system_samples（系统实时采样：CPU/内存/磁盘/网络/组件功耗）；
+    - 新建 system_daily（系统日聚合：真正长期有价值的统计 + CPU/组件能耗）；
+    - gpu_samples 增 1.1 高级遥测列（历史行 NULL，向前兼容）：
+      memory_controller_percent / power_limit_w / pcie_gen_max / pcie_width_max /
+      performance_state / ecc_enabled / ecc_corrected_volatile / ecc_corrected_aggregate /
+      ecc_uncorrected_volatile / ecc_uncorrected_aggregate。
+    全部幂等语句：不 DROP、不 DELETE、不动旧数据。
+    """
+    conn.executescript(_SCHEMA_V5)
+    # gpu_samples 高级列（幂等 ALTER）
+    _add_column_if_missing(conn, "gpu_samples", "memory_controller_percent", "REAL")
+    _add_column_if_missing(conn, "gpu_samples", "power_limit_w", "REAL")
+    _add_column_if_missing(conn, "gpu_samples", "pcie_gen_max", "INTEGER")
+    _add_column_if_missing(conn, "gpu_samples", "pcie_width_max", "INTEGER")
+    _add_column_if_missing(conn, "gpu_samples", "performance_state", "INTEGER")
+    _add_column_if_missing(conn, "gpu_samples", "ecc_enabled", "INTEGER")
+    _add_column_if_missing(conn, "gpu_samples", "ecc_corrected_volatile", "INTEGER")
+    _add_column_if_missing(conn, "gpu_samples", "ecc_corrected_aggregate", "INTEGER")
+    _add_column_if_missing(conn, "gpu_samples", "ecc_uncorrected_volatile", "INTEGER")
+    _add_column_if_missing(conn, "gpu_samples", "ecc_uncorrected_aggregate", "INTEGER")
+    try:
+        conn.execute(
+            "INSERT INTO monitor_events(timestamp, event_type, severity, source, details_json) "
+            "VALUES(?, 'migration', 'info', 'database', ?)",
+            (int(time.time()), _json_dumps({"from": 4, "to": 5})),
+        )
+    except Exception:
+        logger.warning("写入 migration 事件失败（不影响迁移本身）", exc_info=True)
+
+
 def _migrate_v3_to_v4(conn: sqlite3.Connection) -> None:
     """
     v3 -> v4（Phase 13）：新建 app_state（通用 runtime metadata key/value）。
@@ -322,6 +405,7 @@ _MIGRATIONS: dict[int, object] = {
     1: _migrate_v1_to_v2,
     2: _migrate_v2_to_v3,
     3: _migrate_v3_to_v4,
+    4: _migrate_v4_to_v5,
 }
 
 
@@ -1195,16 +1279,31 @@ class Database:
         def _do() -> None:
             with conn:
                 for s in samples:
+                    # 1.1 高级遥测列（v5）：getattr 兼容旧快照对象（无该属性 -> NULL）
                     conn.execute(
                         "INSERT INTO gpu_samples(timestamp, gpu_uuid, gpu_index, gpu_name, "
                         "utilization_percent, memory_used_mb, memory_total_mb, temperature_c, "
                         "power_draw_w, fan_percent, sm_clock_mhz, memory_clock_mhz, "
-                        "pcie_generation, pcie_width) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        "pcie_generation, pcie_width, memory_controller_percent, power_limit_w, "
+                        "pcie_gen_max, pcie_width_max, performance_state, ecc_enabled, "
+                        "ecc_corrected_volatile, ecc_corrected_aggregate, "
+                        "ecc_uncorrected_volatile, ecc_uncorrected_aggregate) "
+                        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                         (
                             s.timestamp, s.uuid, s.index, s.name, s.utilization_percent,
                             s.memory_used_mb, s.memory_total_mb, s.temperature_c, s.power_draw_w,
                             s.fan_percent, s.sm_clock_mhz, s.memory_clock_mhz,
                             s.pcie_generation, s.pcie_width,
+                            getattr(s, "memory_controller_percent", None),
+                            getattr(s, "power_limit_w", None),
+                            getattr(s, "pcie_gen_max", None),
+                            getattr(s, "pcie_width_max", None),
+                            getattr(s, "performance_state", None),
+                            (1 if getattr(s, "ecc_enabled", None) else None),
+                            getattr(s, "ecc_corrected_volatile", None),
+                            getattr(s, "ecc_corrected_aggregate", None),
+                            getattr(s, "ecc_uncorrected_volatile", None),
+                            getattr(s, "ecc_uncorrected_aggregate", None),
                         ),
                     )
                     # 归一化能量：{date: Wh}（旧格式单值 -> 样本自身日期）
@@ -1337,6 +1436,108 @@ class Database:
     def get_gpu_sample_count(self) -> int:
         conn = self._connect()
         return conn.execute("SELECT COUNT(*) FROM gpu_samples").fetchone()[0]
+
+    # ---------- System（1.1.0 System & Hardware Telemetry） ----------
+
+    def save_system_sample(
+        self,
+        sample: dict,
+        daily_increments: dict | None = None,
+        now: float | None = None,
+        retention_seconds: float = 48 * 3600,
+    ) -> None:
+        """
+        持久化一条 system_samples（schema v5）+ 增量累计 system_daily（单事务）。
+
+        - sample: {列名: 值}，列必须是 system_samples 的数值列（timestamp 必填）；
+          缺失/None 列不写入（保持 NULL，绝不写 0 冒充不可用值）；
+        - daily_increments: {列名: 增量}（流量累计 bytes、能量 Wh；avg/max 列不在此处理——
+          由 system_daily 聚合时从 samples 计算）；
+        - retention_seconds: 超过保留时长的 system_samples 删除（config.system.history_retention_hours）。
+        与 GPU 写入同模式：有限重试，失败整体回滚（调用方保留内存基线）。
+        """
+        conn = self._connect()
+        now = time.time() if now is None else now
+        daily = daily_increments or {}
+        date = local_date(now)
+        cols = [c for c in sample if c != "timestamp"]
+
+        def _do() -> None:
+            with conn:
+                conn.execute(
+                    "INSERT INTO system_samples(timestamp, "
+                    + ", ".join(cols)
+                    + ") VALUES("
+                    + ", ".join(["?"] * (len(cols) + 1))
+                    + ")",
+                    [sample["timestamp"]] + [_num(sample.get(c)) for c in cols],
+                )
+                # system_daily：gauge（count/sum/max，同 gpu_daily 模式）+ 流量/能耗累计
+                self._accumulate_system_daily_gauges(conn, date, sample)
+                for col, v in daily.items():
+                    if v is None or v == 0:
+                        continue
+                    if col in ("disk_read_bytes", "disk_write_bytes",
+                               "network_rx_bytes", "network_tx_bytes",
+                               "cpu_energy_wh", "monitored_component_energy_wh"):
+                        conn.execute(
+                            f"INSERT INTO system_daily(date, {col}) VALUES(?, ?) "
+                            f"ON CONFLICT(date) DO UPDATE SET {col} = {col} + excluded.{col}",
+                            (date, _num(v)),
+                        )
+                conn.execute(
+                    "DELETE FROM system_samples WHERE timestamp < ?",
+                    (now - retention_seconds,),
+                )
+
+        with self._write_lock:
+            self._tx_with_retry(_do, what="save_system_sample")
+
+    @staticmethod
+    def _accumulate_system_daily_gauges(conn: sqlite3.Connection, date: str, sample: dict) -> None:
+        """一条样本的 gauge（cpu_usage / cpu_temp / memory_usage）增量累计 system_daily。
+
+        count/sum/max 模式（同 gpu_daily）：缺失（None）不计数——平均值只在
+        有有效读数的采样上有数据，绝不拿 0 填充缺失传感器。
+        """
+        conn.execute(
+            "INSERT INTO system_daily(date) VALUES(?) ON CONFLICT(date) DO NOTHING", (date,)
+        )
+        for value, (cnt_col, sum_col, max_col) in {
+            sample.get("cpu_usage_percent"): ("cpu_usage_count", "cpu_usage_sum", "cpu_usage_max"),
+            sample.get("cpu_temperature_c"): ("cpu_temp_count", "cpu_temp_sum", "cpu_temp_max"),
+            sample.get("memory_usage_percent"): ("memory_usage_count", "memory_usage_sum", "memory_usage_max"),
+        }.items():
+            if value is None:
+                continue
+            conn.execute(
+                f"UPDATE system_daily SET {cnt_col} = {cnt_col} + 1, {sum_col} = {sum_col} + ?, "
+                f"{max_col} = MAX(COALESCE({max_col}, ?), ?) WHERE date = ?",
+                (float(value), float(value), float(value), date),
+            )
+
+    def get_system_samples_since(self, since_ts: float) -> list[dict]:
+        conn = self._connect()
+        rows = conn.execute(
+            "SELECT * FROM system_samples WHERE timestamp >= ? ORDER BY timestamp ASC",
+            (since_ts,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_system_daily(self, days: int | None = None) -> list[dict]:
+        conn = self._connect()
+        if days is not None:
+            cutoff = local_date(time.time() - (days - 1) * 86400)
+            rows = conn.execute(
+                "SELECT * FROM system_daily WHERE date >= ? ORDER BY date ASC", (cutoff,)
+            ).fetchall()
+        else:
+            rows = conn.execute("SELECT * FROM system_daily ORDER BY date ASC").fetchall()
+        return [dict(r) for r in rows]
+
+    def get_system_sample_count(self) -> int:
+        conn = self._connect()
+        return conn.execute("SELECT COUNT(*) FROM system_samples").fetchone()[0]
 
     def close(self) -> None:
         if self._conn is not None:

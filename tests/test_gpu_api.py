@@ -37,7 +37,9 @@ from db import Database
 from gpu_collector import GpuCollector, GpuSnapshot
 from server import build_app
 
-GPU_ROW = "0, GPU-API-1, Test GPU, 5120, 8192, 77, 58, 240.5, 62, 1900, 9501, 3, 16"
+# 1.1.0：20 列 fast query（列序见 gpu_collector.NVSMI_QUERY）
+GPU_ROW = ("0, GPU-API-1, Test GPU, 5120, 8192, 77, 58, 58, 240.5, 350.0, 62, "
+           "1900, 9501, P0, 3, 16, 4, 16, 566.36, 0x0")
 
 
 def _gpu_snap(now: float, uuid: str = "GPU-API-1", util: float = 77.0,
@@ -83,10 +85,17 @@ class GpuApiTests(unittest.TestCase):
         self._tmp.cleanup()
 
     def _start(self, text: str = "", gpu: GpuCollector | None = "auto",
-               offline: bool = False):
-        """启动应用（metrics 固定文本；gpu='auto' 时创建真实 GpuCollector+假 runner）。"""
+               offline: bool = False, device_uuids: list | None = None,
+               row: str = GPU_ROW):
+        """启动应用（metrics 固定文本；gpu='auto' 时创建真实 GpuCollector+假 runner）。
+
+        device_uuids：预置 config.gpu.device_uuids（None = 保持默认空列表 = 全部）。
+        row：nvidia-smi 假输出（默认单卡 GPU_ROW；可传多行模拟双卡机器）。
+        """
         cfg = make_config()
         cfg.gpu.poll_interval_seconds = 3600.0  # 测试期间周期任务不触发
+        if device_uuids is not None:
+            cfg.gpu.device_uuids = list(device_uuids)
         db = Database(self.tmp / "gpu.db")
         self._dbs.append(db)
         collector = MetricsCollector(cfg, db)
@@ -98,7 +107,7 @@ class GpuApiTests(unittest.TestCase):
 
         gpu_obj = None
         if gpu == "auto":
-            gpu_obj = _gpu_collector(cfg, db)
+            gpu_obj = _gpu_collector(cfg, db, row=row)
             smi_patch = mock.patch(
                 "gpu_collector.find_nvidia_smi", return_value=Path("/fake/nvidia-smi")
             )
@@ -150,6 +159,36 @@ class GpuApiTests(unittest.TestCase):
         # detected：nvidia-smi 报告的全集
         self.assertEqual(d["detected"][0]["uuid"], "GPU-API-1")
         self.assertIsNotNone(gpu.last_update)
+        # device_uuids 空 = 监控全部：gpu_uuids_monitored 为空列表（前端据此不加"未监控"标记）
+        self.assertEqual(d["gpu_uuids_monitored"], [])
+
+    def test_status_filters_unmonitored_gpus(self):
+        """device_uuids 只含 GPU-API-1 时，gpus 只列被监控的卡。
+
+        回归（1.1 审计发现）：升级前监控过、后来取消勾选的卡（GPU-API-2）在
+        gpu_samples 里留**陈旧**"最新采样"（schema 升级后新列全 NULL），
+        /api/gpu/status 若不按 device_uuids 过滤，会把它当"还在监控"展示
+        （一整排 -- 的误导卡片）。detected 仍保留 nvidia-smi 全集——它是
+        Settings 勾选与"检测到但未监控"标记的数据来源，不能丢。
+        """
+        # 双卡机器：runner 返回两行（GPU-API-1 + GPU-API-2）
+        two_row = GPU_ROW + "\n" + "1, GPU-API-2, Other GPU, 512, 4096, 5, 58, 30, 20.0, 50.0, 30, 1200, 5000, P8, 3, 16, 4, 16, 566.36, 0x0"
+        client, _, db, gpu = self._start(gpu="auto", device_uuids=["GPU-API-1"], row=two_row)
+        self.assertTrue(gpu.available)
+        now = time.time()
+        # 陈旧的未监控卡样本（模拟 1.0.x 时期写入：时间很久以前）
+        stale = _gpu_snap(now - 30 * 3600, uuid="GPU-API-2", util=5.0, power=20.0, used=512.0)
+        client.portal.call(db.save_gpu_samples, [stale])
+
+        d = client.get("/api/gpu/status").json()
+        self.assertTrue(d["available"])
+        # gpus 只含被监控的卡；陈旧"最新采样"不再出现
+        uuids = [g["uuid"] for g in d["gpus"]]
+        self.assertEqual(uuids, ["GPU-API-1"])
+        self.assertEqual(d["gpu_uuids_monitored"], ["GPU-API-1"])
+        # detected 仍是 nvidia-smi 全集（两张卡都在，供 UI 打"未监控"标记）
+        det_uuids = [x["uuid"] for x in d["detected"]]
+        self.assertEqual(det_uuids, ["GPU-API-1", "GPU-API-2"])
 
     # ---------- /api/gpu/live + 降采样 ----------
 

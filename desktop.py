@@ -590,6 +590,14 @@ def main(argv: list[str] | None = None, loaded: LoadedConfig | None = None) -> i
         pre_migration_backup_dir=app_data_dir() / "backups",
     )
     collector, gpu = build_collector(cfg, db)
+    # 1.1：System & Hardware Telemetry collectors（故障隔离；与 server.main 同一套）
+    from hardware_sensor_provider import HardwareSensorProvider
+    from llama_runtime_collector import LlamaRuntimeCollector
+    from system_collector import SystemCollector
+
+    runtime = LlamaRuntimeCollector(cfg, db=db)
+    system = SystemCollector(cfg, db=db)
+    sensors = HardwareSensorProvider(cfg, db=db)
 
     # 开机自启管理（只读写 HKCU Run 的 LlamaMonitor 值；dev 模式不支持）
     exe_path = Path(sys.executable) if is_frozen() else None
@@ -617,7 +625,8 @@ def main(argv: list[str] | None = None, loaded: LoadedConfig | None = None) -> i
         request_exit=lambda: _schedule_shutdown("api exit"),
     )
 
-    app = build_app(db, collector, loaded, gpu, app_state=app_state)
+    app = build_app(db, collector, loaded, gpu, app_state=app_state,
+                    runtime=runtime, system=system, sensors=sensors)
     server, uv_thread = run_uvicorn_in_thread(app, host, port)
 
     log.info("[LlamaMonitor] 正在启动 FastAPI（首次采集中）... metrics=%s interval=%.1fs",

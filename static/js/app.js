@@ -109,6 +109,10 @@
       chartGpuUtil: function () { charts.renderGpuUtilChart("chartGpuUtilBox", "chartGpuUtil", state.gpuLive, state.gpuVisible); },
       chartGpuPower: function () { charts.renderGpuPowerChart("chartGpuPowerBox", "chartGpuPower", state.gpuLive, state.gpuVisible); },
       chartGpuTemp: function () { charts.renderGpuTempChart("chartGpuTempBox", "chartGpuTemp", state.gpuLive, state.gpuVisible); },
+      // 1.1 系统页图表（数据源 LM.system 的 /api/system/live）
+      chartSysCpu: function () { if (LM.system) charts.renderSysCpuChart("chartSysCpuBox", "chartSysCpu", LM.system.getLive() || []); },
+      chartSysDisk: function () { if (LM.system) charts.renderSysDiskChart("chartSysDiskBox", "chartSysDisk", LM.system.getLive() || []); },
+      chartSysNet: function () { if (LM.system) charts.renderSysNetChart("chartSysNetBox", "chartSysNet", LM.system.getLive() || []); },
     };
   }
 
@@ -203,10 +207,36 @@
     state.online = data.server_online === true ? true : (data.server_online === false ? false : null);
     state.config = data.config || null;
 
-    // 全局状态徽章（Overview 顶部 + 页面内 server 卡）
-    ui.setStatusBadge($("ovServerState"),
-      state.online === true ? "online" : state.online === false ? "offline" : "paused",
-      state.online === null ? "检测中" : undefined);
+    // 全局状态徽章（Overview 顶部 + 页面内 server 卡）。
+    // 1.1：优先用 server_state（ready/loading/unavailable 三态，来自 llama-server 探活）；
+    // 无该字段时回退既有 online/offline 逻辑（旧后端兼容）。
+    var ss = data.server_state;
+    if (ss === "ready" || ss === "loading" || ss === "unavailable") {
+      ui.setStatusBadge($("ovServerState"),
+        ss === "ready" ? "online" : ss === "loading" ? "warning" : "offline",
+        ss === "ready" ? "就绪" : ss === "loading" ? "模型加载中" : "不可用");
+    } else {
+      ui.setStatusBadge($("ovServerState"),
+        state.online === true ? "online" : state.online === false ? "offline" : "paused",
+        state.online === null ? "检测中" : undefined);
+    }
+
+    // 概览：当前模型行（别名 · 量化 · 参数量；来自 /api/status 内嵌摘要）
+    var ovModel = $("ovModelLine");
+    if (ovModel) {
+      var m = data.llama_model;
+      if (m) {
+        var parts = [];
+        if (m.model_alias) parts.push(m.model_alias);
+        if (m.model_ftype) parts.push(m.model_ftype);
+        if (m.parameter_count != null) parts.push((m.parameter_count / 1e9).toFixed(2) + "B");
+        ovModel.textContent = parts.join(" · ");
+        ovModel.style.display = parts.length ? "" : "none";
+      } else {
+        ovModel.textContent = "";
+        ovModel.style.display = "none";
+      }
+    }
 
     // Offline InfoBar（spec §39：明确 offline，保留历史）
     if (state.online === false) {
@@ -549,11 +579,13 @@
       });
 
       // 次要指标（spec §38：风扇/时钟/PCIe 小字一行）
+      var pcieNow = (g.pcie_generation == null || g.pcie_width == null) ? F.NA : "Gen" + g.pcie_generation + " x" + g.pcie_width;
+      var pcieMax = (g.pcie_gen_max != null && g.pcie_width_max != null) ? " / 最高 Gen" + g.pcie_gen_max + " x" + g.pcie_width_max : "";
       var secondary = [
         ["风扇转速", g.fan_percent == null ? F.NA : F.formatPercent(g.fan_percent, 0)],
         ["SM 时钟", g.sm_clock_mhz == null ? F.NA : g.sm_clock_mhz + " MHz"],
         ["显存时钟", g.memory_clock_mhz == null ? F.NA : g.memory_clock_mhz + " MHz"],
-        ["PCIe 链路", (g.pcie_generation == null || g.pcie_width == null) ? F.NA : "Gen" + g.pcie_generation + " x" + g.pcie_width],
+        ["PCIe 链路", pcieNow + pcieMax],
       ];
       var kv = document.createElement("div");
       kv.className = "gpu-kv gd-secondary";
@@ -568,10 +600,145 @@
         kv.appendChild(v);
       });
       card.appendChild(kv);
+
+      // ---- 1.1 高级遥测（新字段缺失 -> 该行 --，不影响旧字段） ----
+      var advanced = [];
+      if (g.memory_controller_percent != null) {
+        advanced.push(["显存控制器利用率", F.formatPercent(g.memory_controller_percent, 0)]);
+      }
+      if (g.power_percent != null) {
+        var pwr = F.formatPercent(g.power_percent, 0);
+        if (g.power_limit_w != null) pwr += " / 上限 " + F.formatPower(g.power_limit_w);
+        advanced.push(["功耗（占上限）", pwr]);
+      }
+      if (g.performance_state != null) {
+        var ps = document.createElement("span");
+        ps.className = "v";
+        ps.textContent = g.performance_state;
+        ps.title = "最高性能状态（P0 不等同于 100% 性能）";
+        var psRow = document.createElement("div");
+        psRow.className = "adv-row";
+        var psK = document.createElement("span");
+        psK.className = "k";
+        psK.textContent = "性能状态";
+        psRow.appendChild(psK);
+        psRow.appendChild(ps);
+        card.appendChild(psRow);
+      }
+      advanced.forEach(function (r) {
+        var row = document.createElement("div");
+        row.className = "adv-row";
+        var k = document.createElement("span");
+        k.className = "k";
+        k.textContent = r[0];
+        var v = document.createElement("span");
+        v.className = "v";
+        v.textContent = r[1];
+        row.appendChild(k);
+        row.appendChild(v);
+        card.appendChild(row);
+      });
+
+      // ---- 1.1 性能限制原因（非故障；0x0 时 []） ----
+      var throt = g.throttle_reasons || [];
+      if (throt.length) {
+        var tRow = document.createElement("div");
+        tRow.className = "adv-row throttle-row";
+        var tK = document.createElement("span");
+        tK.className = "k";
+        tK.textContent = "性能限制原因";
+        var tV = document.createElement("span");
+        tV.className = "v";
+        tV.textContent = throt.join("、");
+        tRow.title = "性能限制（throttle）原因，非故障告警。";
+        tRow.appendChild(tK);
+        tRow.appendChild(tV);
+        card.appendChild(tRow);
+      }
+
+      // ---- 1.1 ECC 健康（ecc == null -> 整个区块隐藏，不显示一排 --） ----
+      if (g.ecc) {
+        var ecc = g.ecc;
+        var eccBlock = document.createElement("div");
+        eccBlock.className = "gpu-ecc";
+        var eccHead = document.createElement("div");
+        eccHead.className = "gpu-ecc-head";
+        eccHead.textContent = "ECC（已" + (ecc.enabled ? "启用" : "禁用") + "）";
+        eccBlock.appendChild(eccHead);
+        var eccRows = [
+          ["可纠正（本次）", ecc.corrected_volatile],
+          ["可纠正（累计）", ecc.corrected_aggregate],
+          ["不可纠正（本次）", ecc.uncorrected_volatile],
+          ["不可纠正（累计）", ecc.uncorrected_aggregate],
+          ["已退休页", ecc.retired_pages],
+          ["重映射行", ecc.remapped_rows],
+        ];
+        var eccKv = document.createElement("div");
+        eccKv.className = "gpu-kv";
+        eccRows.forEach(function (r) {
+          var k = document.createElement("span");
+          k.className = "k";
+          k.textContent = r[0];
+          var v = document.createElement("span");
+          v.className = "v" + (r[1] == null ? " dim" : "");
+          v.textContent = r[1] == null ? F.NA : F.formatInt(r[1]);
+          eccKv.appendChild(k);
+          eccKv.appendChild(v);
+        });
+        eccBlock.appendChild(eccKv);
+        card.appendChild(eccBlock);
+      }
+
       box.appendChild(card);
     });
-    renderGpuPick(d.detected || []);
+    // ---- 1.1 驱动版本（页头，取首个非空） ----
+    var drv = $("gpuDriverVer");
+    if (drv) {
+      var dv = null;
+      gpus.forEach(function (g) { if (g.driver_version && !dv) dv = g.driver_version; });
+      if (dv) {
+        drv.textContent = "驱动 " + dv;
+        drv.style.display = "";
+      } else {
+        drv.style.display = "none";
+      }
+    }
+    // ---- 1.1 GPU 进程（只读；WDDM 下 used_memory 常 null -> --） ----
+    renderGpuProcesses(d.processes || []);
+    renderGpuPick(d.detected || [], d.gpu_uuids_monitored || []);
     renderGpuOverviewSummary(d);
+  }
+
+  /* 1.1 GPU 进程（只读表格；WDDM 下 used_memory 常 null -> --；无 kill 按钮） */
+  function renderGpuProcesses(processes) {
+    var body = $("gpuProcTable");
+    if (!body) return;
+    body.innerHTML = "";
+    if (!processes.length) {
+      var tr = document.createElement("tr");
+      tr.innerHTML = "<td colspan='4' class='stat-hint' style='text-align:center;padding:var(--spacing-md) 0'>当前无 GPU 进程（或 WDDM 下未报告）</td>";
+      body.appendChild(tr);
+      return;
+    }
+    // gpu_uuid -> "GPU N" 映射（用于多卡时显示归属）。
+    // 用 detected（nvidia-smi 全集）而非 gpus（可能按 device_uuids 过滤），
+    // 未监控卡的进程也能正确显示归属 GPU N。
+    var uuidToIdx = {};
+    (state.gpuStatus && state.gpuStatus.detected || []).forEach(function (g) {
+      if (g.uuid != null) uuidToIdx[g.uuid] = g.index;
+    });
+    processes.forEach(function (p) {
+      var tr = document.createElement("tr");
+      var gpuLabel = "--";
+      if (p.gpu_uuid && uuidToIdx.hasOwnProperty(p.gpu_uuid)) gpuLabel = "GPU " + uuidToIdx[p.gpu_uuid];
+      var mem = p.used_memory_mb == null ? F.NA : (p.used_memory_mb / 1024).toFixed(2) + " GiB";
+      tr.innerHTML =
+        "<td class='tnum'>" + F.formatInt(p.pid) + "</td>" +
+        "<td>" + (p.process_name || "--") + "</td>" +
+        "<td>" + gpuLabel + "</td>" +
+        "<td class='tnum'>" + mem + "</td>";
+      body.appendChild(tr);
+    });
   }
 
   /* Overview 页 GPU 摘要（Phase 16B §11：迷你卡 4 指标 + 详情链接；
@@ -642,10 +809,11 @@
     });
   }
 
-  function renderGpuPick(detected) {
+  function renderGpuPick(detected, monitored) {
     var box = $("gpuPick");
     if (!box) return;
-    var sig = JSON.stringify((detected || []).map(function (g) { return g.uuid + "|" + g.index; }));
+    var sig = JSON.stringify((detected || []).map(function (g) { return g.uuid + "|" + g.index; })) +
+      "#" + JSON.stringify(monitored || []);
     if (sig === state.gpuPickSig && box.children.length) return; // UI-002：未变不重建
     state.gpuPickSig = sig;
     box.innerHTML = "";
@@ -654,12 +822,20 @@
       return;
     }
     box.style.display = "";
+    // device_uuids 非空 = 只监控指定卡；检测到但未选中的卡打"未监控"标记
+    // （chip 变暗 + 名称后缀 + tooltip 说明），仍可见可勾选（Settings 改选后生效）。
+    var monSet = {};
+    (monitored || []).forEach(function (u) { monSet[u] = true; });
+    var monFilterOn = (monitored || []).length > 0;
     detected.forEach(function (g) {
-      if (state.gpuVisible[g.uuid] === undefined) state.gpuVisible[g.uuid] = true;
+      var unmon = monFilterOn && !monSet[g.uuid];
+      // 未监控的卡默认不在曲线中显示（无实时数据，画出来是误导）；
+      // 用户可手动勾选查看其历史。监控中的卡保持"默认显示"。
+      if (state.gpuVisible[g.uuid] === undefined) state.gpuVisible[g.uuid] = !unmon;
       // Phase 16C §12：Fluent Check Chip——保留原生 checkbox 语义/键盘访问，
       // 视觉为可点击 chip；完整名称+UUID 走 title tooltip。
       var label = document.createElement("label");
-      label.className = "check-chip" + (state.gpuVisible[g.uuid] ? " on" : "");
+      label.className = "check-chip" + (state.gpuVisible[g.uuid] ? " on" : "") + (unmon ? " unmonitored" : "");
       var cb = document.createElement("input");
       cb.type = "checkbox";
       cb.checked = state.gpuVisible[g.uuid];
@@ -675,11 +851,13 @@
       label.appendChild(tick);
       var txt = document.createElement("span");
       txt.className = "chip-text";
-      txt.textContent = "GPU " + (g.index == null ? "?" : g.index) + (g.name ? " \u00B7 " + g.name : "");
+      txt.textContent = "GPU " + (g.index == null ? "?" : g.index) +
+        (g.name ? " \u00B7 " + g.name : "") + (unmon ? " \u00B7 \u672A\u76D1\u63A7" : "");
       label.appendChild(txt);
       var tipParts = ["GPU " + (g.index == null ? "?" : g.index)];
       if (g.name) tipParts.push(g.name);
       if (g.uuid) tipParts.push("UUID " + g.uuid);
+      if (unmon) tipParts.push("未选中监控（在设置的 GPU 筛选中取消勾选的历史卡，无实时数据）");
       label.title = tipParts.join("\n");
       box.appendChild(label);
     });
@@ -1077,6 +1255,7 @@
     LM.nav.registerPage("overview", function () {
       refreshStatus(); refreshSummary(); refreshRuntime();
       refreshDataQuality(); refreshGpuStatus();
+      if (LM.system) LM.system.refreshStatus(); // 1.1 概览主机状态摘要
     });
     LM.nav.registerPage("usage", function () {
       charts.ensurePageCharts(["chartUsage"]);
@@ -1087,6 +1266,13 @@
       // MTP 趋势图数据来自 /api/daily（BUG-B 修复：单点也显示；无数据时空态）
       charts.renderMtpChart("chartMtpBox", "chartMtp", state.dailyData);
       refreshLive(); refreshMtp(); refreshRuntime();
+      // 1.1：模型与服务（llama.cpp info + slots；只读）
+      if (LM.system) { LM.system.refreshLlamaInfo(); LM.system.refreshLlamaSlots(); }
+    });
+    // 1.1 系统页
+    LM.nav.registerPage("system", function () {
+      charts.ensurePageCharts(["chartSysCpu", "chartSysDisk", "chartSysNet"]);
+      if (LM.system) LM.system.init();
     });
     LM.nav.registerPage("gpu", function () {
       charts.ensurePageCharts(["chartGpuUtil", "chartGpuPower", "chartGpuTemp"]);
@@ -1135,6 +1321,49 @@
     LM.poll.register("gpuDaily", {
       intervalMs: 120000, visibleIntervalMs: 60000, visibleOnly: true,
       run: function () { if (LM.nav.currentPage() === "gpu") return refreshGpuDaily(); },
+    });
+    // 1.1 系统监控（页面作用域；四个域各自独立轮询、各自 catch）
+    LM.poll.register("sysStatus", {
+      intervalMs: R, visibleIntervalMs: R, visibleOnly: true,
+      run: function () {
+        if (!LM.system) return;
+        var p = LM.nav.currentPage();
+        if (p === "system" || p === "overview") return LM.system.refreshStatus();
+      },
+    });
+    LM.poll.register("sysLive", {
+      intervalMs: 60000, visibleIntervalMs: 15000, visibleOnly: true,
+      run: function () {
+        if (!LM.system) return;
+        if (LM.nav.currentPage() === "system") return LM.system.refreshLive();
+      },
+    });
+    LM.poll.register("sysSensors", {
+      intervalMs: 120000, visibleIntervalMs: 60000, visibleOnly: true,
+      run: function () {
+        if (!LM.system) return;
+        var p = LM.nav.currentPage();
+        if (p === "system" || (p === "settings" && LM.settings.activeSection() === "system")) {
+          return LM.system.refreshSensors();
+        }
+      },
+    });
+    LM.poll.register("sysInventory", {
+      intervalMs: 300000, visibleIntervalMs: 120000, visibleOnly: true,
+      run: function () {
+        if (!LM.system) return;
+        if (LM.nav.currentPage() === "system") return LM.system.refreshInventory(false);
+      },
+    });
+    // 1.1 llama.cpp 模型/Slot（Performance 页；~5s）
+    LM.poll.register("llamaRuntime", {
+      intervalMs: R, visibleIntervalMs: R, visibleOnly: true,
+      run: function () {
+        if (!LM.system) return;
+        if (LM.nav.currentPage() === "performance") {
+          return Promise.all([LM.system.refreshLlamaInfo(), LM.system.refreshLlamaSlots()]);
+        }
+      },
     });
     LM.poll.register("events", {
       intervalMs: 120000, visibleIntervalMs: 60000, visibleOnly: true,

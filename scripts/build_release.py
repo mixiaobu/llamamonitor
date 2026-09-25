@@ -189,6 +189,11 @@ def run_pyinstaller(version_info: Path) -> Path:
         "--add-data", "static;static",
         "--add-data", "assets;assets",
         "--add-data", "config.example.json;.",
+        # 1.1：LibreHardwareMonitor Bridge（C# 只读传感器桥，exe + 依赖 DLL）。
+        # find_bridge_exe() 的 frozen 路径是 {app}/hardware_bridge/（onedir 下 _MEIPASS=应用目录）。
+        # 缺 DLL 时高级传感器降级 unavailable（基础系统监控不受影响），但必须打包两者。
+        "--add-data", "native/hardware_bridge/HardwareSensorBridge.exe;hardware_bridge",
+        "--add-data", "native/hardware_bridge/LibreHardwareMonitorLib.dll;hardware_bridge",
         "--collect-all", "webview",
         "--collect-all", "pythonnet",
         "--collect-all", "clr_loader",

@@ -11,6 +11,11 @@ llama.cpp 的纯旁路（sidecar）监控程序，Windows 11 桌面应用。
   运行时指标，服务器提供时显示）、Prompt/Decode TPS、MTP 接受率（含 per-position）、上下文
 - GPU 监控（NVIDIA）：负载/显存/温度/功耗/风扇/频率/PCIe，历史曲线（15m~24h）、
   今日能耗估算、按天 GPU 统计（永久保留）；数据来自系统 NVIDIA 驱动的 nvidia-smi（只读）
+- 系统监控（1.1）：CPU/内存/磁盘/网络/启动时间/硬件库存 + 高级硬件传感器
+  （CPU 温度/功耗、主板温度、风扇，经 LibreHardwareMonitor 只读桥；不可用时
+  显示 `--`）；已监测组件能耗（CPU + 被监控 GPU）按天累计；全程只读
+- llama.cpp Runtime 只读遥测（1.1）：模型信息 / 当前 Slot 状态 / 能力位
+  （/props、/slots、/v1/models、/health，只发 GET）
 - MTP 深度统计：Draft Tokens / Accepted Tokens / Draft Sequences（今日）、
   按草稿位置的接受 Token 数（Accepted Tokens by Draft Position，动态发现位置）
 - 历史统计：按天 Token 用量（Prompt/Cached/Output）、累计、Cache Ratio、每日 MTP 趋势
@@ -24,8 +29,9 @@ llama.cpp 的纯旁路（sidecar）监控程序，Windows 11 桌面应用。
   页面隐藏时自动降低轮询频率
 - Windows 集成：系统托盘（关闭窗口=隐藏到托盘，监控继续）、单实例（Named Mutex +
   第二实例唤醒第一实例）、开机自启（HKCU Run，当前用户登录时进托盘）、优雅关闭
-- 设置页：Server / Collector / GPU / Interface / Web / Storage / Logging / Data /
-  Application / Updates 十个分区 + About，Test Connection、保存（校验 + 原子写入）、
+- 设置页：Server / Collector / GPU / System（1.1）/ Interface / Web / Storage /
+  Logging / Data / Application / Updates 十一个分区 + About，Test Connection、
+  保存（校验 + 原子写入）、
   Reset to Defaults；Updates 分区提供应用内安全更新（Check / Download / Install /
   Cancel，见"安全更新"章节）
 - 数据管理：CSV 导出（Excel 直接打开，含 GPU 每日 CSV）、SQLite Backup API 备份

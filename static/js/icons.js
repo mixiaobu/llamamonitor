@@ -17,6 +17,9 @@
       '<path d="M3 12.5h3.6l2.6-6.4 4.2 11.8 2.6-5.4H21"/>',
     gpu:
       '<rect x="5.5" y="5.5" width="13" height="13" rx="2"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/><path d="M9 2.5v3M15 2.5v3M9 18.5v3M15 18.5v3M2.5 9h3M2.5 15h3M18.5 9h3M18.5 15h3"/>',
+    /* 系统（1.1）：芯片 + 内部模块（与 gpu 区分——gpu 为外框芯片，system 强调内部逻辑块 + 引脚短脚） */
+    system:
+      '<rect x="7" y="7" width="10" height="10" rx="1.5"/><rect x="10" y="10" width="4" height="4" rx="0.5"/><path d="M9 3.5v3.5M15 3.5v3.5M9 17v3.5M15 17v3.5M3.5 9H7M3.5 15H7M17 9h3.5M17 15h3.5"/>',
     history:
       '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3.2 2"/>',
     settings:

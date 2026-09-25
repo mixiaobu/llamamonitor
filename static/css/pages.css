@@ -912,6 +912,12 @@ a.link:hover .arr { transform: translateX(2px); }
   border-color: var(--accent);
   color: var(--text-primary);
 }
+/* 检测到但未选中监控的 GPU：虚线边框 + 变暗，与"监控中"的 chip 区分（仍可勾选/查看历史） */
+.check-chip.unmonitored {
+  border-style: dashed;
+  opacity: 0.65;
+}
+.check-chip.unmonitored:hover { opacity: 0.9; }
 .check-chip.on .chip-tick {
   background: var(--accent);
   border-color: var(--accent);
@@ -1086,5 +1092,204 @@ a.link:hover .arr { transform: translateX(2px); }
   color: var(--text-muted);
   margin-top: 2px;
 }
+
+/* ============================================================
+   1.1 系统页 + 概览主机状态 + 性能页模型/Slot + GPU 高级遥测
+   （最小增量，复用现有 Fluent tokens；不重设计）
+   ============================================================ */
+
+/* 概览：服务器状态条内嵌模型行 */
+.status-strip .ss-model {
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+  margin-left: var(--spacing-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 系统页：每核心负载（默认折叠的 details） */
+details.core-heat {
+  margin-top: var(--spacing-md);
+  border-top: 1px solid var(--border-subtle);
+  padding-top: var(--spacing-sm);
+}
+details.core-heat summary {
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+details.core-heat summary::-webkit-details-marker { display: none; }
+details.core-heat summary::before { content: "▸ "; }
+details.core-heat[open] summary::before { content: "▾ "; }
+.core-heat-body {
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+  margin-top: var(--spacing-xs);
+  line-height: 1.5;
+}
+
+/* 系统页：卷容量列表（磁盘容量 vs 物理 IO 的区分） */
+.disk-list { display: flex; flex-direction: column; gap: var(--spacing-md); }
+.disk-cap { min-width: 0; }
+.disk-cap-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--spacing-md);
+  font-size: var(--font-size-caption);
+}
+.disk-cap-label {
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.disk-cap-val {
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* 系统页：散热与传感器（风扇行 / 传感器行） */
+#sysFans {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  margin-bottom: var(--spacing-md);
+  padding-bottom: var(--spacing-sm);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.fan-row, .sensor-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--spacing-md);
+  font-size: var(--font-size-caption);
+  min-width: 0;
+}
+.fan-name, .sensor-name {
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fan-val, .sensor-val {
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.sensor-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+/* 系统页：硬件信息键值表（两列 grid） */
+.kv-list {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  gap: var(--spacing-xs) var(--spacing-lg);
+  font-size: var(--font-size-caption);
+  font-variant-numeric: tabular-nums;
+}
+.kv-list .k { color: var(--text-secondary); }
+.kv-list .v { color: var(--text-primary); word-break: break-word; }
+@media (max-width: 640px) {
+  .kv-list { grid-template-columns: 1fr; gap: 2px; }
+  .kv-list .k { margin-top: var(--spacing-xs); }
+}
+
+/* 性能页：模型与 Slot（slot 卡片网格 + 状态点） */
+#llmSlotList {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr));
+  gap: var(--spacing-md);
+}
+.slot-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  min-width: 0;
+}
+.slot-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-xs);
+}
+.slot-id {
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-semibold);
+}
+.slot-state {
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+}
+.slot-state.busy { color: var(--success); font-weight: var(--font-weight-semibold); }
+.slot-card .gpu-kv {
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 2px var(--spacing-md);
+}
+
+/* GPU 页：驱动版本（页头小字） */
+#gpuDriverVer { color: var(--text-secondary); }
+
+/* GPU 页：高级遥测行（显存控制器 / 功耗占上限 / 性能状态 / throttle 原因） */
+.adv-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--spacing-md);
+  font-size: var(--font-size-caption);
+  padding: 2px 0;
+  min-width: 0;
+}
+.adv-row .k { color: var(--text-secondary); flex: none; }
+.adv-row .v {
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  word-break: break-word;
+}
+.adv-row.throttle-row .v { color: var(--warning); }
+
+/* GPU 页：ECC 健康块（ecc == null 时整块由 JS 不渲染） */
+.gpu-ecc {
+  margin-top: var(--spacing-sm);
+  padding-top: var(--spacing-sm);
+  border-top: 1px solid var(--border-subtle);
+}
+.gpu-ecc-head {
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+  font-weight: var(--font-weight-semibold);
+  margin-bottom: 2px;
+}
+.gpu-ecc .gpu-kv {
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap: 2px var(--spacing-md);
+}
+
+/* GPU 页：进程表（只读；tnum = tabular nums 右对齐） */
+.tnum { font-variant-numeric: tabular-nums; text-align: right; }
+.gpu-proc-empty { color: var(--text-secondary); text-align: center; padding: var(--spacing-md) 0; }
+
+/* Settings 页：系统监控传感器只读列表（复用 .sensor-row） */
+#sysMonSensorList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  max-height: 240px;
+  overflow-y: auto;
+  padding: var(--spacing-sm);
+  background: var(--bg-subtle);
+  border-radius: var(--radius-card-sm);
+}
+#sysMonState { margin-bottom: var(--spacing-md); }
 
 

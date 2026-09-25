@@ -602,6 +602,144 @@
     }, true);
   }
 
+  /* ================================================================
+     系统页图表（1.1）：CPU 利用率 / 磁盘 I/O / 网络
+     时间轴与 GPU 图一致（time 轴 + HH:MM），空态/单点行为复用同一套。
+     points: /api/system/live {points:[{timestamp, ...}]}
+     ================================================================ */
+  function _sysTimeAxis(p, containerId) {
+    return {
+      type: "time",
+      axisLabel: timeAxisLabel(p, containerId, { formatter: function (v) { return F.formatHM(v / 1000); } }),
+      axisLine: { lineStyle: { color: p.split } },
+      axisTick: { show: false },
+      splitLine: { show: false },
+    };
+  }
+
+  function _sysSeries(points, field, color, name) {
+    var vals = points.map(function (s) {
+      return s[field] == null ? null : Number(s[field]);
+    });
+    if (nonNullCount(vals) === 0) return null;
+    return Object.assign({
+      name: name, type: "line",
+      symbol: "circle",
+      lineStyle: { width: 2, color: color },
+      itemStyle: { color: color },
+      connectNulls: false,
+      data: points.map(function (s, i) {
+        return [Math.round(s.timestamp * 1000), vals[i]];
+      }),
+    }, singlePointOpts(nonNullCount(vals)));
+  }
+
+  function _sysHasField(points, field) {
+    return (points || []).some(function (s) { return s[field] != null; });
+  }
+
+  /* CPU 利用率（0-100%，单系列） */
+  function renderSysCpuChart(containerId, id, points) {
+    var c = chart(id);
+    if (!c) return;
+    var p = pal(), col = colors();
+    points = points || [];
+    setEmpty(containerId, !_sysHasField(points, "cpu_usage_percent"), "暂无系统采样",
+      "系统监控采集到 CPU 利用率样本后显示最近时段的曲线。");
+    if (!points.length) return;
+    var s = _sysSeries(points, "cpu_usage_percent", col.gpu[0], "CPU 利用率");
+    c.setOption({
+      animation: false,
+      tooltip: Object.assign(baseTooltip(), {
+        trigger: "axis",
+        valueFormatter: function (v) { return v == null ? "--" : F.formatPercent(v, 0); },
+      }),
+      legend: { show: false },
+      grid: { left: 8, right: 8, top: 24, bottom: 4, containLabel: true },
+      xAxis: _sysTimeAxis(p, id),
+      yAxis: {
+        type: "value", min: 0, max: 100,
+        axisLabel: baseAxisLabel(p, { formatter: function (v) { return v + "%"; } }),
+        splitLine: { lineStyle: { color: p.split } },
+      },
+      series: s ? [s] : [],
+    }, true);
+  }
+
+  /* 磁盘 I/O（读/写 B/s，tooltip 自动 KB/s~GB/s） */
+  function renderSysDiskChart(containerId, id, points) {
+    var c = chart(id);
+    if (!c) return;
+    var p = pal(), col = colors();
+    points = points || [];
+    setEmpty(containerId, !_sysHasField(points, "disk_read_bps") && !_sysHasField(points, "disk_write_bps"), "暂无磁盘 I/O 数据",
+      "系统监控采集到磁盘读写速率后显示。");
+    if (!points.length) return;
+    var series = [];
+    var r = _sysSeries(points, "disk_read_bps", col.gpu[0], "读");
+    var w = _sysSeries(points, "disk_write_bps", col.gpu[2], "写");
+    if (r) series.push(r);
+    if (w) series.push(w);
+    if (!series.length) { setEmpty(containerId, true, "暂无磁盘 I/O 数据", "系统监控采集到磁盘读写速率后显示。"); return; }
+    c.setOption({
+      animation: false,
+      tooltip: Object.assign(baseTooltip(), {
+        trigger: "axis",
+        valueFormatter: function (v) { return v == null ? "--" : F.formatBytes(v) + "/s"; },
+      }),
+      legend: {
+        data: ["读", "写"],
+        textStyle: { color: p.axis, fontSize: 12 }, top: 0, right: 0,
+        icon: "rect", itemWidth: 10, itemHeight: 10, itemGap: 14,
+      },
+      grid: { left: 8, right: 8, top: 32, bottom: 4, containLabel: true },
+      xAxis: _sysTimeAxis(p, id),
+      yAxis: {
+        type: "value",
+        axisLabel: baseAxisLabel(p, { formatter: function (v) { return F.formatBytes(v); } }),
+        splitLine: { lineStyle: { color: p.split } },
+      },
+      series: series,
+    }, true);
+  }
+
+  /* 网络（接收/发送 B/s） */
+  function renderSysNetChart(containerId, id, points) {
+    var c = chart(id);
+    if (!c) return;
+    var p = pal(), col = colors();
+    points = points || [];
+    setEmpty(containerId, !_sysHasField(points, "network_rx_bps") && !_sysHasField(points, "network_tx_bps"), "暂无网络数据",
+      "系统监控采集到网络收发速率后显示。");
+    if (!points.length) return;
+    var series = [];
+    var rx = _sysSeries(points, "network_rx_bps", col.gpu[0], "接收");
+    var tx = _sysSeries(points, "network_tx_bps", col.gpu[1], "发送");
+    if (rx) series.push(rx);
+    if (tx) series.push(tx);
+    if (!series.length) { setEmpty(containerId, true, "暂无网络数据", "系统监控采集到网络收发速率后显示。"); return; }
+    c.setOption({
+      animation: false,
+      tooltip: Object.assign(baseTooltip(), {
+        trigger: "axis",
+        valueFormatter: function (v) { return v == null ? "--" : F.formatBytes(v) + "/s"; },
+      }),
+      legend: {
+        data: ["接收", "发送"],
+        textStyle: { color: p.axis, fontSize: 12 }, top: 0, right: 0,
+        icon: "rect", itemWidth: 10, itemHeight: 10, itemGap: 14,
+      },
+      grid: { left: 8, right: 8, top: 32, bottom: 4, containLabel: true },
+      xAxis: _sysTimeAxis(p, id),
+      yAxis: {
+        type: "value",
+        axisLabel: baseAxisLabel(p, { formatter: function (v) { return F.formatBytes(v); } }),
+        splitLine: { lineStyle: { color: p.split } },
+      },
+      series: series,
+    }, true);
+  }
+
   window.LM = window.LM || {};
   LM.charts = {
     setTheme: function (t) { currentTheme = t === "light" ? "light" : "dark"; },
@@ -617,5 +755,8 @@
     renderGpuUtilChart: renderGpuUtilChart,
     renderGpuPowerChart: renderGpuPowerChart,
     renderGpuTempChart: renderGpuTempChart,
+    renderSysCpuChart: renderSysCpuChart,
+    renderSysDiskChart: renderSysDiskChart,
+    renderSysNetChart: renderSysNetChart,
   };
 })();

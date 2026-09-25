@@ -165,6 +165,48 @@ class ConfigFileTests(unittest.TestCase):
         self.assertTrue(loaded.has_errors)
         self.assertEqual(self.cfg_file.read_text(encoding="utf-8"), "[1, 2, 3]")
 
+    # 1.1：system 段 —— 默认值 / 覆盖 / 1.0 旧配置兼容 / 非法回退
+    def test_system_section_defaults(self):
+        self.cfg_file.write_text(json.dumps({"llama_server": {"url": "http://127.0.0.1:9"}}), encoding="utf-8")
+        loaded = cfgmod.load_config(self.cfg_file)
+        cfg = loaded.config.system
+        self.assertTrue(cfg.enabled)
+        self.assertEqual(cfg.poll_interval_seconds, 2.0)
+        self.assertEqual(cfg.history_interval_seconds, 5.0)
+        self.assertEqual(cfg.history_retention_hours, 48.0)
+        self.assertTrue(cfg.advanced_sensors)
+        self.assertEqual(cfg.advanced_sensor_interval_seconds, 5.0)
+
+    def test_system_section_user_values(self):
+        self.cfg_file.write_text(json.dumps({
+            "llama_server": {"url": "http://127.0.0.1:9"},
+            "system": {"enabled": False, "poll_interval_seconds": 10,
+                       "advanced_sensors": False, "history_retention_hours": 24},
+        }), encoding="utf-8")
+        loaded = cfgmod.load_config(self.cfg_file)
+        cfg = loaded.config.system
+        self.assertFalse(loaded.has_errors)
+        self.assertFalse(cfg.enabled)
+        self.assertEqual(cfg.poll_interval_seconds, 10.0)
+        self.assertFalse(cfg.advanced_sensors)
+        self.assertEqual(cfg.history_retention_hours, 24.0)
+
+    def test_system_section_invalid_falls_back(self):
+        self.cfg_file.write_text(json.dumps({
+            "llama_server": {"url": "http://127.0.0.1:9"},
+            "system": {"poll_interval_seconds": 0.1, "history_retention_hours": 99999},
+        }), encoding="utf-8")
+        loaded = cfgmod.load_config(self.cfg_file)
+        # 非法值回退默认 + 记错误；其他合法字段不受影响
+        self.assertTrue(loaded.has_errors)
+        self.assertEqual(loaded.config.system.poll_interval_seconds, 2.0)
+        self.assertEqual(loaded.config.system.history_retention_hours, 48.0)
+
+    def test_system_section_default_merge_present_in_default_config(self):
+        # DEFAULT_CONFIG 必须含 system 段（settings 页面 Reset to Defaults 依赖）
+        self.assertIn("system", cfgmod.DEFAULT_CONFIG)
+        self.assertIn("advanced_sensors", cfgmod.DEFAULT_CONFIG["system"])
+
     def test_unknown_keys_kept_and_warned(self):
         # 未知字段：保留、告警、不致命
         self.cfg_file.write_text(json.dumps({"future_feature": 1, "web": {"host": "127.0.0.1", "future": 2}}), encoding="utf-8")
@@ -372,6 +414,10 @@ class ApiConfigTests(unittest.TestCase):
             self.assertEqual(data["ui"]["theme"], "system")
             self.assertEqual(data["ui"]["daily_default_days"], 7)
             self.assertEqual(data["logging"]["level"], "INFO")
+            # 1.1：system 段（设置页"系统监控"读当前值）
+            self.assertEqual(data["system"]["enabled"], True)
+            self.assertEqual(data["system"]["poll_interval_seconds"], 2.0)
+            self.assertEqual(data["system"]["advanced_sensors"], True)
             self.assertEqual(data["paths"]["config"], str(self.tmp / "config.json"))
             # 不直接返回原始文件：未知键不出现
             self.assertNotIn("unknown_extra", data)
@@ -381,6 +427,29 @@ class ApiConfigTests(unittest.TestCase):
             self.assertTrue(s["config"]["loaded"])
             self.assertFalse(s["config"]["using_defaults"])
             self.assertFalse(s["config"]["has_errors"])
+        finally:
+            client.__exit__(None, None, None)
+
+    def test_api_config_put_system_roundtrip(self):
+        """1.1：PUT /api/config 的 system 段被接受、写盘、再 GET 能读回。"""
+        cfg = make_config()
+        loaded = make_loaded(cfg, self.tmp)
+        client = self._start(loaded)
+        try:
+            r = client.put("/api/config", json={
+                "system": {"poll_interval_seconds": 7, "advanced_sensors": False},
+            })
+            self.assertEqual(r.status_code, 200)
+            self.assertTrue(any(p.startswith("system.") for p in r.json()["changed"]))
+            # 落盘：文件含 system 段
+            on_disk = json.loads(Path(loaded.path).read_text(encoding="utf-8"))
+            self.assertEqual(on_disk["system"]["poll_interval_seconds"], 7)
+            self.assertFalse(on_disk["system"]["advanced_sensors"])
+            # 重启语义：重新加载配置 -> 新值生效，未提交字段取默认
+            reloaded = cfgmod.load_config(loaded.path)
+            self.assertEqual(reloaded.config.system.poll_interval_seconds, 7.0)
+            self.assertFalse(reloaded.config.system.advanced_sensors)
+            self.assertEqual(reloaded.config.system.history_interval_seconds, 5.0)
         finally:
             client.__exit__(None, None, None)
 
