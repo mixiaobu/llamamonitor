@@ -460,7 +460,9 @@ def build_app(
                                 fans=snap["fans"], all_sensors=snap["sensors"],
                                 available=(snap["state"] == "available"),
                             )
-                        system.poll_once()
+                        # AUDIT-1.1.1 REL-1111-001：阻塞的 psutil 采样在 to_thread，
+                        # 事件循环不再被每 2s 的 10~50ms WMI 调用周期性卡住
+                        await system.poll_once_async()
                     except Exception:
                         logger.debug("System 周期采集异常（内部应已处理，双保险）", exc_info=True)
 
@@ -1219,12 +1221,27 @@ def build_app(
         """
         静态硬件库存（1.1）：OS / CPU / 主板 / BIOS / RAM / 磁盘 / BootTime。
         启动时读取一次；manual=true 时重新读取（手动刷新，低频 CIM 安全）。
+
+        AUDIT-1.1.1 PERF-1111-003：CIM/PowerShell 子进程 10s+ 直接在事件循环里跑
+        会卡死所有 HTTP 端点——放到 asyncio.to_thread；加 60s 节流防重复点击。
         """
         if system is None:
             return {"available": False, "inventory": {}}
         manual = request.query_params.get("manual", "").lower() == "true"
-        inv = system.refresh_inventory() if manual else system.inventory
-        return {"available": True, "inventory": inv, "refreshed_at": time.time()}
+        if manual:
+            now = time.time()
+            if not hasattr(app.state, "_last_inventory_manual") or \
+               now - app.state._last_inventory_manual >= 60.0:
+                app.state._last_inventory_manual = now
+                # CIM 子进程是阻塞的（10s+）；to_thread 不卡事件循环
+                inv = await asyncio.to_thread(system.refresh_inventory)
+                return {"available": True, "inventory": inv,
+                        "refreshed_at": time.time(), "manual_refreshed": True}
+            return {"available": True, "inventory": system.inventory,
+                    "refreshed_at": time.time(), "manual_refreshed": False,
+                    "throttled": True}
+        return {"available": True, "inventory": system.inventory,
+                "refreshed_at": time.time()}
 
     @app.get("/api/system/sensors")
     async def api_system_sensors() -> dict:
@@ -1358,40 +1375,10 @@ def build_app(
             all_live = db.get_live_samples(hours=None)
         except Exception:
             all_live = []
-        live_by_date: dict[str, list] = {}
-        for s in all_live:
-            live_by_date.setdefault(local_date(s["timestamp"]), []).append(s)
-        buf = io.StringIO()
-        writer = csv.writer(buf)
-        writer.writerow([
-            "date", "prompt_tokens", "cached_tokens", "output_tokens",
-            "compute_tokens", "logical_tokens", "draft_tokens", "accepted_tokens",
-            "mtp_accept_rate", "prompt_seconds", "predicted_seconds",
-            # Phase 11：数据质量字段
-            "monitoring_coverage_percent", "gap_count", "possible_token_loss",
-        ])
-        for r in rows:
-            prompt = r.get("prompt_tokens") or 0
-            cached = r.get("cached_tokens") or 0
-            output = r.get("output_tokens") or 0
-            draft = r.get("draft_tokens") or 0
-            accepted = r.get("accepted_tokens") or 0
-            rate = round(accepted / draft * 100.0, 2) if draft > 0 else ""
-            q = _day_quality(r.get("date"), live_by_date.get(r.get("date"), [])) if r.get("date") else {
-                "monitoring_coverage_percent": None, "gap_count": 0,
-                "possible_token_loss": False,
-            }
-            writer.writerow([
-                r.get("date"), prompt, cached, output,
-                prompt + output, prompt + cached + output,
-                draft, accepted, rate,
-                r.get("prompt_seconds") if r.get("prompt_seconds") is not None else 0,
-                r.get("predicted_seconds") if r.get("predicted_seconds") is not None else 0,
-                q["monitoring_coverage_percent"] if q["monitoring_coverage_percent"] is not None else "",
-                q["gap_count"], "yes" if q["possible_token_loss"] else "no",
-            ])
+        # AUDIT-1.1.1 PERF-1111-013：DB 读取在事件循环线程（快），CSV 构建
+        # （逐行 _day_quality 的 gap_stats 聚合查询，数百~数千行）放 to_thread
+        body = await asyncio.to_thread(_build_daily_csv_body, rows, all_live)
         filename = "LlamaMonitor_daily_" + time.strftime("%Y%m%d_%H%M%S") + ".csv"
-        body = ("\ufeff" + buf.getvalue()).encode("utf-8")  # utf-8-sig：BOM + UTF-8
         logger.info("CSV exported: %s (%d rows)", filename, len(rows))
         return Response(
             content=body,
@@ -1564,16 +1551,15 @@ def build_app(
         # 原实现每次轮询取全部 live_samples 再 Python 过滤——~3.4万行/轮，
         # 且顺带删掉了未使用的 get_first_and_last_sample() 调用）
         today_first, today_last = db.get_day_sample_bounds(today)
+        today_gap = db.get_gap_stats(today)
         # 覆盖率：窗口 = 当天首样本 -> 当天末样本（或现在，若当天仍在监控）
         coverage = None
         if today_first is not None:
             window_end = today_last if today_last is not None else now
             window = max(0.0, window_end - today_first)
-            gap_stats = db.get_gap_stats(today)
-            in_window = min(gap_stats["total_gap_seconds"], window) if window > 0 else 0.0
+            in_window = min(today_gap["total_gap_seconds"], window) if window > 0 else 0.0
             coverage = 100.0 if window <= 0 else max(0.0, 100.0 * (1.0 - in_window / window))
             coverage = round(coverage, 2)
-        today_gap = db.get_gap_stats(today)
         # 未结束缺口（进行中）也要计入"已知缺口"
         open_gap = collector.open_gap_property()
         last_gap = None
@@ -1585,7 +1571,8 @@ def build_app(
                 "duration_seconds": g["duration_seconds"], "source": g["source"],
                 "reason": g["reason"], "possible_token_loss": bool(g["possible_token_loss"]),
             }
-        all_gaps = db.get_gaps(limit=100000)
+        # AUDIT-1.1.1 PERF-1111-004：total 统计走 SQL 聚合，不再物化最多 10 万行
+        total_gap_count, total_possible_loss = db.get_gap_totals()
         # 最近缺口明细（Dashboard 展开用）
         def _gap_view(g: dict) -> dict:
             return {
@@ -1604,8 +1591,8 @@ def build_app(
                 ),
             },
             "total": {
-                "gap_count": len(all_gaps),
-                "possible_token_loss": any(g["possible_token_loss"] for g in all_gaps),
+                "gap_count": total_gap_count,
+                "possible_token_loss": total_possible_loss,
             },
             "last_gap": last_gap,
             "open_gap": open_gap,
@@ -1643,8 +1630,10 @@ def build_app(
         - 通过：healthy（若之前是 corrupt 则恢复写入，记 database_recovery 事件）；
         - 失败：corrupt（protective mode，采集停止写入）。
         """
+        # AUDIT-1.1.1 PERF-1111-002：quick_check 在独立连接的工作线程执行
+        # （大库可达秒级），不阻塞事件循环。健康状态/事件更新仍在主连接线程。
         try:
-            ok, detail = db.quick_check()
+            ok, detail = await asyncio.to_thread(db.quick_check_threadsafe)
         except Exception as exc:
             db.set_health("unavailable", repr(exc))
             return JSONResponse(status_code=200, content={
@@ -1703,7 +1692,13 @@ def build_app(
                 "DB_UNHEALTHY", f"数据库处于 {db.health} 状态（protective mode），先运行 Database Check 或从备份恢复"))
         if not isinstance(payload, dict) or payload.get("confirm") is not True:
             return JSONResponse(status_code=400, content=_err("CONFIRMATION_REQUIRED", '必须传 {"confirm": true}'))
-        deleted = db.clear_live_samples(vacuum=True)
+        # AUDIT-1.1.1 PERF-1111-012：DELETE + VACUUM 在独立连接的工作线程执行
+        # （VACUUM 收缩文件可达数百 ms~秒级），不阻塞事件循环与其他 HTTP 端点
+        try:
+            deleted = await asyncio.to_thread(db.clear_live_samples_threadsafe, True)
+        except Exception as exc:
+            logger.warning("清空实时历史失败: %r", exc)
+            return JSONResponse(status_code=500, content=_err("INTERNAL_ERROR", f"清空实时历史失败: {exc!r}"))
         logger.info("Live history cleared: %d sample(s) deleted", deleted)
         return JSONResponse(status_code=200, content={"success": True, "deleted": deleted})
 
@@ -1990,21 +1985,95 @@ def build_app(
             "possible_token_loss": bool(gap_stats["possible_token_loss"]),
         }
 
-    @app.get("/api/daily")
-    async def api_daily(days: int = Query(30, ge=1, le=3650), all: bool = False) -> dict:
+    def _build_daily_csv_body(rows: list, all_live: list) -> bytes:
         """
-        最近 N 个自然日的统计（日期升序）；all=true 时返回全部历史（无上限）。
+        AUDIT-1.1.1 PERF-1111-013：daily CSV 构建（工作线程执行，经
+        asyncio.to_thread 调用）。
+
+        逐行的 Monitoring Coverage 需要 db.gap_stats_threadsafe（独立连接，
+        不跨线程复用主连接），数百~数千行在事件循环里跑会周期性卡住所有
+        HTTP 端点。DB 读取（get_daily_usage / get_live_samples）已在端点的
+        事件循环线程完成，这里只算 + 拼 CSV。
+        """
+        live_by_date: dict[str, list] = {}
+        for s in all_live:
+            live_by_date.setdefault(local_date(s["timestamp"]), []).append(s)
+        now = collector.clock.now()
+        today = local_date(now)
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow([
+            "date", "prompt_tokens", "cached_tokens", "output_tokens",
+            "compute_tokens", "logical_tokens", "draft_tokens", "accepted_tokens",
+            "mtp_accept_rate", "prompt_seconds", "predicted_seconds",
+            # Phase 11：数据质量字段
+            "monitoring_coverage_percent", "gap_count", "possible_token_loss",
+        ])
+        for r in rows:
+            prompt = r.get("prompt_tokens") or 0
+            cached = r.get("cached_tokens") or 0
+            output = r.get("output_tokens") or 0
+            draft = r.get("draft_tokens") or 0
+            accepted = r.get("accepted_tokens") or 0
+            rate = round(accepted / draft * 100.0, 2) if draft > 0 else ""
+            date = r.get("date")
+            coverage, gap_count, possible_loss = "", 0, False
+            if date:
+                day_samples = live_by_date.get(date, [])
+                gap_stats = db.gap_stats_threadsafe(date)
+                coverage = None
+                if day_samples:
+                    first = day_samples[0]["timestamp"]
+                    last = day_samples[-1]["timestamp"]
+                    if date == today:
+                        window_end = min(now, last + collector.interval * 2)
+                    else:
+                        window_end = last
+                    window = max(0.0, window_end - first)
+                    in_window = min(gap_stats["total_gap_seconds"], window) if window > 0 else 0.0
+                    coverage = 100.0 if window <= 0 else round(max(0.0, 100.0 * (1.0 - in_window / window)), 2)
+                elif date < today:
+                    in_day = min(gap_stats["total_gap_seconds"], 86400.0)
+                    coverage = round(max(0.0, 100.0 * (1.0 - in_day / 86400.0)), 2)
+                gap_count = gap_stats["gap_count"]
+                possible_loss = bool(gap_stats["possible_token_loss"])
+            writer.writerow([
+                date, prompt, cached, output,
+                prompt + output, prompt + cached + output,
+                draft, accepted, rate,
+                r.get("prompt_seconds") if r.get("prompt_seconds") is not None else 0,
+                r.get("predicted_seconds") if r.get("predicted_seconds") is not None else 0,
+                coverage if coverage is not None else "",
+                gap_count, "yes" if possible_loss else "no",
+            ])
+        return ("\ufeff" + buf.getvalue()).encode("utf-8")
+
+    @app.get("/api/daily")
+    async def api_daily(days: int = Query(30, ge=1, le=3650), all: bool = False,
+                        month: bool = False) -> dict:
+        """
+        最近 N 个自然日的统计（日期升序）；all=true 时返回全部历史（无上限）；
+        month=true 时只返回**当前自然月**（本机日期前缀 YYYY-MM）。
 
         只返回实际有数据的天（无使用量的天没有行，空档由前端补齐）；
         每行含原始字段 + compute_tokens / logical_tokens 派生字段
         + Phase 11 数据质量字段（monitoring_coverage_percent / gap_count /
         possible_token_loss）。
+
+        AUDIT-1.1.1 BUG-1111-005：month 过滤移到服务端——此前前端取 31 天再按
+        浏览器本地 'YYYY-MM' 前缀过滤，日期来源与 daily_usage 归集日期分离
+        （跨月/时钟边界下"本月"可能漏行），且仅在页面加载时取一次快照。现在与
+        /api/summary 的 month_key 同源（同一 collector.clock、同一 local_date 前缀）。
         """
+        all_rows = db.get_daily_usage()
         if all:
-            rows = db.get_daily_usage()
+            rows = all_rows
+        elif month:
+            month_key = local_date(collector.clock.now())[:7]
+            rows = [r for r in all_rows if r["date"].startswith(month_key)]
         else:
             cutoff = local_date(collector.clock.now() - (days - 1) * 86400)
-            rows = [r for r in db.get_daily_usage() if r["date"] >= cutoff]
+            rows = [r for r in all_rows if r["date"] >= cutoff]
         # AUDIT-DB-003：live 样本一次取全、按日分组（原实现在循环内每天全量扫一次）
         try:
             all_live = db.get_live_samples(hours=None)
@@ -2042,8 +2111,14 @@ def build_app(
         - positions: 仅当服务器提供 position 数据且当日有增量时返回，
           为当日 per-position 接受数（按 position 数值排序）。
         """
+        # AUDIT-1.1.1 GAP-001："今日"必须与兄弟端点（/api/summary、/api/daily、
+        # /api/mtp/daily）同源——collector.clock.now() 的 local_date，而非 wall
+        # local_date()。wall 版本在 00:00:00 到当天首个采集之间会读昨天的行
+        # （"今日 MTP 显示昨日累计"），且破坏 FakeClock 测试纪律。
+        now = collector.clock.now()
+        today_date = local_date(now)
         rows = db.get_daily_usage()
-        today = next((r for r in rows if r["date"] == local_date()), None) or {}
+        today = next((r for r in rows if r["date"] == today_date), None) or {}
         draft = today.get("draft_tokens", 0) or 0
         accepted = today.get("accepted_tokens", 0) or 0
         num_drafts = today.get("draft_sequences", 0) or 0  # Phase 9：Draft Sequences
@@ -2056,7 +2131,7 @@ def build_app(
             "accepted_tokens": accepted,
             "num_drafts": num_drafts,
         }
-        positions = db.get_mtp_position_daily(local_date())
+        positions = db.get_mtp_position_daily(today_date)
         if positions:
             ordered = sorted(
                 positions.items(),

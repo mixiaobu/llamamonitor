@@ -1,5 +1,7 @@
 # LlamaMonitor 1.0.0 — Final Release Baseline
 
+> **历史快照（1.1.1 起标注）**：本文档记录的是当时版本的交付状态，仅作追溯参考；当前版本行为以代码 + docs/AUDIT_1.1.1.md + 当前 CHANGELOG 为准。
+
 > 生成时间：1.0.0 Final Release 阶段开始（Feature / UI / Schema / API Freeze 生效）。
 > 本文件是发布前基线快照：任何核心模块修复后必须对照本基线重新执行受影响的 Release Gate。
 

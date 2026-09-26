@@ -37,8 +37,6 @@ Phase 14 重新生成（2026-09-19）：许可信息逐项取自**已安装 whee
 - bottle 0.13.4 — MIT（捆绑 LICENSE，Marcel Hellkamp；pywebview 的 Python 端依赖）
 - Pillow 12.3.0（pystray 图标渲染依赖，同上）
 - six 1.17.0 — MIT（元数据 License 字段）
-- pefile 2024.8.26 — MIT（validate_release.py 构建期校验用；随源码发布）
-- xlrd 2.0.2 — BSD（元数据 License 字段；构建期 PE/Excel 工具链依赖）
 - packaging 26.3 — Apache-2.0 或 BSD（捆绑 LICENSE/LICENSE.APACHE/LICENSE.BSD）
 - typing_extensions 4.16.0 — PSF（Python Software Foundation License，捆绑 LICENSE）
 - setuptools 84.0.0 — MIT（捆绑 LICENSE；构建期）

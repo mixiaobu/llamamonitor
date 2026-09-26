@@ -1,5 +1,7 @@
 # LlamaMonitor 0.16.18 — Phase 16D 统一 UI 交付说明
 
+> **历史快照（1.1.1 起标注）**：本文档记录的是当时版本的交付状态，仅作追溯参考；当前版本行为以代码 + docs/AUDIT_1.1.1.md + 当前 CHANGELOG 为准。
+
 > **0.16.22 远程隐藏设置入口（真实局域网 IP 端到端 CDP 实测）**：
 > 1. **远程不再显示「设置」导航**：0.16.21 已让远程不发 loopback-only 请求、设置页降级为
 >    只读表单——但"点进去看到一屏禁用控件"仍多余（用户反馈：干脆别给入口）。app.js
@@ -108,7 +110,7 @@
 > 审计后 7 页所有相邻元素间距统一 24px。同时落地设置页控件宽度规范
 > （URL 380 / 路径 400 / 数字 110 / select 180 / 短文本 160，≤1200px 收敛，≤900px 全宽）、
 > 设置页底部操作栏间距对齐分区节奏、修复 About 说明与 card-footer 双分隔线。
-> 重新截图于 `docs/screenshots-0.16.16/`。
+> 重新截图于 `artifacts/screenshots-0.16.16/`（1.1.1 起开发截图统一归 `artifacts/`）。
 
 本版本实现 Phase 16D「最终统一 UI 打磨 + 布局/视觉/组件系统统一 + 页面结构清理 + 桌面 UX 就绪」。
 技术栈不变（HTML/CSS/vanilla JS/ECharts/PyWebView/FastAPI），信息架构不变（概览/用量/性能/GPU/历史/设置/关于），
@@ -278,7 +280,7 @@ chartGpuUtil/chartGpuPower/chartGpuTemp）均从集中主题取色，无散落�
 
 ## 20. 所有截图
 
-`docs/screenshots-0.16.16/`（1920×1080，1×，CDP 实机）：
+`artifacts/screenshots-0.16.16/`（1920×1080，1×，CDP 实机）：
 `shot-overview-dark.png` · `shot-usage-dark.png` · `shot-performance-dark.png` · `shot-gpu-dark.png`
 · `shot-history-dark.png` · `shot-settings-dark.png` · `shot-about-dark.png` · `shot-overview-light.png`。
 

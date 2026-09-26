@@ -1,5 +1,7 @@
 # LlamaMonitor 1.0 审计基线（Audit Baseline）
 
+> **历史快照（1.1.1 起标注）**：本文档记录的是当时版本的交付状态，仅作追溯参考；当前版本行为以代码 + docs/AUDIT_1.1.1.md + 当前 CHANGELOG 为准。
+
 > Phase 14 第一步：**在任何代码修改之前**记录当前状态。
 > 采集时间：2026-09-19（本地时间）；采集方式：真实运行环境 + `python -m unittest discover -s tests`。
 > 本文件是审计起点参照物；所有修复以 `AUDIT-*` Finding ID 关联（见 AUDIT_REPORT.md）。

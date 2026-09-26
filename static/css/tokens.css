@@ -28,7 +28,6 @@
   --font-size-hero: 40px;       /* = Metric Big 概览主指标（旧名兼容） */
   --font-size-metric: 22px;     /* = Metric Medium（旧名兼容） */
   --font-weight-regular: 400;
-  --font-weight-medium: 500;
   --font-weight-semibold: 600;
   --font-weight-bold: 700;
   --line-height: 1.45;
@@ -50,20 +49,16 @@
   --spacing-xl: 20px;
   --spacing-2xl: 24px;
   --spacing-3xl: 32px;
-  --spacing-4xl: 40px;
 
   /* 布局级节奏（Phase 16D spec §30 统一视觉节奏） */
   --section-gap: 24px;      /* 页头→首分区 / 分区间距 */
   --section-head-gap: 12px; /* Section Header → Body */
   --card-pad: 16px;         /* Card 内 padding（16-20） */
   --card-pad-lg: 20px;
-  --card-row-gap: 12px;     /* Card 内行间距 */
 
   /* ---------- 全局布局（Phase 16D spec §8） ---------- */
   --nav-width: 212px;
   --content-max: 1520px;
-  --content-max-settings: 1280px;
-  --content-max-about: 900px;
   --page-pad: 32px;         /* 页面左右 padding（24-32） */
   --page-pad-narrow: 24px;
 
@@ -103,7 +98,6 @@
   --accent-pressed: #33a9e8;
   --accent-contrast: #00131f;
   --accent-subtle: rgba(76, 194, 255, 0.13);
-  --accent-subtle-border: rgba(76, 194, 255, 0.34);
 
   --success: #5fb96a;
   --warning: #f2b354;
@@ -151,7 +145,6 @@
   --accent-pressed: #00529d;
   --accent-contrast: #ffffff;
   --accent-subtle: rgba(0, 103, 192, 0.11);
-  --accent-subtle-border: rgba(0, 103, 192, 0.34);
 
   --success: #0f7b0f;
   --warning: #9d5d00;

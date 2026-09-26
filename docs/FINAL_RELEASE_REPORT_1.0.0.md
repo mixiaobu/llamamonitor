@@ -1,5 +1,7 @@
 # Final Release Report — LlamaMonitor 1.0.0
 
+> **历史快照（1.1.1 起标注）**：本文档记录的是当时版本的交付状态，仅作追溯参考；当前版本行为以代码 + docs/AUDIT_1.1.1.md + 当前 CHANGELOG 为准。
+
 > 1.0.0 Final Release 阶段（75-gate 规格）验证总报告。逐项明细证据见 `docs/FINAL_RELEASE_BASELINE.md`（已知问题登记）、`docs/RELEASE_NOTES_1.0.0.md`、`docs/BUILD_INFO_1.0.0.md`。
 > 本报告为收尾结论：版本演进、Bug 清单、带注记的 PASS、75-gate 逐项判定、burn-in/soak 数据、遗留问题、交付物、READY/NOT READY 判定。
 

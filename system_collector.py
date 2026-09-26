@@ -22,6 +22,7 @@ system_collector.py — Windows 系统基础监控采集器（1.1.0 Stage B）
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from collections import deque
@@ -134,12 +135,16 @@ class SystemCollector:
         self._net_prev: tuple[float, float, float] | None = None  # (mono, rx, tx)
         self._cpu_warmed = False          # psutil.cpu_percent 首次 warmup 标志
         # ---- 能耗基线 ----
-        self._cpu_power_prev: tuple[float, float] | None = None  # (mono, power_w)
+        self._cpu_power_prev: tuple[float, float] | None = None  # (mono, wall, power_w)
         self._cpu_energy_today: dict[str, float] = {}            # {date: Wh}（内存态，跨午夜用 local_date）
         self._last_energy_date: str | None = None
         # ---- 落库节流（每 history_interval_seconds 一条；UI 轮次更密）----
         self._last_db_write: float | None = None   # 上次写 system_samples 的 wall
-        self._pending_cpu_energy_wh: float = 0.0   # 未落库轮的能耗累计（落库时一并写入 daily）
+        # AUDIT-1.1.1 DATA-1111-006：未落库轮的能耗按自然日累计（跨午夜分割后两段
+        # 分别入账），落库时整体写入 system_daily——替代原"整段归当天"的单值累计。
+        self._pending_cpu_energy_by_date: dict[str, float] = {}
+        # 兼容旧接口：仍暴露单值视图（内部从 per-date 求和）
+        self._pending_cpu_energy_wh: float = 0.0
         # ---- 高级传感器（provider 注入；None = 不可用）----
         self.advanced_cpu_temperature_c: float | None = None
         self.advanced_cpu_power_w: float | None = None
@@ -259,23 +264,77 @@ class SystemCollector:
 
     # ---------- 能耗（CPU Package Power 梯形积分；monotonic） ----------
 
-    def _cpu_energy_delta(self, now_mono: float) -> float:
-        """本轮 CPU 能耗增量（Wh）；power 缺失或 gap 超限时不积分（返回 0.0）。"""
+    def _cpu_energy_delta(self, now_mono: float, now_wall: float) -> dict[str, float]:
+        """
+        本轮 CPU 能耗增量，按自然日归属（Wh）。
+
+        返回 {date: Wh}（跨午夜时同一段能量分到两天，与 GPU _split_energy_across_midnight
+        同语义）。power 缺失或 gap 超限时返回空 dict（不积分）。
+
+        AUDIT-1.1.1 DATA-1111-006：原实现只返回单值 Wh，调用方按"整段归当天"入账，
+        跨午夜段会被全部记到新一天（旧一天少记）。现在基线多记 prev_wall，
+        用 _split_cpu_energy_across_midnight 按精确午夜分割到自然日。
+        """
         power = self.advanced_cpu_power_w
         if power is None:
             self._cpu_power_prev = None
-            return 0.0
+            return {}
         prev = self._cpu_power_prev
-        delta = 0.0
+        out: dict[str, float] = {}
         if prev is not None:
-            dt = now_mono - prev[0]
+            prev_mono, prev_wall, prev_power = prev
+            dt = now_mono - prev_mono
             max_gap = self.config.system.history_interval_seconds * ENERGY_GAP_FACTOR
             if 0 < dt <= max_gap:
-                delta = (prev[1] + power) / 2.0 * dt / 3600.0
-        self._cpu_power_prev = (now_mono, power)
-        return delta
+                e = (prev_power + power) / 2.0 * dt / 3600.0
+                out = self._split_cpu_energy_across_midnight(prev_wall, now_wall, e)
+        self._cpu_power_prev = (now_mono, now_wall, power)
+        return out
+
+    @staticmethod
+    def _split_cpu_energy_across_midnight(prev_wall: float, curr_wall: float,
+                                          energy_wh: float) -> dict[str, float]:
+        """
+        把 [prev_wall, curr_wall] 区间的 CPU 能量按"本机午夜"精确分割到自然日。
+        与 GpuCollector._split_energy_across_midnight 同语义（wall 只定位午夜边界，
+        不计算时长）：
+        - 两端同一自然日 / wall 回拨：全部归 curr 日期；
+        - 跨日：以本机午夜 00:00:00 为界，按 wall 时间比例分到前一天 / 当天。
+        """
+        from datetime import datetime
+        from db import local_date
+
+        curr_date = local_date(curr_wall)
+        if local_date(prev_wall) == curr_date or curr_wall <= prev_wall:
+            return {curr_date: energy_wh}
+        midnight = datetime.strptime(curr_date, "%Y-%m-%d").timestamp()
+        span = curr_wall - prev_wall
+        if not (prev_wall < midnight <= curr_wall) or span <= 0:
+            return {curr_date: energy_wh}
+        ratio_prev = (midnight - prev_wall) / span
+        prev_date = local_date(midnight - 1.0)
+        out: dict[str, float] = {curr_date: energy_wh * (1.0 - ratio_prev)}
+        if energy_wh * ratio_prev > 1e-9:
+            out[prev_date] = energy_wh * ratio_prev
+        return out
 
     # ---------- 采样 ----------
+
+    def _sample_psutil(self) -> tuple:
+        """
+        阻塞的 psutil 采样段（AUDIT-1.1.1 REL-1111-001：从 poll_once 抽出）。
+
+        Windows 上 disk_io_counters 等常走 WMI/GetSystemPowerInformation，
+        单次 10~50ms 偶发更高——直接在事件循环里跑会周期性阻塞所有 HTTP 端点。
+        本方法只读取原始值，不做速率/能耗/落库（那些留在事件循环线程，
+        保持 db 单连接单线程不变量）。
+        """
+        usage = _safe(psutil.cpu_percent, interval=None)
+        freq = _safe(psutil.cpu_freq)
+        vm = _safe(psutil.virtual_memory)
+        dio = _safe(psutil.disk_io_counters)
+        nio = _safe(psutil.net_io_counters)
+        return (usage, freq, vm, dio, nio)
 
     def poll_once(self) -> SystemSample | None:
         """
@@ -287,29 +346,55 @@ class SystemCollector:
         now_wall = self.clock.now()
         now_mono = self.clock.monotonic()
         sample = SystemSample(timestamp=now_wall)
+        was_warmed = self._cpu_warmed
+        raw = self._sample_psutil()
+        self._apply_sample(sample, raw, now_mono)
+        self._finish_sample(sample, now_wall, now_mono, was_warmed)
+        return sample
+
+    async def poll_once_async(self) -> SystemSample | None:
+        """
+        poll_once 的 async 版本（AUDIT-1.1.1 REL-1111-001）：阻塞的 psutil 采样
+        放到 asyncio.to_thread（事件循环不被 10~50ms/轮 卡住），速率/能耗/落库
+        仍在事件循环线程（db 单连接单线程不变量）。
+        """
+        if not self.enabled:
+            return None
+        now_wall = self.clock.now()
+        now_mono = self.clock.monotonic()
+        sample = SystemSample(timestamp=now_wall)
+        was_warmed = self._cpu_warmed
+        try:
+            raw = await asyncio.to_thread(self._sample_psutil)
+        except Exception:
+            # _safe 已兜底每个指标；这里防 to_thread 本身异常（如取消/解释器退出）
+            self._set_available(False)
+            return None
+        self._apply_sample(sample, raw, now_mono)
+        self._finish_sample(sample, now_wall, now_mono, was_warmed)
+        return sample
+
+    def _apply_sample(self, sample: SystemSample, raw: tuple, now_mono: float) -> None:
+        """把原始 psutil 值填入 sample（速率用 monotonic；counter reset 安全）。"""
+        usage, freq, vm, dio, nio = raw
 
         # CPU 利用率（interval=None 非阻塞；首次 warmup：本条不写 DB、不作为有效利用率）
-        was_warmed = self._cpu_warmed
-        usage = _safe(psutil.cpu_percent, interval=None)
         if usage is not None:
             if not self._cpu_warmed:
                 # 首次：只建立基线
                 self._cpu_warmed = True
             else:
                 sample.cpu_usage_percent = usage
-        freq = _safe(psutil.cpu_freq)
         if freq is not None and freq.current is not None:
             sample.cpu_frequency_mhz = freq.current
 
         # 内存
-        vm = _safe(psutil.virtual_memory)
         if vm is not None:
             sample.memory_used_bytes = vm.total - vm.available
             sample.memory_total_bytes = vm.total
             sample.memory_usage_percent = vm.percent
 
         # 磁盘 IO（累计 counter -> 速率；monotonic）
-        dio = _safe(psutil.disk_io_counters)
         if dio is not None and dio.read_bytes is not None and dio.write_bytes is not None:
             if self._disk_prev is not None:
                 prev_mono, prev_read, prev_write = self._disk_prev
@@ -319,7 +404,6 @@ class SystemCollector:
             self._disk_prev = (now_mono, dio.read_bytes, dio.write_bytes)
 
         # 网络 IO（累计 counter -> 速率；monotonic）
-        nio = _safe(psutil.net_io_counters)
         if nio is not None and nio.bytes_recv is not None and nio.bytes_sent is not None:
             if self._net_prev is not None:
                 prev_mono, prev_rx, prev_tx = self._net_prev
@@ -338,14 +422,24 @@ class SystemCollector:
                 sample.cpu_package_power_w + self.gpu_power_total_w
             )
 
-        # CPU 能耗积分（power 可靠时；gap 超限不积分）
-        cpu_energy_wh = self._cpu_energy_delta(now_mono)
-        if cpu_energy_wh > 0:
-            date = _local_date(now_wall)
-            self._cpu_energy_today[date] = self._cpu_energy_today.get(date, 0.0) + cpu_energy_wh
-            self._last_energy_date = date
-        # 未落库轮的能耗先累计（落库节流时不丢段）
-        self._pending_cpu_energy_wh += cpu_energy_wh
+    def _finish_sample(self, sample: SystemSample, now_wall: float, now_mono: float,
+                       was_warmed: bool) -> None:
+        """能耗积分 + 按间隔落库 + 实时 ring（poll_once / poll_once_async 共用）。
+
+        was_warmed：本轮**之前**是否已 warmup（warmup 轮不落库，由调用方在
+        _apply_sample 修改 _cpu_warmed 之前捕获）。
+        """
+        # CPU 能耗积分（power 可靠时；gap 超限不积分）——按自然日归属（跨午夜分割）
+        energy_by_date = self._cpu_energy_delta(now_mono, now_wall)
+        for date, wh in energy_by_date.items():
+            if wh > 0:
+                self._cpu_energy_today[date] = self._cpu_energy_today.get(date, 0.0) + wh
+                self._last_energy_date = date
+                # 未落库轮的能耗按日累计（落库节流时不丢段；跨午夜两段分别入账）
+                self._pending_cpu_energy_by_date[date] = (
+                    self._pending_cpu_energy_by_date.get(date, 0.0) + wh
+                )
+        self._pending_cpu_energy_wh = sum(self._pending_cpu_energy_by_date.values())
 
         # 落库：每 history_interval_seconds 一条（UI 轮次更密）；warmup 轮不写 DB。
         # 组件能耗 daily 只累加 CPU 部分（GPU 能量由 gpu_daily 维护；组件合计在
@@ -357,7 +451,6 @@ class SystemCollector:
                 self.db.save_system_sample(
                     sample.to_row(),
                     daily_increments={
-                        "cpu_energy_wh": self._pending_cpu_energy_wh,
                         # "已监测组件能耗"的 GPU 部分**不**在这里累加——
                         # system_daily.monitored_component_energy_wh 列只存 CPU 部分
                         # （与 cpu_energy_wh 相同），GPU 能量由 gpu_daily 维护；
@@ -365,10 +458,14 @@ class SystemCollector:
                         # 使"今日能耗"= CPU + 被监控 GPU，与实时"组件功耗合计"同口径。
                         "monitored_component_energy_wh": self._pending_cpu_energy_wh,
                     },
+                    # AUDIT-1.1.1 DATA-1111-006：CPU 能耗按自然日分别入账（跨午夜
+                    # 段的前一天部分也计入旧一天），而不是整段归样本当天。
+                    cpu_energy_wh_by_date=dict(self._pending_cpu_energy_by_date),
                     now=now_wall,
                     retention_seconds=self.config.system.history_retention_hours * 3600,
                 )
                 self._last_db_write = now_wall
+                self._pending_cpu_energy_by_date = {}
                 self._pending_cpu_energy_wh = 0.0
             except Exception as exc:
                 logger.warning("系统数据库写入失败，本轮跳过落盘: %r", exc)

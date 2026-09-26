@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import subprocess
 import sys
 import threading
@@ -133,14 +134,60 @@ class HardwareSensorProvider:
     # ---------- 生命周期 ----------
 
     def start(self) -> None:
-        """启动 reader 线程（实际拉起 Bridge 在线程内进行，可退避重试）。"""
+        """启动 reader 线程（实际拉起 Bridge 在线程内进行，可退避重试）。
+
+        AUDIT-1.1.1 BUG-1111-007：启动前先清理孤儿 HardwareSensorBridge 进程
+        （LlamaMonitor 崩溃/被任务管理器强杀时 stop() 没跑，子进程可能残留）。
+        """
         if self._reader_thread is not None or not self.enabled:
             return
+        self.sweep_orphans()
         self._stop.clear()
         self._reader_thread = threading.Thread(
             target=self._supervise_loop, name="hwsensors-bridge", daemon=True
         )
         self._reader_thread.start()
+
+    def sweep_orphans(self) -> int:
+        """
+        启动时清理孤儿 HardwareSensorBridge 进程（AUDIT-1.1.1 BUG-1111-007）。
+
+        LlamaMonitor 崩溃或被强杀时 stop() 没执行，Bridge 子进程可能残留
+        （父进程没了但 Bridge 还活着，每 5s 空转）。这里按可执行文件名
+        找同名的 HardwareSensorBridge.exe（排除本进程），逐个 Terminate。
+        返回清理的进程数。任何失败都不抛（不影响启动）。
+        """
+        if not _IS_WINDOWS:
+            return 0
+        killed = 0
+        try:
+            import psutil
+        except ImportError:
+            return 0
+        own_pid = os.getpid()
+        for p in psutil.process_iter(["pid", "name", "exe"]):
+            try:
+                pid = p.info["pid"]
+                name = p.info.get("name") or ""
+                if pid == own_pid or name.lower() != "hardwaresensorbridge.exe":
+                    continue
+                # 保守：只 kill 我们认识的 bridge exe 路径（避免误杀同名进程）
+                exe = p.info.get("exe") or ""
+                found = find_bridge_exe()
+                if found and exe and Path(exe).resolve() == found[0].resolve():
+                    p.terminate()
+                    try:
+                        p.wait(timeout=3.0)
+                    except Exception:
+                        with _suppress():
+                            p.kill()
+                    killed += 1
+                    logger.info("启动时清理孤儿 HardwareSensorBridge 进程 pid=%s", pid)
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+            except Exception as exc:
+                logger.debug("sweep_orphans 单进程处理失败: %r", exc)
+        return killed
 
     def stop(self) -> None:
         """
@@ -172,7 +219,7 @@ class HardwareSensorProvider:
     # ---------- 监督循环（reader 线程内） ----------
 
     def _supervise_loop(self) -> None:
-        """拉起 Bridge -> 读 stdout 逐行解析 -> 崩溃退避重启。"""
+        """拉起 Bridge -> 读 stdout 逐行解析 -> 崩溃/挂死退避重启。"""
         while not self._stop.is_set():
             proc = self._start_bridge()
             if proc is None:
@@ -185,14 +232,111 @@ class HardwareSensorProvider:
                 self._stop.wait(_BACKOFF_STEPS[_MAX_BACKOFF_INDEX])
                 continue
             self._bridge_missing_logged = False
-            self._read_stdout(proc)
-            # stdout 结束（正常退出或崩溃）：退避重启
+            hung = self._pump_stdout(proc)
             if self._stop.is_set():
                 break
+            # AUDIT-1.1.1 REL-1111-009（挂死看门狗）：Bridge 活着但长时间无输出
+            # -> 主动 kill 再重启。原实现 readline 无限阻塞，Bridge hang（不退出
+            # 也不输出）时监督循环永不触发，孤儿进程一直占资源。两种结束（崩溃
+            # 退出 / 挂死）都走退避。
+            if hung:
+                self._kill_proc(proc)
+                logger.warning(
+                    "HardwareSensorBridge 挂死（%.0fs 无输出），已 kill 并退避重启",
+                    self._hang_timeout_seconds(),
+                )
+            else:
+                logger.info("HardwareSensorBridge 退出（code=%s），退避重启", proc.poll())
             delay = _BACKOFF_STEPS[self._restart_index]
             self._restart_index = min(self._restart_index + 1, _MAX_BACKOFF_INDEX)
-            logger.info("HardwareSensorBridge 退出（code=%s），%.0fs 后重启", proc.poll(), delay)
             self._stop.wait(delay)
+
+    def _hang_timeout_seconds(self) -> float:
+        """挂死看门狗阈值：3 × 传感器轮询周期（正常每周期至少一条输出）。"""
+        try:
+            interval = max(1.0, float(self.config.system.advanced_sensor_interval_seconds))
+        except (TypeError, ValueError):
+            interval = 5.0
+        return max(15.0, interval * 3.0)
+
+    def _kill_proc(self, proc: subprocess.Popen) -> None:
+        try:
+            proc.terminate()
+            try:
+                proc.wait(timeout=3.0)
+                return
+            except Exception:
+                pass
+        except Exception:
+            pass
+        with _suppress():
+            proc.kill()
+        try:
+            proc.wait(timeout=3.0)
+        except Exception:
+            pass
+
+    def _pump_stdout(self, proc: subprocess.Popen) -> bool:
+        """
+        读取 Bridge stdout（JSON Lines）直至进程退出或挂死超时。
+
+        AUDIT-1.1.1 REL-1111-009：独立 reader 线程阻塞 readline（不碰事件循环、
+        不用 select——Windows 上 select 对 Popen 管道 TextIOWrapper 不可靠，
+        WSAStartup 报错），行入 queue；本方法（监督线程）用 1s 超时的 queue
+        .get 取数据：进程退出且队列空 -> EOF；超过看门狗阈值无行 -> 挂死
+        （返回 True，调用方 kill）。健康 Bridge 每周期（5s）至少一行，远早于
+        阈值（3×周期）。
+        """
+        import queue as _queue
+        q: _queue.Queue = _queue.Queue()
+        sentinel = object()
+
+        def _reader() -> None:
+            assert proc.stdout is not None
+            try:
+                while True:
+                    line = proc.stdout.readline()
+                    if not line:
+                        break  # EOF
+                    q.put(line)
+            except Exception:
+                pass
+            finally:
+                q.put(sentinel)
+
+        rt = threading.Thread(target=_reader, name="hwsensors-stdout", daemon=True)
+        rt.start()
+        last_line_time = self.clock.monotonic()
+        hung = False
+        try:
+            while not self._stop.is_set():
+                try:
+                    item = q.get(timeout=1.0)
+                except _queue.Empty:
+                    if self.clock.monotonic() - last_line_time > self._hang_timeout_seconds():
+                        if proc.poll() is None:
+                            hung = True
+                        break
+                    continue
+                if item is sentinel:
+                    break  # EOF（reader 读到末尾，进程已退出）
+                last_line_time = self.clock.monotonic()
+                line = item
+                if len(line) > _MAX_LINE_BYTES:
+                    continue
+                try:
+                    payload = json.loads(line.decode("utf-8", "replace"))
+                except (ValueError, UnicodeDecodeError):
+                    continue
+                if isinstance(payload, dict) and payload.get("kind") == "sensors":
+                    self._ingest(payload)
+        except Exception as exc:
+            logger.warning("HardwareSensorBridge stdout 读取异常: %r", exc)
+        # 确保 reader 线程收尾（EOF 时已自然结束；hang 时 proc 即将被 kill ->
+        # reader 读到 EOF）。join 限时 2s：hang 路径下 reader 仍阻塞在 readline，
+        # 等调用方 kill 后下一轮自然结束；2s 足够 EOF 场景收尾，又不至拖慢重启。
+        rt.join(timeout=2.0)
+        return hung
 
     def _start_bridge(self) -> subprocess.Popen | None:
         if self._runner is not None:
@@ -222,25 +366,6 @@ class HardwareSensorProvider:
         except Exception as exc:
             logger.warning("HardwareSensorBridge 启动失败: %r", exc)
             return None
-
-    def _read_stdout(self, proc: subprocess.Popen) -> None:
-        """逐行读取 Bridge stdout（JSON Lines）；解析更新内存态。"""
-        assert proc.stdout is not None
-        try:
-            while not self._stop.is_set():
-                line = proc.stdout.readline()
-                if not line:
-                    break  # EOF（Bridge 退出）
-                if len(line) > _MAX_LINE_BYTES:
-                    continue
-                try:
-                    payload = json.loads(line.decode("utf-8", "replace"))
-                except (ValueError, UnicodeDecodeError):
-                    continue
-                if isinstance(payload, dict) and payload.get("kind") == "sensors":
-                    self._ingest(payload)
-        except Exception as exc:
-            logger.warning("HardwareSensorBridge stdout 读取异常: %r", exc)
 
     # ---------- 数据注入 ----------
 

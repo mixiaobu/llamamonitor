@@ -1,5 +1,7 @@
 # LlamaMonitor 1.0.1 — Release Notes
 
+> **历史快照（1.1.1 起标注）**：本文档记录的是当时版本的交付状态，仅作追溯参考；当前版本行为以代码 + docs/AUDIT_1.1.1.md + 当前 CHANGELOG 为准。
+
 **发布日期：2026-09-25 ｜ 平台：Windows 11 x64（Win10 1903+ 亦支持）｜ 架构：Python 3.13 + FastAPI + 原生 JS/ECharts**
 
 **术语审计与 UI 文案修订版（UI/Text Freeze）**。相对 1.0.0：**不改布局、不加功能、

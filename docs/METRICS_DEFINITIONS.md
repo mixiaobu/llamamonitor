@@ -1,7 +1,9 @@
-# LlamaMonitor 指标定义（Phase 14）
+# LlamaMonitor 指标定义（Phase 14，1.1 增补）
 
 > 本文档定义 Dashboard / API / 数据库里每个字段的**精确计算规则**。
-> 源：`stats.py`（纯函数）+ `collector.py`（组装）+ `gpu_collector.py`（能耗）。
+> 源：`stats.py`（纯函数）+ `collector.py`（组装）+ `gpu_collector.py`（能耗）+
+> `system_collector.py` / `llama_runtime_collector.py` / `hardware_sensor_provider.py`
+> （1.1 系统 / Runtime / 硬件遥测，见 §8）。
 > 规则与代码一一对应，任何行为以本文档 + 单元测试为准。
 
 ## 1. 采样与时间
@@ -70,9 +72,12 @@ predicted_seconds / n_decode / draft_tokens / accepted_tokens / draft_sequences`
 ### 缺口（data_gaps）模型
 
 - `source`：`llama` / `gpu` / `application`。
-- `reason`：`server_offline` / `monitor_restart` / `system_pause_or_sleep` / `unknown`。
+- `reason`：`server_offline` / `invalid_metrics` / `monitor_restart` /
+  `system_pause_or_sleep` / `unknown`。
 - 检测：
   - 离线轮（抓取失败）→ 开 `server_offline` 缺口；
+  - 抓到 metrics 但核心 Counter 值无效（NaN/Inf/负值）→ `invalid_metrics`
+    （样本不可信，按缺口计；恢复后该缺口闭合）；
   - 有效样本间 monotonic 间隔 > 阈值（默认 15s）且无离线轮 → `system_pause_or_sleep`
     （进程被系统挂起，墙钟跳变）；
   - 应用重启后首个有效样本补记 `monitor_restart`（仅当断档 ≥ 阈值）。
@@ -91,8 +96,52 @@ predicted_seconds / n_decode / draft_tokens / accepted_tokens / draft_sequences`
 
 | 表 | 保留 |
 |---|---|
-| live_samples / gpu_samples | 48h（可配置） |
+| live_samples / gpu_samples / system_samples | 48h（可配置） |
 | monitor_events | 365 天 且 ≤ 100,000 行 |
-| daily_usage / mtp_position_daily | 永久 |
+| daily_usage / mtp_position_daily / system_daily | 永久 |
 | data_gaps | 永久 |
 | backup_history | ≤ 1,000 行 |
+
+## 8. 1.1 新增指标（System / llama Runtime / 硬件传感器）
+
+1.1.0 起新增三类遥测，口径如下（源：`system_collector.py` /
+`llama_runtime_collector.py` / `hardware_sensor_provider.py`）。
+
+### 8.1 系统监控（psutil，基础，故障隔离于 llama/GPU 采集）
+
+- **CPU 使用率 / 内存 / 磁盘 / 网络**：psutil 直接读；`poll_interval_seconds`
+  周期采样，历史 `history_interval_seconds` 落库。
+- **CPU 能耗 `cpu_energy_wh`**：`power_w` 对 monotonic Δt 的梯形积分
+  `∑ (P_i + P_{i+1}) / 2 × Δt / 3600`。与 GPU 能耗同口径。
+  - 长 gap（monotonic Δt 超阈值）不积分（系统睡眠/挂起不累计假能耗）；
+  - 跨午夜的能量按 `prev_wall`/`curr_wall` 所在日期**分段归属**
+    （AUDIT-1.1.1 DATA-1111-006：与 GPU 对齐，不再整段归当日）。
+- **组件功耗合计**：API 层相加 `CPU package power + 全部 GPU power_draw_w`；
+  任一侧无数据 -> 合计 `None`（不猜 0）。
+
+### 8.2 llama Runtime 遥测（/health /slots /props /v1/models，分频调度）
+
+- **运行时状态**：`ready` / `unavailable`。**连续 2 次** health 抓取失败才
+  判 `unavailable`（AUDIT-1.1.1 REL-1111-005：单次瞬时失败不翻转，防抖）；
+  任一次成功立即复位。
+- **Slot 槽位**（`/slots`，`is_processing` 区分忙/闲）：
+  - 术语统一（见 docs/UI_TERMINOLOGY.md）：上下文窗口上限 / 输入 Token /
+    缓存复用 Token / 已处理提示 Token / 输出 Token / 剩余输出 Token /
+    缓存复用率 / MTP。
+  - **空闲槽位的 per-request 字段是上一次请求的残留**（最长 ~10s 后更新），
+    UI 淡化 + 注脚提示（AUDIT-1.1.1 BUG-1111-010），不当当前状态。
+- **缓存复用率**（Slot 级）：`cached / (prompt + cached)` × 100 ——
+  注意与历史"缓存复用率"（跨请求统计）口径不同；代码字段名区分，无歧义。
+
+### 8.3 高级硬件传感器（LibreHardwareMonitor Bridge，可选）
+
+- **严格只读**：Bridge 只 `Read()`，绝不 Set；GPU Provider 在 Bridge 侧禁用
+  （GPU 由 nvidia-smi 负责，避免重复采集）。
+- **Provider 不可用 -> 全部高级字段 = None**（UI 显示 `--`，绝不显示 0 冒充）。
+- **Fan `control_percent`**：只有 LHM 真实提供 Control 传感器时才有值
+  （绝不从 RPM / 假定 MaxRPM 推算）；0 RPM 不是错误。
+- **传感器新鲜度**：值 > 30s 视为过期 -> 该字段 None（不返回陈旧读数）。
+- **生命周期**：LlamaMonitor 启动拉起（CREATE_NO_WINDOW），退出优雅终止
+  （关 stdin -> 宽限 -> Terminate）；崩溃指数退避重启（2/4/8/16/30s 上限）；
+  **挂死看门狗**：3 × 传感器周期无输出 -> kill 重启（AUDIT-1.1.1 REL-1111-009）；
+  启动清理孤儿 Bridge 进程（AUDIT-1.1.1 BUG-1111-007）。

@@ -921,7 +921,7 @@ a.link:hover .arr { transform: translateX(2px); }
 .check-chip.on .chip-tick {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--accent-contrast); /* UI-1111-012：用 token，不硬编码 #fff */
 }
 
 /* §19 事件列表：取消嵌套滚动，由页面承担纵向滚动 */
@@ -1004,18 +1004,6 @@ a.link:hover .arr { transform: translateX(2px); }
 /* ============================================================
    Phase 16D — 统一设计语言落地组件
    ============================================================ */
-
-/* 范围标签（§19.1：Section Header 右侧"所选范围"轻量标签） */
-.range-tag {
-  font-size: var(--font-size-caption);
-  font-weight: var(--font-weight-semibold);
-  color: var(--text-secondary);
-  padding: 3px 10px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-pill);
-  background: var(--bg-subtle);
-  white-space: nowrap;
-}
 
 /* Section 标题内嵌的次要说明（§18.5 GPU 状态行） */
 .section-header .sh-title .sh-sub {
@@ -1234,6 +1222,14 @@ details.core-heat[open] summary::before { content: "▾ "; }
 .slot-card .gpu-kv {
   grid-template-columns: 120px minmax(0, 1fr);
   gap: 2px var(--spacing-md);
+}
+/* AUDIT-1.1.1 BUG-1111-010：Slot 空闲时 per-request 数字是上一次请求的残留，
+   淡化显示 + 顶部一行说明，避免用户把旧值当当前状态 */
+.slot-stale-note {
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+  opacity: 0.75;
+  margin-bottom: var(--spacing-xs);
 }
 
 /* GPU 页：驱动版本（页头小字） */

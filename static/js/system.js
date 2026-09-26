@@ -333,7 +333,27 @@
           }
         }
       })
-      .catch(function (e) { console.warn("system sensors failed:", e.message || e); });
+      .catch(function (e) {
+        console.warn("system sensors failed:", e.message || e);
+        // AUDIT-1.1.1 UX-1111-008：刷新失败时把"加载中…"占位换成终止态，
+        // 否则设置页传感器列表会永久停在"加载中…"（看似还在轮询）。
+        var monList = $("sysMonSensorList");
+        if (monList) {
+          monList.innerHTML = "";
+          var t = document.createElement("div");
+          t.className = "stat-hint";
+          t.textContent = "高级传感器暂不可用（刷新失败，将在下个周期重试）。";
+          monList.appendChild(t);
+        }
+        var listBox = $("sysSensorList");
+        if (listBox) {
+          listBox.innerHTML = "";
+          var t2 = document.createElement("div");
+          t2.className = "stat-hint";
+          t2.textContent = "传感器刷新失败（将在下个周期重试）。";
+          listBox.appendChild(t2);
+        }
+      });
   }
 
   /* ================= 硬件信息 + 磁盘容量 + 运行时长 ================= */
@@ -478,16 +498,24 @@
     head.appendChild(st);
     card.appendChild(head);
 
+    // 术语按 docs/UI_TERMINOLOGY.md（AUDIT-1.1.1 BUG-1111-009）：
+    //   上下文窗口上限（原"上下文容量"）/ 输入 Token（原"Prompt Token"）/
+    //   缓存复用 Token / 输出 Token（原"已生成"）/ 剩余输出 Token。
+    // 每行第 3 个元素 = staleWhenIdle：该字段是"当次请求"的运行值，Slot 空闲时
+    // 是上一次请求的残留（is_processing 每 2/10s 更新，但数字字段最长陈旧 ~10s）。
+    // AUDIT-1.1.1 BUG-1111-010：空闲时把这些 per-request 字段淡化 + 标注"上次"，
+    // 避免用户把上一任务的数字误当当前状态。n_ctx / MTP 是配置值，不淡化。
     var rows = [
-      ["上下文容量", s.n_ctx == null ? F.NA : F.formatTokenCount(s.n_ctx)],
-      ["Prompt Token", s.n_prompt_tokens == null ? F.NA : F.formatTokenCount(s.n_prompt_tokens)],
-      ["缓存复用", s.n_prompt_tokens_cache == null ? F.NA : F.formatTokenCount(s.n_prompt_tokens_cache)],
-      ["本次实际处理", s.n_prompt_tokens_processed == null ? F.NA : F.formatTokenCount(s.n_prompt_tokens_processed)],
-      ["已生成", s.next_token && s.next_token.n_decoded != null ? F.formatTokenCount(s.next_token.n_decoded) : F.NA],
-      ["剩余生成上限", s.next_token && s.next_token.n_remain != null && s.next_token.n_remain >= 0 ? F.formatTokenCount(s.next_token.n_remain) : F.NA],
-      ["当前请求缓存复用率", s.cache_reuse_percent == null ? F.NA : F.formatPercent(s.cache_reuse_percent)],
-      ["MTP", s.speculative ? "已启用" : "未启用"],
+      ["上下文窗口上限", s.n_ctx == null ? F.NA : F.formatTokenCount(s.n_ctx), false],
+      ["输入 Token", s.n_prompt_tokens == null ? F.NA : F.formatTokenCount(s.n_prompt_tokens), true],
+      ["缓存复用 Token", s.n_prompt_tokens_cache == null ? F.NA : F.formatTokenCount(s.n_prompt_tokens_cache), true],
+      ["实际处理 Token", s.n_prompt_tokens_processed == null ? F.NA : F.formatTokenCount(s.n_prompt_tokens_processed), true],
+      ["输出 Token", s.next_token && s.next_token.n_decoded != null ? F.formatTokenCount(s.next_token.n_decoded) : F.NA, true],
+      ["剩余输出 Token", s.next_token && s.next_token.n_remain != null && s.next_token.n_remain >= 0 ? F.formatTokenCount(s.next_token.n_remain) : F.NA, true],
+      ["缓存复用率", s.cache_reuse_percent == null ? F.NA : F.formatPercent(s.cache_reuse_percent), true],
+      ["MTP", s.speculative ? "已启用" : "未启用", false],
     ];
+    var idleStale = s.is_processing === false;
     var kv = document.createElement("div");
     kv.className = "gpu-kv";
     rows.forEach(function (r) {
@@ -495,11 +523,19 @@
       k.className = "k";
       k.textContent = r[0];
       var v = document.createElement("span");
-      v.className = "v" + (r[1] === F.NA ? " dim" : "");
+      var staleDim = idleStale && r[2] && r[1] !== F.NA;
+      v.className = "v" + ((r[1] === F.NA || staleDim) ? " dim" : "");
       v.textContent = r[1];
+      if (staleDim) v.title = "Slot 空闲：该值为上一次请求的残留（最长 ~10s 后更新）";
       kv.appendChild(k);
       kv.appendChild(v);
     });
+    if (idleStale) {
+      var note = document.createElement("div");
+      note.className = "slot-stale-note";
+      note.textContent = "空闲中：数字为上一次请求的残留";
+      card.appendChild(note);
+    }
     card.appendChild(kv);
     return card;
   }

@@ -817,15 +817,30 @@ class MetricsCollector:
         if out is None:
             out = sys.stdout.write if sys.stdout is not None else (lambda *_a, **_k: None)
         while True:
+            # AUDIT-1.1.1 GAP-006：try 覆盖整轮（采集 + 输出 + sleep 的 await）。
+            # 原实现 try 只包 collect_once()——out() 抛异常（stdout 关闭）或
+            # sleep 被非 cancel 异常打断都会**杀掉整个采集循环**（采集永久停摆、
+            # 任务消失）。现在任何单轮异常都记日志并继续下一轮；仅 task 被
+            # cancel（停机）才退出循环。
             try:
-                snapshot = await self.collect_once()
-            except Exception as exc:  # 双保险，理论上 collect_once 已捕获一切
-                snapshot = offline_snapshot()
-                snapshot["error"] = repr(exc)
-            # _valid 是内部标记（Phase 11 样本有效性），不进 JSON 输出
-            out_json = {k: v for k, v in snapshot.items() if not k.startswith("_")}
-            out(json.dumps(out_json, ensure_ascii=False, indent=2) + "\n")
-            await asyncio.sleep(self.interval)
+                try:
+                    snapshot = await self.collect_once()
+                except Exception as exc:  # 双保险，理论上 collect_once 已捕获一切
+                    snapshot = offline_snapshot()
+                    snapshot["error"] = repr(exc)
+                # _valid 是内部标记（Phase 11 样本有效性），不进 JSON 输出
+                out_json = {k: v for k, v in snapshot.items() if not k.startswith("_")}
+                out(json.dumps(out_json, ensure_ascii=False, indent=2) + "\n")
+            except asyncio.CancelledError:
+                raise  # 停机 cancel：正常退出
+            except Exception as exc:
+                logger.exception("采集循环单轮异常（已恢复，继续下一轮）: %r", exc)
+            try:
+                await asyncio.sleep(self.interval)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.exception("采集循环 sleep 异常（已恢复，继续下一轮）: %r", exc)
 
 
 def main() -> None:

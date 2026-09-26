@@ -1,4 +1,4 @@
-# LlamaMonitor 性能基线（Phase 14）
+# LlamaMonitor 性能基线（Phase 14，1.1 增补）
 
 > 测量环境：Windows 11 桌面机，LlamaMonitor 0.13.1（安装版，后台模式，
 > 真实 llama-server 127.0.0.1:9091 在产生流量，5s 轮询）。
@@ -68,3 +68,53 @@ WAL size / log size / 覆盖率 / gaps / Today & Total tokens。
   AUDIT-ASYNC-004（keepalive_expiry 联动）与 AUDIT-DATA-003（16MB 上限）
   不改变正常路径延迟（上限只在异常响应时生效）。
 - 长期泄漏验证（RSS/handles 单调性）见 §4 burn-in 每日记录。
+
+## 6. 1.1 复测（1.1.1 审计期实测，2026-09 审计窗口）
+
+> 测量环境：Xeon 8168 / 256 GB / V100-SXM2-32GB；LlamaMonitor 1.1.0 安装版
+> （API 127.0.0.1:8765，真实 llama-server 127.0.0.1:9091 idle），
+> token/GPU 5s、system 2s 轮询，theme system。方法同前（Get-Process + CDP 巡检）。
+> 本节点是 1.1（System / llama Runtime / HardwareSensorBridge 三类新采集）
+> 引入后的**当前基线**，供 1.1.1 / 1.2 对比。
+
+### 6.1 进程资源（1.1 稳态，idle，真实 llama-server 在线）
+
+| 进程 | RSS | CPU | 说明 |
+|---|---|---|---|
+| LlamaMonitor（主） | **~111 MB** | **~2.4% 单核** | 比 0.14.0 after（~147 MB / 1.7%）略低 RSS（本实例采集面更轻）；CPU 略高来自 1.1 新增 System 2s 轮询 + Runtime /slots 2s/10s 分频 |
+| HardwareSensorBridge（1.1 新增，LibreHardwareMonitor） | **~37 MB** | **~0.2% 单核** | 独立 C# 子进程，5s 输出周期；挂死看门狗（3×周期）+ 崩溃退避重启，长期占用稳定 |
+
+观察：
+- 1.1 把"高级硬件传感器"从主进程剥离到独立 Bridge 子进程后，主进程 RSS 不升反降
+  （psutil 基础系统采集在主进程，重量级 LibreHardwareMonitorLib 在 Bridge）；
+- 两个进程合计 CPU < 3% 单核，相对被监控 llama.cpp 推理开销可忽略；
+- 无单调增长趋势（soak 期每日记录见 §4 计划）。
+
+### 6.2 API 延迟（P50，本机 127.0.0.1）
+
+| 端点 | P50 | 备注 |
+|---|---|---|
+| /api/status / /api/summary / /api/mtp / /api/llama/info | **22–35 ms** | 轻查询，索引命中 |
+| /api/data/quality | ~30 ms | 1.1.1 改为 `db.get_gap_totals()` 聚合（PERF-1111-004），不再全表拉 gap |
+| /api/gpu/live?minutes=2880 | **~1.0 s** | 48h GPU 全量物化（PERF-1111-008 延后：48h 保留规模下可接受） |
+| /api/system/live?minutes=1440 | **~0.9 s** | 48h System 全量物化（同上） |
+| /api/daily | ~50 ms | 单次取数 + 预分组；1.1.1 新增 `month=true` 服务端过滤（BUG-1111-005） |
+
+- 1.1.1 的 PERF 修复（PERF-1111-002/003/004/012/013）全部 `asyncio.to_thread` 化
+  阻塞 DB 操作（quick_check / refresh_inventory / clear-live / 每日 CSV 构建），
+  事件循环不再被这些阻塞调用周期性卡住（与 REL-1111-001 同源根因）；
+  P50 轻查询延迟不变，重查询（live 48h）维持秒级——延后项，见 §7。
+
+### 6.3 UI 巡检（1.1.1）
+
+- 8 页（overview/usage/performance/gpu/history/settings×4/about）CDP headless 巡检：
+  **0 console error / 0 page error / 0 network error**；
+- 主题切换（dark/light/system）重绘正常；ECharts 懒加载正常。
+
+## 7. 已知延迟项（1.1.1 记录，未修）
+
+- **PERF-1111-008**：/api/summary、/api/mtp、/api/daily、/api/live、/api/gpu/live
+  全表物化 O(n)。48h 保留（~17k 行/表）规模下 P50 在秒级以内，本机 SSD 实测可接受；
+  若保留期调大（>7d）或换慢盘需再评估。延后至 1.2。
+- **PERF-1111-015**：TPS 为**窗口平均**（delta/秒），短请求的窗口尖峰是设计语义
+  （非 bug）；UI 已加 tooltip 说明。延后（Known Limitation）。

@@ -1,5 +1,7 @@
 # RC Final Report — LlamaMonitor Phase 16
 
+> **历史快照（1.1.1 起标注）**：本文档记录的是当时版本的交付状态，仅作追溯参考；当前版本行为以代码 + docs/AUDIT_1.1.1.md + 当前 CHANGELOG 为准。
+
 > Release Candidate 验证总报告。逐项 PASS/FAIL 明细见 `docs/RC_TEST_REPORT.md`（测试矩阵 items 5-128 + Release Gate）。
 > 本报告为收尾结论：版本演进、Bug 清单、Release Gate 判定、1.0.0 就绪结论。
 

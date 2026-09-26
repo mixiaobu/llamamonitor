@@ -1,5 +1,7 @@
 # UI Bug Audit（Phase 15：Windows 11 Fluent UI Redesign）
 
+> **历史快照（1.1.1 起标注）**：本文档记录的是当时版本的交付状态，仅作追溯参考；当前版本行为以代码 + docs/AUDIT_1.1.1.md + 当前 CHANGELOG 为准。
+
 Sweep 方法（spec §82-84）：先完整通读现有 UI 代码（static/index.html 单文件 2650 行：
 内联 CSS ~335 行 + HTML ~500 行 + JS ~1800 行；static/ 下无其他 JS 文件），
 逐页检查（Dashboard / Settings×10 节），再在 PyWebView 实机复现。
@@ -210,7 +212,7 @@ null 字段（kv_cache_usage_ratio / GPU 传感器）前端均已按 null-safe �
 ## 状态跟踪（Phase 15 完成）
 
 验证方式：PyWebView dev 实例实机 + 同源 iframe harness（7 页遍历 + 主题切换，
-uncaught/console.error 均为 0）+ 397 pytest 全绿 + 截图（docs/screenshots/）。
+uncaught/console.error 均为 0）+ 397 pytest 全绿 + 截图（artifacts/screenshots-legacy/）。
 实机中发现并额外修复 1 个 sweep 未预列的真实 bug：`settings.init()` 从未被调用
 （所有 Settings 事件未绑定，主题切换/保存/测试连接等失效）——已在 app.js init() 补调用。
 
@@ -271,7 +273,7 @@ uncaught/console.error 均为 0）+ 397 pytest 全绿 + 截图（docs/screenshot
   #60cdff/#005fb8、Mica 透底），本次新增 `.status-strip`/`.today-card`/`.today-hero`
   /`.perf-grid`/`.perf-card`/`.section-label` 等组件 + `--font-size-hero:36px`。
 - 证据：DOM dump 实时数据正确填充（在线 / 最后更新于 N 秒前 / GPU 0&1 真实利用率
-  显存温度功耗 / 覆盖率）；截图 docs/screenshots/010_overview_new_dark.png、
+  显存温度功耗 / 覆盖率）；截图 artifacts/screenshots-legacy/010_overview_new_dark.png、
   011_overview_new_light.png。
 
 ### 3. 界面中文化（i18n）

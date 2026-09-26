@@ -1,5 +1,7 @@
 # LlamaMonitor 1.0.0 — Build Information
 
+> **历史快照（1.1.1 起标注）**：本文档记录的是当时版本的交付状态，仅作追溯参考；当前版本行为以代码 + docs/AUDIT_1.1.1.md + 当前 CHANGELOG 为准。
+
 > 构建信息（可复现）。工件发布在 GitHub Release `v1.0.0`。
 
 ## 构建环境

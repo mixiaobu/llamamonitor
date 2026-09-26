@@ -2,7 +2,9 @@
 __pycache__/
 *.py[cod]
 *.egg-info/
+# 任意 .venv-* 虚拟环境（.venv-final / .venv-rc 等，开发期多 venv 并存）
 .venv/
+.venv*/
 venv/
 
 # 构建 / 打包产物
@@ -36,5 +38,3 @@ keys/private*
 update-keys/
 *.pem
 !assets/*.pem
-
-.venv-rc/

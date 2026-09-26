@@ -1,5 +1,7 @@
 # RC Test Report（Phase 16：Release Candidate + End-to-End Validation）
 
+> **历史快照（1.1.1 起标注）**：本文档记录的是当时版本的交付状态，仅作追溯参考；当前版本行为以代码 + docs/AUDIT_1.1.1.md + 当前 CHANGELOG 为准。
+
 > Feature Freeze 起（Phase 16）。只修 BUG/可靠性/兼容性/安全，每条对应 RC-XXX。
 > 状态：`PASS` / `FAIL` / `BLOCKED` / `NOT TESTED` / `ACCEPTED`（见 Accepted Risks）。
 

@@ -66,8 +66,18 @@
       el.textContent = ref ? "最后成功采样：" + F.formatAgo(Math.floor(Date.now() / 1000) - ref) : "";
       el.className = "stat-hint warn";
     } else {
-      el.textContent = "";
-      el.className = "stat-hint";
+      // AUDIT-1.1.1 UX-1111-001：在线且数据已"陈旧"（≥10s 未到新采样，如刷新周期
+      // 调大 / 后台页签恢复 / 一次刷新丢失）时显示"最后更新 X 秒前"，避免用户把
+      // 几分钟前的数字当当前值。5s 正常刷新下 elapsed 通常 <10s，仍保持 16D 的
+      // 常态留空（低信息量不刷屏）。
+      var elapsed = state.lastUpdateTs ? (Math.floor(Date.now() / 1000) - state.lastUpdateTs) : null;
+      if (elapsed != null && elapsed >= 10) {
+        el.textContent = "最后更新：" + F.formatAgo(elapsed);
+        el.className = "stat-hint warn";
+      } else {
+        el.textContent = "";
+        el.className = "stat-hint";
+      }
     }
   }
   setInterval(updateLastUpdateText, 1000);
@@ -273,13 +283,15 @@
 
     // 当前速率（offline 或字段缺失 -> --）
     var on = state.online === true;
-    setStatValue("ovPromptTps", on && data.prompt_tps != null ? F.formatTokenCount(data.prompt_tps) + " tok/s" : F.NA);
-    setStatValue("ovDecodeTps", on && data.decode_tps != null ? F.formatTokenCount(data.decode_tps) + " tok/s" : F.NA);
+    // BUG-1111-004：TPS 是速率（非 token 计数），用 formatTps（1 位小数），
+    // 与 Performance 图表 tooltip 精度一致（此前用 formatTokenCount 恒 2 位）
+    setStatValue("ovPromptTps", on && data.prompt_tps != null ? F.formatTps(data.prompt_tps) + " tok/s" : F.NA);
+    setStatValue("ovDecodeTps", on && data.decode_tps != null ? F.formatTps(data.decode_tps) + " tok/s" : F.NA);
     setStatValue("ovContext", on ? F.formatTokenCount(data.context_max) : F.NA);
     setStatValue("ovRequests", on ? F.formatInt(data.requests_processing) + " / " + F.formatInt(data.requests_deferred) : F.NA);
     // Performance 页指标条 + 运行卡（spec §25/§26）
-    setStatValue("perfPromptTps", on && data.prompt_tps != null ? F.formatTokenCount(data.prompt_tps) + " tok/s" : F.NA);
-    setStatValue("perfDecodeTps", on && data.decode_tps != null ? F.formatTokenCount(data.decode_tps) + " tok/s" : F.NA);
+    setStatValue("perfPromptTps", on && data.prompt_tps != null ? F.formatTps(data.prompt_tps) + " tok/s" : F.NA);
+    setStatValue("perfDecodeTps", on && data.decode_tps != null ? F.formatTps(data.decode_tps) + " tok/s" : F.NA);
     setStatValue("rtContextMax", data.context_max != null ? F.formatTokenCount(data.context_max) : F.NA);
 
     if (state.online === true && state.lastUpdateTs) state.lastSuccessTs = state.lastUpdateTs;
@@ -383,7 +395,7 @@
       var dbEl = $("dqDb");
       if (dbEl) {
         var tone = h.database === "healthy" ? "ok" : h.database === "warning" ? "warn" : "bad";
-        dbEl.textContent = h.database;
+        dbEl.textContent = dbStatusLabel(h.database);  // UX-1111-007：中文化
         dbEl.className = "stat-value mid " + tone;
       }
       var hint = $("dqDbHint");
@@ -426,7 +438,7 @@
         hqEl.style.display = openText ? "" : "none";
       }
       // History 页（同一数据源，独立元素）
-      if ($("hqDb")) $("hqDb").textContent = (h && h.database) || "--";
+      if ($("hqDb")) $("hqDb").textContent = dbStatusLabel(h && h.database);  // UX-1111-007
       if ($("hqDbHint")) $("hqDbHint").textContent =
         (h && h.journal_mode ? h.journal_mode.toUpperCase() + " \u00B7 " : "") + (h && h.database_detail || "") +
         (h && h.application === "degraded" ? " \u00B7 保护模式（只读）" : "");
@@ -447,6 +459,28 @@
     unknown: "未知",
   };
   var GAP_SOURCE_LABELS = { llama: "llama.cpp", application: "LlamaMonitor", gpu: "GPU 采集" };
+  // AUDIT-1.1.1 UX-1111-007：数据库状态 raw 值（healthy/warning/unavailable…）
+  // 中文化显示；未知值回退 raw，绝不显示空白。
+  var DB_STATUS_LABELS = {
+    healthy: "健康",
+    warning: "警告",
+    degraded: "降级（保护模式）",
+    unavailable: "不可用",
+  };
+  function dbStatusLabel(s) { return s ? (DB_STATUS_LABELS[s] || s) : "--"; }
+
+  // AUDIT-1.1.1 BUG-1111-002：HTML 属性转义（用于 title='…' 这类单引号包裹的属性值）。
+  // 此前各处只转义 & < "，缺 ' ——details/reason 含单引号时 title 属性提前闭合，
+  // 后续属性错位（tooltip 残缺 / class 被吞）。这里统一 5 字符转义并集中定义，
+  // 供事件表与缺口表共用（此前事件表在循环内重复定义、缺口表干脆未转义）。
+  function escAttr(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
 
   function renderGapsTable() {
     var tbody = $("gapsTbody");
@@ -481,12 +515,13 @@
       var src = GAP_SOURCE_LABELS[g.source] || g.source || "--";
       var reason = GAP_REASON_LABELS[g.reason] || g.reason || "未知";
       var loss = g.possible_token_loss ? "<td class='cell-bad'>是</td>" : "<td>否</td>";
+      // BUG-1111-002：title 值统一过 escAttr（reason 来自后端，可能含引号/中文）
       return "<tr>" +
-        "<td title='" + startFull + "'>" + start + "</td>" +
-        "<td title='" + endFull + "'>" + end + "</td>" +
+        "<td title='" + escAttr(startFull) + "'>" + start + "</td>" +
+        "<td title='" + escAttr(endFull) + "'>" + end + "</td>" +
         "<td>" + dur + "</td>" +
         "<td>" + src + "</td>" +
-        "<td class='cell-wrap' title='" + reason + "'>" + reason + "</td>" +
+        "<td class='cell-wrap' title='" + escAttr(reason) + "'>" + reason + "</td>" +
         loss + "</tr>";
     }).join("");
   }
@@ -969,7 +1004,9 @@
       case "today": return "/api/daily?days=1";
       case "7d": return "/api/daily?days=7";
       case "30d": return "/api/daily?days=30";
-      case "month": return "/api/daily?days=31"; // 31 天覆盖整月，前端按月份前缀过滤
+      // BUG-1111-005：month 改由服务端过滤（与 /api/summary 的 month_key 同源），
+      // 不再取 31 天回前端按浏览器本地前缀过滤
+      case "month": return "/api/daily?month=true";
       case "all":
       default: return "/api/daily?all=true";
     }
@@ -978,12 +1015,8 @@
   function refreshDaily() {
     return api.get(dailyQuery())
       .then(function (d) {
+        // BUG-1111-005：服务端已按 mode 过滤（days / month / all），前端不再二次过滤
         var rows = d.days || [];
-        if (state.dailyRangeMode === "month") {
-          var d2 = new Date();
-          var key = d2.getFullYear() + "-" + String(d2.getMonth() + 1).padStart(2, "0");
-          rows = rows.filter(function (r) { return String(r.date).indexOf(key) === 0; });
-        }
         state.dailyData = rows;
         charts.renderUsageChart("chartUsageBox", "chartUsage", state.dailyData);
         charts.renderMtpChart("chartMtpBox", "chartMtp", state.dailyData);
@@ -1073,7 +1106,17 @@
     return api.get("/api/events?limit=30")
       .then(function (d) {
         state.events = d.events || [];
+        // AUDIT-1.1.1 UX-1111-006：轮询会全量重建事件表，若"查看更多/收起"按钮
+        // 正持有焦点会被销毁（焦点丢到 body，键盘用户迷失）。记录旧按钮、
+        // 重建后把焦点还给新按钮。
+        var focusEl = document.activeElement;
+        var wasMoreBtn = focusEl && focusEl.classList &&
+          focusEl.classList.contains("events-more");
         renderEventsList();
+        if (wasMoreBtn) {
+          var btn = document.querySelector(".events-more");
+          if (btn && btn.focus) { try { btn.focus(); } catch (e) {} }
+        }
       })
       .catch(function (e) { console.warn("events failed:", e.message || e); });
   }
@@ -1108,15 +1151,17 @@
       try {
         rawDetail = ev.details && typeof ev.details === "object" ? JSON.stringify(ev.details) : (ev.details || "");
       } catch (e) { rawDetail = String(ev.details || ""); }
-      var esc = function (s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); };
+      // BUG-1111-002：统一走模块级 escAttr（含 ' 转义），title 与 cell 文本都转义
       return "<tr>" +
-        "<td title='" + esc(full) + "'>" + esc(time) + "</td>" +
-        "<td class='ev-type" + sev + "' title='" + esc(ev.event_type) + "'>" + esc(label) + "</td>" +
-        "<td class='ev-detail' title='" + esc(rawDetail || detail) + "'>" + esc(detail) + "</td>" +
+        "<td title='" + escAttr(full) + "'>" + escAttr(time) + "</td>" +
+        "<td class='ev-type" + sev + "' title='" + escAttr(ev.event_type) + "'>" + escAttr(label) + "</td>" +
+        "<td class='ev-detail' title='" + escAttr(rawDetail || detail) + "'>" + escAttr(detail) + "</td>" +
         "</tr>";
     }).join("");
-    // "查看更多"（仅当还有未显示的行）—— 表格末行
-    if (!eventsExpanded && events.length > EVENTS_PAGE_SIZE) {
+    // "查看更多" / "收起"（仅当事件数超出单页时）—— 表格末行。
+    // AUDIT-1.1.1 UX-1111-006：展开后提供"收起"toggle（此前只能一直展开），
+    // 且按钮保留 events-more class 以便轮询重建时恢复焦点（见 refreshEvents）。
+    if (events.length > EVENTS_PAGE_SIZE) {
       var tr = document.createElement("tr");
       tr.className = "events-more-row";
       var td = document.createElement("td");
@@ -1124,11 +1169,19 @@
       var b = document.createElement("button");
       b.type = "button";
       b.className = "btn small subtle events-more";
-      b.textContent = "查看更多（还有 " + (events.length - EVENTS_PAGE_SIZE) + " 条）";
-      b.addEventListener("click", function () {
-        eventsExpanded = true;
-        renderEventsList();
-      });
+      if (eventsExpanded) {
+        b.textContent = "收起（显示前 " + EVENTS_PAGE_SIZE + " 条）";
+        b.addEventListener("click", function () {
+          eventsExpanded = false;
+          renderEventsList();
+        });
+      } else {
+        b.textContent = "查看更多（还有 " + (events.length - EVENTS_PAGE_SIZE) + " 条）";
+        b.addEventListener("click", function () {
+          eventsExpanded = true;
+          renderEventsList();
+        });
+      }
       td.appendChild(b);
       tr.appendChild(td);
       tbody.appendChild(tr);
@@ -1311,7 +1364,10 @@
       intervalMs: 60000, visibleIntervalMs: 30000, visibleOnly: true,
       run: function () {
         var p = LM.nav.currentPage();
-        if (p === "usage" || p === "history") return refreshDaily();
+        // BUG-1111-003：performance 页也有 MTP 趋势图（/api/daily 按天），
+        // 此前 daily 轮询只在 usage/history 触发，performance 页停留期间
+        // 跨天数据不更新。加入 performance，使该页 chartMtp 与实时卡片同步。
+        if (p === "usage" || p === "history" || p === "performance") return refreshDaily();
       },
     });
     LM.poll.register("gpuLive", {

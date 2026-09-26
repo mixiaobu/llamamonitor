@@ -583,6 +583,66 @@ class Database:
             return True, None
         return False, str(result)
 
+    def quick_check_threadsafe(self) -> tuple[bool, str | None]:
+        """
+        AUDIT-1.1.1 PERF-1111-002：线程安全的 quick_check（供 API 经
+        asyncio.to_thread 调用，不阻塞事件循环）。
+
+        与 backup.py 同模式：在**调用线程内新建独立连接**做只读检查，绝不跨线程
+        复用主连接（sqlite3 默认 check_same_thread=True）。独立连接打开 WAL 库时
+        自动包含已存在的 -wal/-shm 内容，读到的是当前一致状态。
+        健康状态更新在主连接线程（端点）完成，这里只返回结果。
+        """
+        conn = sqlite3.connect(self.path, timeout=BUSY_TIMEOUT_MS / 1000.0)
+        try:
+            row = conn.execute("PRAGMA quick_check;").fetchone()
+            result = row[0] if row else None
+        except sqlite3.DatabaseError as exc:
+            return False, str(exc)
+        finally:
+            conn.close()
+        if result == "ok":
+            return True, None
+        return False, str(result)
+
+    def clear_live_samples_threadsafe(self, vacuum: bool = True) -> int:
+        """
+        AUDIT-1.1.1 PERF-1111-012：线程安全的"清空实时历史"（DELETE live/gpu
+        + 可选 VACUUM），供 clear-live API 经 asyncio.to_thread 调用，不阻塞
+        事件循环。
+
+        - DELETE 在调用线程新建的独立连接上执行（busy_timeout 覆盖锁等待），
+          与主连接写操作由 SQLite 锁 + busy_timeout 协调（WAL 下读不阻塞）；
+        - VACUUM 在独立连接上执行，持 _write_lock 与其他写操作串行化；
+          VACUUM 不能在事务内执行，放独立连接最干净（与 backup.py 同模式）。
+        """
+        conn = sqlite3.connect(self.path, timeout=BUSY_TIMEOUT_MS / 1000.0)
+        try:
+            with conn:
+                deleted = conn.execute("DELETE FROM live_samples").rowcount
+                deleted += conn.execute("DELETE FROM gpu_samples").rowcount
+        finally:
+            conn.close()
+        if vacuum:
+            self.vacuum_threadsafe()
+        return deleted
+
+    def vacuum_threadsafe(self) -> None:
+        """
+        AUDIT-1.1.1 PERF-1111-012：线程安全的 VACUUM（供 clear-live 经
+        asyncio.to_thread 调用，不阻塞事件循环）。
+
+        在调用线程内新建独立连接执行 VACUUM（不能在事务内），持 _write_lock 与
+        其他写操作串行化（VACUUM 需独占写，避免与并发写竞争）。WAL 模式下
+        读不被阻塞，采集继续。VACUUM 只收缩文件，不丢数据；失败由调用方兜底。
+        """
+        conn = sqlite3.connect(self.path, timeout=BUSY_TIMEOUT_MS / 1000.0)
+        try:
+            with self._write_lock:
+                conn.execute("VACUUM")
+        finally:
+            conn.close()
+
     def checkpoint(self, mode: str = "PASSIVE") -> None:
         """
         PRAGMA wal_checkpoint（默认 PASSIVE）。
@@ -1095,15 +1155,71 @@ class Database:
         """
         某自然日的缺口统计：gap_count / possible_token_loss(是否存在) /
         total_gap_seconds / token_recoverable(是否全部可恢复)。
+
+        AUDIT-1.1.1 PERF-1111-004：改用单条 SQL 聚合（COUNT/SUM/MAX/MIN），
+        不再拉取最多 10 万行 Python 物化——data_gaps 永久保留，长期运行后
+        原实现每轮轮询 O(n) 全表扫描。日期边界与 get_gaps(date=) 同一口径
+        （本地 00:00，DST 安全）。
         """
-        gaps = self.get_gaps(date=date, limit=100000)
-        total = sum(g["duration_seconds"] for g in gaps)
+        start_dt = datetime.strptime(date, "%Y-%m-%d")
+        start_day = start_dt.timestamp()
+        end_day = (start_dt + timedelta(days=1)).timestamp()
+        conn = self._connect()
+        row = conn.execute(
+            "SELECT COUNT(*), COALESCE(SUM(duration_seconds), 0), "
+            "COALESCE(MAX(possible_token_loss), 0), COALESCE(MIN(token_recoverable), 1) "
+            "FROM data_gaps WHERE start_timestamp < ? AND end_timestamp >= ?",
+            (end_day, start_day),
+        ).fetchone()
         return {
-            "gap_count": len(gaps),
-            "possible_token_loss": any(g["possible_token_loss"] for g in gaps),
-            "total_gap_seconds": total,
-            "token_recoverable": all(g["token_recoverable"] for g in gaps) if gaps else True,
+            "gap_count": row[0],
+            "possible_token_loss": bool(row[2]),
+            "total_gap_seconds": row[1] or 0.0,
+            "token_recoverable": bool(row[3]),
         }
+
+    def gap_stats_threadsafe(self, date: str) -> dict:
+        """
+        AUDIT-1.1.1 PERF-1111-013：线程安全的 get_gap_stats（供 CSV 导出经
+        asyncio.to_thread 逐行调用，不跨线程复用主连接）。与 get_gap_stats 同
+        边界约定（DST-safe end_day）；独立连接 + 只读，WAL 下读到一致快照。
+        """
+        from datetime import datetime as _dt
+        start_dt = _dt.strptime(date, "%Y-%m-%d")
+        start_day = start_dt.timestamp()
+        end_day = (start_dt + timedelta(days=1)).timestamp()
+        conn = sqlite3.connect(self.path, timeout=BUSY_TIMEOUT_MS / 1000.0)
+        try:
+            row = conn.execute(
+                "SELECT COUNT(*), COALESCE(SUM(duration_seconds), 0), "
+                "COALESCE(MAX(possible_token_loss), 0), COALESCE(MIN(token_recoverable), 1) "
+                "FROM data_gaps WHERE start_timestamp < ? AND end_timestamp >= ?",
+                (end_day, start_day),
+            ).fetchone()
+        except sqlite3.DatabaseError:
+            return {"gap_count": 0, "possible_token_loss": False,
+                    "total_gap_seconds": 0.0, "token_recoverable": True}
+        finally:
+            conn.close()
+        return {
+            "gap_count": row[0],
+            "possible_token_loss": bool(row[2]),
+            "total_gap_seconds": row[1] or 0.0,
+            "token_recoverable": bool(row[3]),
+        }
+
+    def get_gap_totals(self) -> tuple[int, bool]:
+        """
+        全部缺口的 (count, 是否存在 possible_token_loss)。
+
+        AUDIT-1.1.1 PERF-1111-004：/api/data/quality 的 total 统计此前用
+        get_gaps(limit=100000) 物化最多 10 万行只为算这两个值——改为聚合。
+        """
+        conn = self._connect()
+        row = conn.execute(
+            "SELECT COUNT(*), COALESCE(MAX(possible_token_loss), 0) FROM data_gaps"
+        ).fetchone()
+        return (row[0], bool(row[1]))
 
     def get_first_and_last_sample(self) -> tuple[float | None, float | None]:
         """(首次, 最近) 有效 live_sample 的 timestamp（Unix 秒）；无数据 -> (None, None)。"""
@@ -1445,6 +1561,7 @@ class Database:
         daily_increments: dict | None = None,
         now: float | None = None,
         retention_seconds: float = 48 * 3600,
+        cpu_energy_wh_by_date: dict | None = None,
     ) -> None:
         """
         持久化一条 system_samples（schema v5）+ 增量累计 system_daily（单事务）。
@@ -1453,6 +1570,9 @@ class Database:
           缺失/None 列不写入（保持 NULL，绝不写 0 冒充不可用值）；
         - daily_increments: {列名: 增量}（流量累计 bytes、能量 Wh；avg/max 列不在此处理——
           由 system_daily 聚合时从 samples 计算）；
+        - cpu_energy_wh_by_date: {date: 本轮新增 CPU 能耗 Wh}（AUDIT-1.1.1 DATA-1111-006；
+          跨午夜分割后可能含两个日期；为空时 cpu_energy_wh 仍走 daily_increments 旧路径，
+          全部归样本自身日期）；
         - retention_seconds: 超过保留时长的 system_samples 删除（config.system.history_retention_hours）。
         与 GPU 写入同模式：有限重试，失败整体回滚（调用方保留内存基线）。
         """
@@ -1460,6 +1580,7 @@ class Database:
         now = time.time() if now is None else now
         daily = daily_increments or {}
         date = local_date(now)
+        cpu_energy_by_date = {d: float(v) for d, v in (cpu_energy_wh_by_date or {}).items() if v}
         cols = [c for c in sample if c != "timestamp"]
 
         def _do() -> None:
@@ -1484,6 +1605,16 @@ class Database:
                             f"INSERT INTO system_daily(date, {col}) VALUES(?, ?) "
                             f"ON CONFLICT(date) DO UPDATE SET {col} = {col} + excluded.{col}",
                             (date, _num(v)),
+                        )
+                # AUDIT-1.1.1 DATA-1111-006：CPU 能耗按自然日分别入账（跨午夜段
+                # 的前一天部分归旧一天）。若 daily_increments 已含 cpu_energy_wh
+                # （旧调用方），此处跳过以免双计。
+                if cpu_energy_by_date and "cpu_energy_wh" not in daily:
+                    for d, wh in cpu_energy_by_date.items():
+                        conn.execute(
+                            "INSERT INTO system_daily(date, cpu_energy_wh) VALUES(?, ?) "
+                            "ON CONFLICT(date) DO UPDATE SET cpu_energy_wh = cpu_energy_wh + excluded.cpu_energy_wh",
+                            (d, _num(wh)),
                         )
                 conn.execute(
                     "DELETE FROM system_samples WHERE timestamp < ?",

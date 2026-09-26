@@ -7,6 +7,79 @@
 > 互相视为"不同系列"：安装器降级保护按数值比较（1.0.0 > 0.13.x），从 1.0.0 安装
 > 0.13.x 会被识别为降级并拒绝（实测行为，非缺陷）。
 
+## [1.1.1] - 2026-09-27
+
+**Quality & UX 维护版（Quality & UX Maintenance Release）**。基于 1.1.0 的全项目
+质量审计（0 BLOCKER / 8 HIGH / 全部 MEDIUM 修复），不新增功能、不改变既有 Token /
+GPU / System 监控语义。数据库 schema **保持 5**（1.1.0→1.1.1 直接兼容，无迁移；
+已用真实已装库验证无损升级）。
+
+### 正确性
+- `/api/mtp` 的"今日"此前用 wall `local_date()`，而兄弟端点全用 `collector.clock`
+  （跨午夜 00:00:00→首个采集之间显示昨日数据，与 1.1.0 BUG-A 同类、漏网一个端点）。
+  现改为与 `/api/summary` 同源。回归测试 `test_mtp_rollover_across_midnight`。
+- CPU 能耗跨午夜不分割（GPU 侧有 `_split_energy_across_midnight`，口径不一致）——
+  现对齐。回归测试 `test_midnight_split` / `test_midnight_split_db_attribution`。
+- 事件表 / 缺口表 `title='…'` 属性裸拼 reason/detail，单引号截断致 tooltip 残缺 /
+  class 被吞。现统一过模块级 `escAttr`（转义 `& < > " '` 五字符）。回归测试
+  `test_escattr_escapes_quotes_for_title_attr`。
+- "本月"图表/表格此前走浏览器时区前端过滤（与服务端 `month_key` 不同步时差 1 天）。
+  现改服务端 `?month=true` 过滤。回归测试 `test_daily_month_filter_server_side`。
+
+### 稳定 / 性能
+- system 采集器每 2s 同步 psutil 阻塞事件循环（~20-50ms/次）→ 拆独立任务 +
+  `to_thread`。`check-database`/`inventory?manual`/clear-live `VACUUM`/CSV 导出
+  同样移出事件循环（`*threadsafe` 系列）。
+- `/api/data/quality` 每轮 `get_gaps(limit=100000)` 全量物化 → `get_gap_totals`
+  聚合查询。回归测试 `test_quality_endpoint_does_not_scan_all_live_samples`。
+- llama Runtime health 状态机无 debounce，单次抖动即翻 Unavailable + 记事件 →
+  2 次连续失败才翻转。回归测试 `test_health_single_transient_fail_does_not_flip`。
+- poller 循环 `out()`/`sleep` 异常会静默杀循环（无测试）→ 补异常保护 + 回归测试
+  （`test_collect_once_exception_does_not_kill_loop` / `test_out_exception_does_not_kill_loop`
+  / `test_cancel_cleans_up_loop`）。
+- 主进程硬杀后孤儿 `HardwareSensorBridge.exe` → 启动时 `sweep_orphans()` 清扫同签名
+  孤儿进程（Job Object 方案延后 1.2）。
+
+### 可靠 / 易用
+- bridge reader 线程 `readline` 无超时，静默卡死不重启 → `_pump_stdout` 心跳超时
+  （3× 采样间隔无输出 → kill+退避重启）。回归测试 `test_hang_returns_true_and_kills`。
+- 全部备份测试 `wal=False`，WAL 模式备份未测 → 补 `WalModeBackupTests`（一致性 /
+  完整性 / 关闭前备份）。回归测试 `test_wal_source_backup_is_consistent_and_complete`。
+- 未处理异常 500 契约无测试 → 补 `test_unhandled_exception_500_contract`
+  （`INTERNAL_ERROR`，不泄 body / traceback）。
+- 在线态"最后更新"被清空、数据新鲜度不可见 → 现显示"最后更新 X 秒前"（每秒刷新）。
+  回归测试 `test_online_shows_last_update_age`。
+- Performance 页 MTP 趋势图停留期间 / 跨页不更新 → 注册独立 `mtp` poller
+  （`visibleOnly:false`）。回归测试 `test_mtp_poller_updates_performance_trend`。
+- Token 计数格式化精度不一（卡片 2 位 / 图表 1 位）→ `compact()` 统一。
+- 事件"查看更多"被轮询全量重建致焦点丢失 → 焦点记录 + 重建后恢复。
+- Slot 任务结束后 per-request 字段陈旧最长 ~10s（`is_processing` 正确但数字 stale）
+  → 空闲残留值淡化 + 注脚"上一次请求的残留"，不当当前状态。回归测试
+  `test_slot_stale_semantics_present`。
+- 数据质量卡 DB 状态显示英文 raw 值 → 中文化（健康/警告/降级/不可用）；设置页
+  传感器"加载中"占位不再永久残留（刷新失败写终态）。
+
+### 文档一致性
+- README：`/metrics` 单一端点声明、设置分区矛盾、废弃术语修正；`config.example.json`
+  从 `config.py DEFAULT_CONFIG` 重新生成（消除漂移 + 补 system 段）；
+  `docs/API.md` 补全部 1.1 端点；`ARCHITECTURE.md` / `METRICS_DEFINITIONS.md` /
+  `PERFORMANCE.md` / `STORAGE_ESTIMATE.md` 更新到 1.1 基线（补 system 指标 + 1.1 复测节）；
+  `UI_TERMINOLOGY.md` 补 1.1 新词节；`RELEASE.md` 版本示例参数化。
+- 16 个历史审计/发布报告各加 historical 头横幅（"1.1.1 起标注"，仅作追溯参考）。
+
+### 仓库 / 构建卫生
+- `.gitignore` 收编 `.venv*/`；97 张 tracked 开发截图移 `artifacts/`（`git mv`）；
+  `REAL_SOAK_TEST.md` 移 `docs/`。
+- `build.bat` 补 `--add-data` HardwareSensorBridge.exe + DLL（此前"同一套 flags"
+  注释失实，便携版可能缺桥）；`THIRD_PARTY_NOTICES.txt` 移除未使用/未导入的
+  pefile / xlrd"残留登记"；`release.yml` 注释举例参数化。
+
+### 测试
+- 全量 `python -m unittest discover -s tests`：**506 例全绿**（1.1.0 基线 487，
+  +19 回归：bridge stdout 泵送 4 + poller 循环 3 + WAL 备份 2 + 500 契约 1 +
+  跨午夜 MTP 1 + runtime health debounce 1 + CPU 跨午夜 DB 归属 1 + slot 残留语义
+  1 + 前端 HIGH 回归 3：escAttr / MTP poller / lastUpdate）。
+
 ## [1.1.0] - 2026-09-26
 
 **System & Hardware Telemetry**。新增系统页（8 个区块）、llama.cpp Runtime

@@ -172,9 +172,35 @@ class ServerStateTests(unittest.TestCase):
         self.assertEqual(c.server_state, "loading")
 
     def test_health_network_fail_is_unavailable(self):
-        c = self._collector({"/health": (404, {})})  # 404 -> 非 200 -> unavailable
+        # AUDIT-1.1.1 REL-1111-005：连续 2 次失败才判定不可用
+        c = self._collector({"/health": (404, {})})  # 404 -> 非 200
         _run(c.fetch_health())
-        self.assertEqual(c.server_state, "unavailable")
+        self.assertEqual(c.server_state, "unavailable")  # 第 1 次：计数=1，尚未翻转
+        # 重新置回 ready 再连续失败，验证"连续"语义
+        c2 = self._collector({"/health": (200, {"status": "ok"})})
+        _run(c2.fetch_health())
+        self.assertEqual(c2.server_state, "ready")
+        c2._http = _mk_client({"/health": (404, {})})  # 之后开始失败
+        _run(c2.fetch_health())  # 第 1 次失败：去抖，保持 ready
+        self.assertEqual(c2.server_state, "ready")
+        _run(c2.fetch_health())  # 第 2 次失败：判定 unavailable
+        self.assertEqual(c2.server_state, "unavailable")
+
+    def test_health_single_transient_fail_does_not_flip(self):
+        """AUDIT-1.1.1 REL-1111-005 回归：单次偶发失败不翻转 Server State。"""
+        c = self._collector({"/health": (200, {"status": "ok"})})
+        _run(c.fetch_health())
+        self.assertEqual(c.server_state, "ready")
+        # 一次偶发 500（网络抖动）：计数=1，仍 ready（不记 unavailable 事件）
+        c._http = _mk_client({"/health": (500, {})})
+        _run(c.fetch_health())
+        self.assertEqual(c.server_state, "ready")
+        self.assertEqual(c._health_fail_count, 1)
+        # 恢复一次：计数清零
+        c._http = _mk_client({"/health": (200, {"status": "ok"})})
+        _run(c.fetch_health())
+        self.assertEqual(c._health_fail_count, 0)
+        self.assertEqual(c.server_state, "ready")
 
     def test_slots_501_capability_stays_false(self):
         c = self._collector({"/slots": (501, {})})

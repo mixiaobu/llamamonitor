@@ -58,6 +58,51 @@ class DashboardApiTests(unittest.TestCase):
         collector._fetch_parsed = _fetch_parsed
         client.portal.call(collector.collect_once)
 
+    def test_daily_month_filter_server_side(self):
+        """
+        AUDIT-1.1.1 BUG-1111-005 回归：/api/daily?month=true 只在服务端按本机
+        自然月（local_date 前缀 YYYY-MM）过滤，与 /api/summary 的 month_key 同源。
+        此前前端取 31 天回浏览器按本地前缀过滤——日期来源分离。
+        """
+        from db import local_date
+        db = Database(self.tmp / "t_month.db")
+        collector = MetricsCollector(make_config(), db)
+        app = build_app(db, collector)
+        client = TestClient(app)
+        client.__enter__()
+        try:
+            now_date = local_date(collector.clock.now())
+            # 直接造两行：本月一行 + 上个月一行（绕过 collector，纯验证过滤）
+            prev_month_date = (now_date[:7] + "-01")
+            # 上个月：把本月 01 往前推一个自然月
+            import calendar
+            y, m = int(now_date[:4]), int(now_date[5:7])
+            pm = m - 1 if m > 1 else 12
+            py = y if m > 1 else y - 1
+            prev_month_date = "%04d-%02d-15" % (py, pm)
+            this_month_other = now_date[:7] + "-05"
+            def _insert_rows():
+                conn = db._connect()
+                with conn:
+                    for d in (prev_month_date, this_month_other, now_date):
+                        conn.execute(
+                            "INSERT INTO daily_usage(date, prompt_tokens) VALUES(?, 10) "
+                            "ON CONFLICT(date) DO UPDATE SET prompt_tokens = 10", (d,))
+            client.portal.call(_insert_rows)
+            # month=true：只返回本月（含 now_date 与 this_month_other，不含上月）
+            data = client.get("/api/daily", params={"month": True}).json()
+            dates = {r["date"] for r in data["days"]}
+            self.assertIn(now_date, dates)
+            self.assertIn(this_month_other, dates)
+            self.assertNotIn(prev_month_date, dates)
+            for d in dates:
+                self.assertEqual(d[:7], now_date[:7])  # 全是本月
+            # all=true：三行都返回（含上月）
+            data_all = client.get("/api/daily", params={"all": True}).json()
+            self.assertIn(prev_month_date, {r["date"] for r in data_all["days"]})
+        finally:
+            client.__exit__(None, None, None)
+
     def test_daily_includes_mtp_accept_rate(self):
         db = Database(self.tmp / "t.db")
         collector = MetricsCollector(make_config(), db)

@@ -27,6 +27,8 @@ BASE = 1_789_000_000.0
 
 
 class TestBase(unittest.TestCase):
+    wal = False  # 默认非 WAL；WAL 回归测试子类覆盖
+
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self.tmp = Path(self._tmp.name)
@@ -38,7 +40,7 @@ class TestBase(unittest.TestCase):
         self._tmp.cleanup()
 
     def _make_db(self) -> None:
-        d = Database(self.db_path, wal=False)
+        d = Database(self.db_path, wal=self.wal)
         try:
             d.apply_sample(
                 {"llamacpp:prompt_tokens_total": 1234},
@@ -120,6 +122,92 @@ class CreateBackupTests(TestBase):
         # 新文件被删除，旧备份还在
         self.assertFalse(Path(new.path).exists())
         self.assertTrue(Path(old.path).exists())
+
+
+class WalModeBackupTests(TestBase):
+    """AUDIT-1.1.1 GAP-003：WAL 模式备份回归。
+
+    1.1.0 起数据库默认 WAL（-wal / -shm 旁挂文件）。此前所有备份测试都
+    wal=False，从未覆盖"WAL 模式下用 Online Backup API 备份"这条真实路径。
+    验证：WAL 源库 -> create_backup 成功 + 验证通过 + 备份可读且含全部数据
+    （Online Backup API 产出一致快照，不会拷进半写入的 WAL 内容）。"""
+
+    wal = True
+
+    def test_wal_source_backup_is_consistent_and_complete(self):
+        m = self.mgr()
+        # 源库现在是 WAL 模式；再追加一批写入，确保 WAL 里有未 checkpoint 内容
+        d = Database(self.db_path, wal=True)
+        try:
+            for i in range(5):
+                d.apply_sample(
+                    {"llamacpp:prompt_tokens_total": 1000 + i},
+                    {"timestamp": BASE + i, **{c: None for c in ("prompt_delta", "cached_delta", "output_delta",
+                                                                "prompt_tps", "decode_tps", "requests_processing",
+                                                                "requests_deferred", "context_max", "mtp_accept_rate",
+                                                                "kv_cache_usage_ratio", "busy_slots")}},
+                    "2026-09-15",
+                    {"prompt_tokens": 1000 + i, "cached_tokens": 0, "output_tokens": 0,
+                     "draft_tokens": 0, "accepted_tokens": 0, "prompt_seconds": 0.0,
+                     "predicted_seconds": 0.0, "draft_sequences": 0},
+                    now=BASE + i,
+                )
+            # 确认源库确实是 WAL 模式
+            mode = d._connect().execute("PRAGMA journal_mode").fetchone()[0]
+            self.assertEqual(mode.lower(), "wal")
+        finally:
+            d.close()
+
+        result = m.create_backup("automatic")
+        self.assertTrue(result.success)
+        self.assertTrue(result.verified)
+        p = Path(result.path)
+        # 备份可读、quick_check 通过、含源数据
+        conn = sqlite3.connect(f"file:{p}?mode=ro", uri=True)
+        try:
+            self.assertEqual(conn.execute("PRAGMA integrity_check").fetchone()[0], "ok")
+            # state 表应反映最后写入的 metric（1004）
+            row = conn.execute(
+                "SELECT value FROM state WHERE metric_name='llamacpp:prompt_tokens_total'"
+            ).fetchone()
+            self.assertIsNotNone(row)
+            self.assertEqual(float(row[0]), 1004.0)
+            # live_samples 含 6 条（初始 1 + 追加 5）
+            n = conn.execute("SELECT COUNT(*) FROM live_samples").fetchone()[0]
+            self.assertEqual(n, 6)
+        finally:
+            conn.close()
+
+    def test_wal_backup_with_pending_write_then_close(self):
+        """源库关闭前未 checkpoint 的 WAL 内容也必须进备份（一致性快照）。"""
+        m = self.mgr()
+        d = Database(self.db_path, wal=True)
+        d.apply_sample(
+            {"llamacpp:prompt_tokens_total": 7777},
+            {"timestamp": BASE + 99, **{c: None for c in ("prompt_delta", "cached_delta", "output_delta",
+                                                          "prompt_tps", "decode_tps", "requests_processing",
+                                                          "requests_deferred", "context_max", "mtp_accept_rate",
+                                                          "kv_cache_usage_ratio", "busy_slots")}},
+            "2026-09-16",
+            {"prompt_tokens": 7777, "cached_tokens": 0, "output_tokens": 0,
+             "draft_tokens": 0, "accepted_tokens": 0, "prompt_seconds": 0.0,
+             "predicted_seconds": 0.0, "draft_sequences": 0},
+            now=BASE + 99,
+        )
+        # 不 close（留 WAL 未 checkpoint），直接对仍打开的库做备份
+        result = m.create_backup("manual")
+        d.close()
+        self.assertTrue(result.success)
+        self.assertTrue(result.verified)
+        conn = sqlite3.connect(f"file:{result.path}?mode=ro", uri=True)
+        try:
+            self.assertEqual(conn.execute("PRAGMA integrity_check").fetchone()[0], "ok")
+            row = conn.execute(
+                "SELECT value FROM state WHERE metric_name='llamacpp:prompt_tokens_total'"
+            ).fetchone()
+            self.assertEqual(float(row[0]), 7777.0)
+        finally:
+            conn.close()
 
 
 class VerifyTests(TestBase):

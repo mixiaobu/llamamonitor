@@ -1,7 +1,8 @@
 # LlamaMonitor 架构（线程边界 / async 事件循环 / 数据库访问 / 生命周期 ownership）
 
 > Phase 14 产物。目的：明确**谁创建资源、谁负责关闭、谁依赖谁**，供审计对照。
-> 与代码逐行一致（v0.13.1 基线）；任何架构变化必须同步本文档。
+> 与代码逐行一致（1.1.1 基线；1.1 新增 System / llama Runtime / HardwareSensorBridge
+> 采集，任务清单随之更新）；任何架构变化必须同步本文档。
 
 ## 1. 总览
 
@@ -32,11 +33,15 @@ LlamaMonitor.exe（或 python desktop.py）
    │       │   2. maybe_note_restart_gap() + monitor_start 事件
    │       │   3. collector.collect_once()（首采，建 baseline）
    │       │   4. gpu.poll_once()（如启用）
-   │       │   5. create_task x4：_periodic（llama 采集）/ _gpu_periodic /
-   │       │      _backup_periodic / _update_auto_check
+   │       │   5. sensors.start()（HardwareSensorBridge 监督线程，非 asyncio task）
+   │       │   6. create_task x6（1.1 起，均为独立 asyncio task）：
+   │       │      _periodic（llama 采集）/ _system_periodic（System，启用时）/
+   │       │      runtime.run()（llama Runtime，存在时）/ _gpu_periodic（GPU 启用时）/
+   │       │      _backup_periodic（自动备份启用时）/ _update_auto_check（一次性）
    │       ├─ FastAPI 路由（同步 handler 在线程池 / async handler 在事件循环）
    │       └─ lifespan 关闭（should_exit 触发）：
-   │           cancel+await 4 个任务 -> collector.shutdown() -> collector.aclose()
+   │           cancel+await 全部任务 -> sensors.stop() -> collector.shutdown()
+   │           -> collector.aclose()
    │           -> db.checkpoint(PASSIVE) -> db.close()
    │
    ├─ 线程 T-ui（llamamonitor-ui，daemon）

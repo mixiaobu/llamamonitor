@@ -205,32 +205,92 @@ class EnergyIntegrationTests(unittest.TestCase):
     def test_trapezoid_integration(self):
         c, db = _make_collector(self.tmp, self.clock)
         mono = self.clock.monotonic()
-        # 上一轮 power=200；本轮（5s 后）power=300
-        c._cpu_power_prev = (mono, 200.0)
+        # 上一轮 power=200；本轮（5s 后）power=300（同一天，wall=mono 同步）
+        c._cpu_power_prev = (mono, mono, 200.0)
         c.advanced_cpu_power_w = 300.0
         # 5s <= 3*history_interval(5s)=15s -> 梯形 (200+300)/2 * 5/3600
-        delta = c._cpu_energy_delta(mono + 5.0)
-        self.assertAlmostEqual(delta, 250.0 * 5.0 / 3600.0, places=9)
+        out = c._cpu_energy_delta(mono + 5.0, mono + 5.0)
+        self.assertAlmostEqual(sum(out.values()), 250.0 * 5.0 / 3600.0, places=9)
 
     def test_gap_exceeds_limit_not_integrated(self):
         c, db = _make_collector(self.tmp, self.clock)
         mono = self.clock.monotonic()
-        c._cpu_power_prev = (mono, 200.0)
+        c._cpu_power_prev = (mono, mono, 200.0)
         c.advanced_cpu_power_w = 300.0
         # gap = 20s > 3×history_interval(5s)=15s -> 睡眠/断档不积分
-        delta = c._cpu_energy_delta(mono + 20.0)
-        self.assertEqual(delta, 0.0)
+        out = c._cpu_energy_delta(mono + 20.0, mono + 20.0)
+        self.assertEqual(out, {})
         # 基线仍更新到本轮（避免之后从旧点补算一大段）
         self.assertEqual(c._cpu_power_prev[0], mono + 20.0)
 
     def test_no_power_no_integration(self):
         c, db = _make_collector(self.tmp, self.clock)
         mono = self.clock.monotonic()
-        c._cpu_power_prev = (mono, 200.0)
+        c._cpu_power_prev = (mono, mono, 200.0)
         c.advanced_cpu_power_w = None
         # power 缺失 -> 该段不积分，且基线清空
-        self.assertEqual(c._cpu_energy_delta(mono + 5.0), 0.0)
+        self.assertEqual(c._cpu_energy_delta(mono + 5.0, mono + 5.0), {})
         self.assertIsNone(c._cpu_power_prev)
+
+    def test_midnight_split(self):
+        """
+        AUDIT-1.1.1 DATA-1111-006 回归：跨午夜的 CPU 能耗段必须按本机午夜边界
+        分割到两个自然日（前一天少记的 bug），而不是整段归当天。
+        """
+        from datetime import datetime, timedelta
+        from db import local_date
+        c, db = _make_collector(self.tmp, self.clock)
+        # 构造：本机 23:59:55 -> 次日 00:00:05（10s 段，跨午夜；gap=10s <= 15s 上限）
+        prev_wall = (datetime.now().replace(hour=23, minute=59, second=55, microsecond=0)).timestamp()
+        curr_wall = (datetime.now().replace(hour=0, minute=0, second=5, microsecond=0)
+                     + timedelta(days=1)).timestamp()
+        prev_mono = curr_wall - 10.0  # monotonic 间隔 = wall 间隔 = 10s
+        c._cpu_power_prev = (prev_mono, prev_wall, 200.0)
+        c.advanced_cpu_power_w = 300.0
+        out = c._cpu_energy_delta(curr_wall, curr_wall)
+        prev_date = local_date(prev_wall)
+        curr_date = local_date(curr_wall)
+        self.assertNotEqual(prev_date, curr_date)  # 确实跨了日
+        # 5s 在前一天（23:59:55->00:00:00）、5s 在当天（00:00:00->00:00:05）
+        # 梯形均值 (200+300)/2=250W；按时间比例各半
+        expected_total = 250.0 * 10.0 / 3600.0
+        self.assertAlmostEqual(sum(out.values()), expected_total, places=9)
+        self.assertAlmostEqual(out.get(prev_date, 0.0), expected_total * 0.5, places=9)
+        self.assertAlmostEqual(out.get(curr_date, 0.0), expected_total * 0.5, places=9)
+        db.close()
+
+    def test_midnight_split_db_attribution(self):
+        """
+        AUDIT-1.1.1 DATA-1111-006 端到端：跨午夜段落库后，前一天与当天
+        system_daily.cpu_energy_wh 各记其半（而不是全部归当天）。
+        """
+        from datetime import datetime, timedelta
+        from db import local_date
+        c, db = _make_collector(self.tmp, self.clock)
+        prev_wall = (datetime.now().replace(hour=23, minute=59, second=55, microsecond=0)).timestamp()
+        curr_wall = (datetime.now().replace(hour=0, minute=0, second=5, microsecond=0)
+                     + timedelta(days=1)).timestamp()
+        prev_mono = curr_wall - 10.0
+        c._cpu_power_prev = (prev_mono, prev_wall, 200.0)
+        c.advanced_cpu_power_w = 300.0
+        c._cpu_warmed = True
+        out = c._cpu_energy_delta(curr_wall, curr_wall)
+        # 直接以 per-date 增量落库（模拟 _finish_sample 的落库路径）
+        db.save_system_sample(
+            SystemSample(timestamp=curr_wall, cpu_usage_percent=10.0).to_row(),
+            cpu_energy_wh_by_date=out,
+            now=curr_wall,
+        )
+        prev_date = local_date(prev_wall)
+        curr_date = local_date(curr_wall)
+        conn = db._connect()
+        rows = {r["date"]: r["cpu_energy_wh"] for r in conn.execute(
+            "SELECT date, cpu_energy_wh FROM system_daily WHERE date IN (?,?)",
+            (prev_date, curr_date)).fetchall()}
+        expected_total = 250.0 * 10.0 / 3600.0
+        self.assertAlmostEqual(rows.get(prev_date, 0.0), expected_total * 0.5, places=6)
+        self.assertAlmostEqual(rows.get(curr_date, 0.0), expected_total * 0.5, places=6)
+        db.close()
 
 
 if __name__ == "__main__":

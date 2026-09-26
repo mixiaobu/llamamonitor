@@ -7,19 +7,22 @@ LlamaMonitor 的发布 = **版本** + **测试** + **PyInstaller 便携版** + *
 
 ## 0. 版本来源（Single Source of Truth）
 
-- `version.py` → `__version__ = "1.0.0"`（SemVer，`^\d+\.\d+\.\d+$`，无 `v` 前缀）。
-- 所有制品的版本都从它派生，唯一转换点是 Windows PE `FileVersion` = `x.y.z.0`：
+> 下文用 `X.Y.Z` 代指 `version.py` 里的 `__version__`（SemVer，`^\d+\.\d+\.\d+$`，
+> 无 `v` 前缀）。**不要把版本号写死在本手册里**——每次发版以 `version.py` 实际值为准。
+
+- `version.py` → `__version__ = "X.Y.Z"`（SemVer，`^\d+\.\d+\.\d+$`，无 `v` 前缀）。
+- 所有制品的版本都从它派生，唯一转换点是 Windows PE `FileVersion` = `X.Y.Z.0`：
 
   | 制品 | 版本号形式 | 来源 |
   |---|---|---|
-  | `LlamaMonitor.exe --version` | `LlamaMonitor 1.0.0` | `version.py` |
-  | `GET /api/version` / `/api/status` | `1.0.0` | `version.py` |
-  | 设置页 About | `1.0.0` | `/api/version` |
-  | PE FileVersion | `1.0.0.0` | `build_release.py` 由 `version.py` 生成 `version_info.txt` |
-  | PE ProductVersion | `1.0.0` | 同上 |
-  | 安装器 / Portable 文件名 | `...-1.0.0-win-x64` | `ISCC /DAppVersion` / `make_portable.py` |
-  | `SHA256SUMS.txt` / `release-manifest.json` | `1.0.0` | `generate_checksums.py` |
-  | 已安装程序显示版本（Add/Remove Programs） | `1.0.0` | Inno `#define AppVersion` |
+  | `LlamaMonitor.exe --version` | `LlamaMonitor X.Y.Z` | `version.py` |
+  | `GET /api/version` / `/api/status` | `X.Y.Z` | `version.py` |
+  | 设置页 About | `X.Y.Z` | `/api/version` |
+  | PE FileVersion | `X.Y.Z.0` | `build_release.py` 由 `version.py` 生成 `version_info.txt` |
+  | PE ProductVersion | `X.Y.Z` | 同上 |
+  | 安装器 / Portable 文件名 | `...-X.Y.Z-win-x64` | `ISCC /DAppVersion` / `make_portable.py` |
+  | `SHA256SUMS.txt` / `release-manifest.json` | `X.Y.Z` | `generate_checksums.py` |
+  | 已安装程序显示版本（Add/Remove Programs） | `X.Y.Z` | Inno `#define AppVersion` |
 
 - **不要**在多处硬编码版本。改动版本只改 `version.py`，然后重跑构建。
 
@@ -80,7 +83,7 @@ python scripts\build_release.py --require-installer
 
 ```powershell
 python scripts\validate_release.py            # 校验默认 release/ 目录 + version.py 的版本
-python scripts\validate_release.py --release-dir release --version 1.0.0
+python scripts\validate_release.py --release-dir release --version X.Y.Z   # X.Y.Z = version.py 实际值
 ```
 
 检查项：**5 个发布文件存在**（含 `release-manifest.sig`）、`release-manifest.sig`
@@ -110,7 +113,7 @@ ZIP 可解压且顶层唯一 `LlamaMonitor/` 且含 `LlamaMonitor/LlamaMonitor.e
 
 ### 安装器行为（见 `docs/INSTALLER_TEST.md` 实测记录）
 - [ ] 全新安装（干净/无旧数据）→ 能启动、托盘、`/api/version` 正确。
-- [ ] 升级（0.12.0 → 1.0.0 或 当前→新）→ 数据/配置/备份保留、schema 迁移、历史不变。
+- [ ] 升级（当前已装版本 → 新版，或任意旧版 → 新版）→ 数据/配置/备份保留、schema 迁移、历史不变。
 - [ ] 运行中升级 → 先优雅 `--shutdown-existing`，失败再 Retry/Cancel。
 - [ ] 阻止降级（装旧版本被拒绝）。
 - [ ] 卸载默认保留数据；"Remove data" 任务只删固定目录。

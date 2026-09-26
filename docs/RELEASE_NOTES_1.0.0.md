@@ -1,5 +1,7 @@
 # LlamaMonitor 1.0.0 — Release Notes
 
+> **历史快照（1.1.1 起标注）**：本文档记录的是当时版本的交付状态，仅作追溯参考；当前版本行为以代码 + docs/AUDIT_1.1.1.md + 当前 CHANGELOG 为准。
+
 **发布日期：2026-09-24 ｜ 平台：Windows 11 x64（Win10 1903+ 亦支持）｜ 架构：Python 3.13 + FastAPI + 原生 JS/ECharts**
 
 LlamaMonitor 是一个针对 llama.cpp `llama-server`（`--metrics`）的本地 Token 用量监控工具：

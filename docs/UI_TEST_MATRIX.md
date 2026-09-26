@@ -1,5 +1,7 @@
 # UI Test Matrix（Phase 15：Windows 11 Fluent UI Redesign）
 
+> **历史快照（1.1.1 起标注）**：本文档记录的是当时版本的交付状态，仅作追溯参考；当前版本行为以代码 + docs/AUDIT_1.1.1.md + 当前 CHANGELOG 为准。
+
 验证环境：Windows 11 24H2（Build 26200，ReleaseId 2009），系统主题 Dark，
 DPI 100%（96），96 逻辑核，NVIDIA GPU（nvidia-smi 可用）。
 验证方式：dev 实例（`python desktop.py`，PyWebView/WebView2/edgechromium）+

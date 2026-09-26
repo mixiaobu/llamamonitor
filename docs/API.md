@@ -1,4 +1,4 @@
-# LlamaMonitor HTTP API（Phase 14）
+# LlamaMonitor HTTP API（Phase 14，1.1 增补）
 
 > 监听地址：**127.0.0.1:8765**（仅回环；端口被占用时应用启动失败，不静默换端口）。
 > 无认证（回环隔离 + 本地单用户假设）；FastAPI `docs_url/redoc_url/openapi_url`
@@ -29,6 +29,24 @@
 | GET | `/api/mtp/daily` | 历史每日 MTP（含 per-position） |
 | GET | `/api/runtime` | 运行时信息（启动时间、轮询间隔、保留期等） |
 | GET | `/api/data/info` | 数据目录大小 / 各表行数 |
+| GET | `/api/events` | 监控事件（counter reset / 缺口 / 状态翻转等，倒序；History 页） |
+
+### llama.cpp Runtime 遥测（1.1，只读）
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/llama/info` | 模型 / 服务信息（/props + /v1/models + build，隐私白名单过滤） |
+| GET | `/api/llama/slots` | 当前 Slot 状态（/slots，whitelist 字段） |
+
+### 系统监控（1.1，只读）
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/system/status` | 系统基础状态（CPU/内存/磁盘/网络速率/组件功耗/uptime） |
+| GET | `/api/system/live` | 最近 N 小时 system_samples 序列 |
+| GET | `/api/system/daily` | 每日系统能耗（CPU / 已监测组件合计） |
+| GET | `/api/system/inventory` | 静态硬件库存（OS/CPU/主板/BIOS/RAM/磁盘/BootTime）；`?manual=true` 手动刷新 |
+| GET | `/api/system/sensors` | 高级硬件传感器（CPU 温度/功耗、主板、风扇；LibreHardwareMonitor 桥，不可用时 state=unavailable） |
 
 ### 配置（回环 L = 修改类受 403 保护）
 

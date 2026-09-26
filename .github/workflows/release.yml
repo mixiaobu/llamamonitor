@@ -1,7 +1,8 @@
 name: Release (Windows x64)
 
 # CI：在 GitHub Actions 上构建 Windows x64 发布物。
-# - 打 tag（如 0.13.1 或 v0.13.1）：构建 + 验证 + 创建 GitHub Release（5 个资产，
+# - 打 tag（版本号 = version.py 的 __version__，如 1.1.1，带不带 v 前缀均可）：
+#   构建 + 验证 + 创建 GitHub Release（5 个资产，
 #   供 Phase 13 安全更新系统消费：manifest + .sig + installer + portable + SHA256SUMS）；
 # - workflow_dispatch：构建 + 验证 + upload-artifact（不创建 Release）。
 #

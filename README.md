@@ -2,13 +2,14 @@
 
 llama.cpp 的纯旁路（sidecar）监控程序，Windows 11 桌面应用。
 
-只读取 `http://127.0.0.1:9091/metrics`：不代理、不修改、不启停 llama-server，
-不占用 9091 端口。监控程序崩溃不影响 llama-server。
+只读取 llama-server 的**只读端点**（全部 HTTP GET，不代理、不修改、不启停
+llama-server，不占用 9091 端口）：`/metrics`（Token 采集）+ `/health`、`/slots`、
+`/props`、`/v1/models`（1.1 Runtime 遥测，分频 GET）。监控程序崩溃不影响 llama-server。
 
 ## 功能
 
-- 实时状态：处理中/延迟请求数、Busy Slots、KV Cache 使用率、Token Max（llama-server
-  运行时指标，服务器提供时显示）、Prompt/Decode TPS、MTP 接受率（含 per-position）、上下文
+- 实时状态：处理中/延迟请求数、平均忙碌 Slot 数、KV Cache 使用率、上下文高水位（llama-server
+  运行时指标，服务器提供时显示）、Prompt/Decode TPS、MTP 接受率（含 per-position）
 - GPU 监控（NVIDIA）：负载/显存/温度/功耗/风扇/频率/PCIe，历史曲线（15m~24h）、
   今日能耗估算、按天 GPU 统计（永久保留）；数据来自系统 NVIDIA 驱动的 nvidia-smi（只读）
 - 系统监控（1.1）：CPU/内存/磁盘/网络/启动时间/硬件库存 + 高级硬件传感器
@@ -16,23 +17,22 @@ llama.cpp 的纯旁路（sidecar）监控程序，Windows 11 桌面应用。
   显示 `--`）；已监测组件能耗（CPU + 被监控 GPU）按天累计；全程只读
 - llama.cpp Runtime 只读遥测（1.1）：模型信息 / 当前 Slot 状态 / 能力位
   （/props、/slots、/v1/models、/health，只发 GET）
-- MTP 深度统计：Draft Tokens / Accepted Tokens / Draft Sequences（今日）、
+- MTP 深度统计：Draft Tokens / Accepted Tokens / 推测验证轮次（今日）、
   按草稿位置的接受 Token 数（Accepted Tokens by Draft Position，动态发现位置）
-- 历史统计：按天 Token 用量（Prompt/Cached/Output）、累计、Cache Ratio、每日 MTP 趋势
+- 历史统计：按天 Token 用量（输入/缓存复用/输出 Token）、累计、缓存复用率、每日 MTP 趋势
 - 数据：本地 SQLite（按天累计 + 48h 实时采样 + 计数器 state + GPU 采样/按天），
   Counter reset 安全；schema 版本化迁移（PRAGMA user_version，旧版本数据无损升级）
 - 可靠性与数据质量（Phase 11）：counter reset 事件审计、监控缺口（server 离线 /
   程序重启 / 系统睡眠 / 指标无效）记录与 possible_token_loss 标记、Monitoring Coverage、
   PRAGMA quick_check 健康检查与 protective mode、数据库自动/手动备份（创建后验证 + 轮转）；
-  详细规则见下"数据可靠性与质量"与 `REAL_SOAK_TEST.md`
+  详细规则见下"数据可靠性与质量"与 `docs/REAL_SOAK_TEST.md`
 - 界面：本地 Dashboard（原生 HTML/CSS/JS + ECharts，无框架、无 CDN），深色/浅色/跟随系统主题；
   页面隐藏时自动降低轮询频率
 - Windows 集成：系统托盘（关闭窗口=隐藏到托盘，监控继续）、单实例（Named Mutex +
   第二实例唤醒第一实例）、开机自启（HKCU Run，当前用户登录时进托盘）、优雅关闭
-- 设置页：Server / Collector / GPU / System（1.1）/ Interface / Web / Storage /
-  Logging / Data / Application / Updates 十一个分区 + About，Test Connection、
-  保存（校验 + 原子写入）、
-  Reset to Defaults；Updates 分区提供应用内安全更新（Check / Download / Install /
+- 设置页：服务器 / 采集 / 外观 / GPU / 系统监控（1.1）/ 数据与备份 / 应用 / 更新
+  八个分区 + 关于页，Test Connection、保存（校验 + 原子写入）、
+  Reset to Defaults；更新分区提供应用内安全更新（Check / Download / Install /
   Cancel，见"安全更新"章节）
 - 数据管理：CSV 导出（Excel 直接打开，含 GPU 每日 CSV）、SQLite Backup API 备份
   （手动 + 自动 + 验证 + 轮转）、数据库健康检查与 protective mode、清实时历史、重置统计
@@ -191,23 +191,26 @@ key id 用 repo variable `LLAMAMONITOR_UPDATE_KEY_ID`（缺省 `key-2026-09`）�
 
 ## 设置页（Settings）
 
-Dashboard 顶部导航切换 **Dashboard / Settings**。设置页分区：Server / Collector /
-GPU / Interface / Web / Storage / Logging / Data / Application / Updates（+ About 页）。
+Dashboard 顶部导航切换 **Dashboard / 设置**。设置页为左侧分类导航 + 右侧表单，
+共 **八个分区**（与 UI `settings-rail` 一致）：服务器 / 采集 / 外观 / GPU / 系统监控 /
+数据与备份 / 应用 / 更新。另有独立的**关于**页（导航"关于"）。
 
-- **Server**：llama-server 基础地址（http/https）、metrics 路径、连接超时；
+- **服务器**：llama-server 基础地址（http/https）、metrics 路径、连接超时；
   **Test Connection** 由后端只 GET `<url><metrics_path>`（不触碰任何控制接口），
   成功显示延迟毫秒数，失败显示原因。
-- **Collector**：采集间隔、实时数据保留时长（小时）。
+- **采集**：采集间隔、实时数据保留时长（小时）。
+- **外观**：主题（系统/浅色/深色，即时生效）、界面刷新间隔、默认统计范围（天数）。
 - **GPU**：启用开关、轮询间隔（1~3600s）、历史保留时长（小时）、Detected GPUs 勾选
   （来自 nvidia-smi 实时探测；见上节）。
-- **Interface**：Dashboard 刷新间隔、默认历史天数、主题（Dark/Light/System，即时预览）。
-- **Web**：LlamaMonitor 自身 Host/Port（改 host 离开 127.0.0.1 会提示局域网暴露警告）。
-- **Storage**：数据库路径（留空 = 默认路径）、WAL 开关。
-- **Logging**：日志级别、滚动大小、备份份数。
-- **Data**：数据管理（见下节）。
-- **Application**（Phase 12）：开机自启开关（HKCU Run，仅当前用户）、退出应用、
+- **系统监控**（1.1）：启用开关、基础遥测轮询间隔、历史落库间隔、历史保留时长、
+  高级硬件传感器开关与轮询间隔（见"系统监控"节）。
+- **数据与备份**：数据库路径（留空 = 默认路径）与 WAL 开关、日志级别/滚动大小/保留份数、
+  数据管理（备份 / 数据库检查 / CSV 导出 / 清实时历史 / 重置统计，见下节）、
+  备份策略（自动开关/间隔/保留数）。
+- **应用**：LlamaMonitor 自身 Host/Port（改 host 离开 127.0.0.1 会提示局域网暴露警告）、
+  开机自启开关（HKCU Run，仅当前用户）、退出应用、
   集成信息（frozen/background/单实例/托盘/数据目录/uptime）。
-- **Updates**（Phase 13）：安装版应用内安全更新——Check for Update / Download /
+- **更新**（Phase 13）：安装版应用内安全更新——Check for Update / Download /
   Install / Cancel，状态区显示当前版本与可用版本、release notes（纯文本渲染）、
   签名 key_id；详见"安全更新（Secure Updates）"章节。
 
@@ -265,7 +268,7 @@ GPU / Interface / Web / Storage / Logging / Data / Application / Updates（+ Abo
 
 LlamaMonitor 是只读 sidecar：Token 统计全部来自 llama-server 的**累计 Counter delta**，
 因此"server 重启 / 断网 / 程序重启 / 睡眠 / 时钟跳变"等事件下的正确性由以下规则保证。
-完整验证见 `REAL_SOAK_TEST.md`（确定性 soak 模拟 + ground truth 恒等式）。
+完整验证见 `docs/REAL_SOAK_TEST.md`（确定性 soak 模拟 + ground truth 恒等式）。
 
 ### Token 统计规则
 
@@ -425,4 +428,4 @@ busy/locked 重试 + busy_timeout），任何一步失败整体回滚，不存�
 ## 端口
 
 - 8765：LlamaMonitor 自身（127.0.0.1，仅本机，可用 `web.host`/`web.port` 配置）
-- 9091：llama-server 的 /metrics（只读）
+- 9091：llama-server（只读 GET：`/metrics`、`/health`、`/slots`、`/props`、`/v1/models`）

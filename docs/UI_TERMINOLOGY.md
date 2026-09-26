@@ -190,3 +190,37 @@ llama.cpp 只上报**增量原始指标**（`prompt_tokens_total` / `prompt_toke
 - **派生指标** tooltip 必须标注"派生指标"（Token 总量、实际计算 Token、缓存复用率）。
 - **Raw metric** 仅允许进入易误解指标 tooltip 的「来源：」行：**上下文高水位 / 平均忙碌 Slot 数 / 推测验证轮次 / KV Cache 使用率 / 上下文窗口上限 / 输入·缓存复用·输出 Token**。
 - 其余指标 tooltip 只写中文语义，不暴露 raw 字段。
+
+## 12. 1.1 新增术语（System / llama Runtime / 硬件传感器）
+
+> 1.1.0 新增三类遥测 + 1.1.1 审计修正（BUG-1111-009 Slot 卡术语对齐、
+> BUG-1111-010 空闲 Slot 残留值提示）。下表为 1.1 前端文案的唯一术语来源。
+> 回归防护：`tests/test_ui_terminology.py` 已扩展扫描 `static/js/system.js`。
+
+### 12.1 llama Runtime（/api/llama/info、/api/llama/slots）
+| 旧术语（废弃） | 新术语（唯一） | 说明 |
+|---|---|---|
+| 上下文容量 | **上下文窗口上限** | Slot 卡字段（对齐 §3） |
+| Prompt Token | **输入 Token** | Slot 卡字段（对齐 §1） |
+| 已生成 / 生成 Token | **输出 Token** | Slot 卡字段（对齐 §1） |
+| 缓存 Token | **缓存复用 Token** | Slot 卡字段（对齐 §1） |
+| 处理过的提示 Token | **实际处理 Token** | Slot 卡 `n_prompt_tokens_processed`，避免子串撞废弃词"提示 Token" |
+| 缓存率（Slot 级） | **缓存复用率** | Slot 级 = `cached/(prompt+cached)`，与历史"缓存复用率"口径不同（代码字段区分） |
+| Slot 空闲（裸状态） | **空闲中：数字为上一次请求的残留** | 1.1.1 BUG-1111-010：`is_processing=false` 时 per-request 字段淡化 + 注脚（最长 ~10s 后更新） |
+
+### 12.2 系统监控（/api/system/*）
+| 术语（唯一） | 说明 |
+|---|---|
+| CPU 使用率 / 内存 / 磁盘读写 / 网络 | 基础 psutil 遥测 |
+| CPU 温度 / CPU Package 功耗 | 高级硬件传感器（Bridge 不可用时显示 `--`，绝不显示 0） |
+| 已监测组件功耗（CPU+GPU） | 非墙插功耗；API 层相加，任一侧无数据 → `--` |
+| 风扇转速 / 风扇控制 | 硬件传感器；`control_percent` 只有 LHM 真实提供 Control 才有值 |
+
+### 12.3 设置新增（System 段）
+| 术语（唯一） | 说明 |
+|---|---|
+| 系统监控（开关） | 1.1 新增设置段 |
+| 系统采集间隔 | system.poll_interval_seconds（默认 2s） |
+| 系统实时采样保留时长 | system.history_retention_hours（默认 48h） |
+| 高级硬件传感器 | system.advanced_sensors（Windows 专属，启用拉起 HardwareSensorBridge） |
+| 高级传感器输出周期 | system.advanced_sensor_interval_seconds（默认 5s） |

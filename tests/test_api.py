@@ -37,14 +37,15 @@ class ApiTests(unittest.TestCase):
     def tearDown(self):
         self._tmp.cleanup()
 
-    def _start(self, text):
+    def _start(self, text, clock=None):
         """
         建 db / collector / app 并进入 TestClient（触发 lifespan：
         立即采集一次 + 启动后台定期任务）。返回 (db, collector, app, client)。
+        clock：可选 FakeClock 注入（AUDIT-1.1.1 GAP-001 回归测试用）。
         """
         db = Database(self.tmp / "api_test.db")
         # 间隔取很大值（make_config 默认 3600s）：测试期间后台循环不会触发额外采集，轮次由本测试手动驱动
-        collector = MetricsCollector(make_config(), db)
+        collector = MetricsCollector(make_config(), db, clock=clock)
         parsed = parse_metrics(text)
 
         async def _fetch_parsed():
@@ -111,6 +112,35 @@ class ApiTests(unittest.TestCase):
             self.assertIsNotNone(data["last_update"])
         finally:
             client.__exit__(None, None, None)
+
+    def test_unhandled_exception_500_contract(self):
+        """AUDIT-1.1.1 GAP-005：未处理异常的兜底 handler 返回 500 + INTERNAL_ERROR
+        统一契约（{success:false, error:{code,message}}），绝不返回 Traceback。
+
+        用 raise_server_exceptions=False 的 TestClient：默认 TestClient 对 500 会
+        把原始异常重新抛出（便于调试），看不到 handler 产出的 500 响应体。
+        注意：不能与 _start 的 client 同时活跃——第二个 TestClient 的 lifespan
+        退出会触发 DB 连接跨线程访问（SQLite 单线程不变量），故串行关闭。"""
+        db, collector, app, client = self._start(TEXT_A_POS)
+        try:
+            @app.get("/api/_test_bang")
+            async def _bang():
+                raise RuntimeError("boom-500-contract")
+
+            client.__exit__(None, None, None)  # 先关闭第一个，避免两个 lifespan 并存
+            boom_client = TestClient(app, raise_server_exceptions=False)
+            with boom_client:
+                r = boom_client.get("/api/_test_bang")
+        finally:
+            db.close()
+        self.assertEqual(r.status_code, 500)
+        body = r.json()
+        self.assertFalse(body["success"])
+        self.assertEqual(body["error"]["code"], "INTERNAL_ERROR")
+        self.assertIsInstance(body["error"]["message"], str)
+        # 契约字段：绝不带 Python Traceback / 内部异常 repr
+        self.assertNotIn("boom-500-contract", str(body))
+        self.assertNotIn("Traceback", str(body))
 
     def test_summary(self):
         db, collector, app, client = self._start(TEXT_A_POS)
@@ -205,6 +235,50 @@ class ApiTests(unittest.TestCase):
         self.assertTrue(app.state.collector_task.cancelled())
         # 数据库连接已关闭
         self.assertIsNone(db._conn)
+
+    def test_mtp_rollover_across_midnight(self):
+        """
+        AUDIT-1.1.1 GAP-001 回归：/api/mtp 的"今日"必须跟随 collector.clock.now()
+        的 local_date，跨午夜后切换到新的一天（读新行/空=0），而不是停留在昨日。
+
+        历史 bug：原实现用 wall `local_date()`（time.time() 的日期）与 collector
+        落库用的 collector.clock 日期不同源——00:00:00 之后会短暂读"昨天"的累计
+        （"今日 MTP 显示昨日数据"），且破坏 FakeClock 测试纪律。
+
+        用 FakeClock 精确推进到本机午夜 +30s 验证切换。
+        """
+        from datetime import datetime, timedelta
+        from clock import FakeClock
+        from db import local_date
+
+        # 起点：本机"今天"的 23:50:00（距次日午夜 600s；本地时区，只跨一次午夜）
+        today_midnight = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        start_unix = today_midnight.timestamp() + 23 * 3600 + 50 * 60
+        clock = FakeClock(start_wall=start_unix, start_mono=start_unix)
+        db, collector, app, client = self._start(TEXT_A_POS, clock=clock)
+        try:
+            self._round(client, collector, TEXT_MTP)
+            today_before = local_date(clock.now())
+            data = client.get("/api/mtp").json()
+            self.assertEqual(data["draft"], 5)
+            self.assertEqual(data["accepted"], 3)
+
+            # 推进到 次日 00:00:30（23:50:00 -> 次日 00:00:30；wall+mono 同步）
+            secs_to_next_midnight = (today_midnight + timedelta(days=1)).timestamp() - clock.now()
+            clock.advance(secs_to_next_midnight + 30)
+            today_after = local_date(clock.now())
+            self.assertNotEqual(today_before, today_after)  # 确实跨了日
+
+            # 跨日后 /api/mtp 读"新一天"行（无数据 -> 0 / rate null），而非昨日累计
+            data = client.get("/api/mtp").json()
+            self.assertEqual(data["draft"], 0)
+            self.assertEqual(data["accepted"], 0)
+            self.assertIsNone(data["accept_rate"])
+            # "今日"与兄弟端点（/api/summary）同源：summary 的 month_key 应跟随新一天
+            summary = client.get("/api/summary").json()
+            self.assertEqual(summary["month_key"], today_after[:7])
+        finally:
+            client.__exit__(None, None, None)
 
 
 class ServerHelperRegressionTests(unittest.TestCase):

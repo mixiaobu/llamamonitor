@@ -135,6 +135,61 @@ class UiTerminologyTests(unittest.TestCase):
         """TPS 单位统一 tok/s，不得残留 t/s。"""
         self.assertNotIn(' + " t/s"', self.blob)
 
+    def test_slot_stale_semantics_present(self):
+        """AUDIT-1.1.1 BUG-1111-010 + GAP-004：Slot 空闲时 per-request 字段是
+        上一次请求的残留，必须淡化 + 注脚（最长 ~10s 后更新），不当当前状态。
+
+        断言 system.js 同时具备三个要素（缺一即回退到"旧值冒充当前状态"）：
+        1. 用 is_processing === false 判定空闲残留（idleStale）；
+        2. 残留值加 dim 淡化类；
+        3. 卡片追加 slot-stale-note 注脚。"""
+        system_js = (STATIC / "js" / "system.js").read_text(encoding="utf-8")
+        self.assertIn("idleStale", system_js, "缺少空闲判定（is_processing===false）")
+        self.assertIn('s.is_processing === false', system_js, "必须用 is_processing===false 判定残留")
+        self.assertIn("slot-stale-note", system_js, "缺少残留值注脚 slot-stale-note")
+        self.assertIn("上一次请求的残留", system_js, "缺少残留值说明文案")
+        # 残留注脚样式必须在 CSS 里定义（否则注脚无样式）
+        pages_css = (STATIC / "css" / "pages.css").read_text(encoding="utf-8")
+        self.assertIn(".slot-stale-note", pages_css, "CSS 缺少 .slot-stale-note 样式")
+
+    def test_escattr_escapes_quotes_for_title_attr(self):
+        """AUDIT-1.1.1 BUG-1111-002：事件/缺口表 title 属性必须过 escAttr，
+        且 escAttr 转义单引号 '->&#39;（否则 title='…' 属性被单引号截断，
+        tooltip 残缺 / class 被吞）。"""
+        app_js = (STATIC / "js" / "app.js").read_text(encoding="utf-8")
+        # escAttr 定义存在且覆盖 5 字符（含单引号转义）
+        self.assertIn("function escAttr(s)", app_js, "缺少模块级 escAttr")
+        self.assertIn(".replace(/'/g, \"&#39;\")", app_js, "escAttr 未转义单引号（BUG-002 回退）")
+        self.assertIn(".replace(/\"/g, \"&quot;\")", app_js, "escAttr 未转义双引号")
+        # 事件表与缺口表的 title 属性都经 escAttr（不能裸拼 reason/detail）
+        self.assertIn("escAttr(reason)", app_js, "缺口表 title 未过 escAttr")
+        self.assertIn("escAttr(detail)", app_js, "事件表 title 未过 escAttr")
+
+    def test_mtp_poller_updates_performance_trend(self):
+        """AUDIT-1.1.1 BUG-1111-003：Performance 页 MTP 趋势图必须随轮询更新。
+        修复 = 注册独立 mtp poller（run: refreshMtp）且 visibleOnly:false
+        ——这样 performance 页停留期间（即使切到别的页）MTP 数据仍周期刷新，
+        不再"停留期间/跨天不更新"。"""
+        app_js = (STATIC / "js" / "app.js").read_text(encoding="utf-8")
+        self.assertIn('LM.poll.register("mtp"', app_js, "缺少 mtp 轮询注册（BUG-003 回退）")
+        self.assertIn("run: refreshMtp", app_js, "mtp poller 未绑定 refreshMtp")
+        # visibleOnly:false = 后台也轮询（趋势图跨页/停留期间持续更新）
+        self.assertIn("visibleOnly: false, run: refreshMtp", app_js,
+                      "mtp poller 必须 visibleOnly:false（否则停留页不刷新）")
+        # refreshMtp 自身从 /api/mtp 拉数据
+        self.assertIn('return api.get("/api/mtp")', app_js, "refreshMtp 未拉 /api/mtp")
+
+    def test_online_shows_last_update_age(self):
+        """AUDIT-1.1.1 UX-1111-001：在线态必须显示"最后更新 X 秒前"（此前恒空，
+        数据新鲜度不可见）。修复 = updateLastUpdateText 每秒刷新，用
+        state.lastUpdateTs 计算 elapsed 秒并写入 ovLastUpdate。"""
+        app_js = (STATIC / "js" / "app.js").read_text(encoding="utf-8")
+        self.assertIn("updateLastUpdateText", app_js, "缺少 updateLastUpdateText")
+        self.assertIn("setInterval(updateLastUpdateText, 1000)", app_js,
+                      "lastUpdate 未每秒刷新")
+        self.assertIn("ovLastUpdate", app_js, "未写入 ovLastUpdate 元素")
+        self.assertIn("最后更新", app_js, "缺少'最后更新'文案")
+
 
 if __name__ == "__main__":
     unittest.main()

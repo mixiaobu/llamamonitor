@@ -16,15 +16,25 @@
     return v === null || v === undefined || (typeof v === "number" && isNaN(v));
   }
 
-  /** Token 紧凑格式：1000 -> 1.00K，1000000 -> 1.00M，1e9 -> 1.00B */
+  /**
+   * Token 紧凑格式：1000 -> 1K，1234 -> 1.23K，1000000 -> 1M，1e9 -> 1B。
+   *
+   * AUDIT-1.1.1 BUG-1111-004：此前恒 2 位小数（"1.00K"/"5.50M"），整数倍数也带
+   * 无意义尾零。改为最多 2 位有效小数并**去除尾零**（1.00K->1K、1.20K->1.2K、
+   * 1.23K->1.23K），更紧凑且与 TPS 等其它数值的一致视觉密度对齐。
+   */
   function formatTokenCount(v) {
     if (isBad(v)) return NA;
     v = Number(v);
     var neg = v < 0 ? "-" : "";
     var a = Math.abs(v);
-    if (a >= 1e9) return neg + (a / 1e9).toFixed(2) + "B";
-    if (a >= 1e6) return neg + (a / 1e6).toFixed(2) + "M";
-    if (a >= 1e3) return neg + (a / 1e3).toFixed(2) + "K";
+    var compact = function (n) {
+      // toFixed(2) 后去尾零：1.00->"1"，1.20->"1.2"，1.23->"1.23"
+      return n.toFixed(2).replace(/\.?0+$/, "");
+    };
+    if (a >= 1e9) return neg + compact(a / 1e9) + "B";
+    if (a >= 1e6) return neg + compact(a / 1e6) + "M";
+    if (a >= 1e3) return neg + compact(a / 1e3) + "K";
     return neg + String(Math.round(a));
   }
 

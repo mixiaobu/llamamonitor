@@ -55,6 +55,8 @@ python -m PyInstaller --noconfirm --clean --name LlamaMonitor ^
     --add-data "static;static" ^
     --add-data "assets;assets" ^
     --add-data "config.example.json;." ^
+    --add-data "native/hardware_bridge/HardwareSensorBridge.exe;hardware_bridge" ^
+    --add-data "native/hardware_bridge/LibreHardwareMonitorLib.dll;hardware_bridge" ^
     --collect-all webview ^
     --collect-all pythonnet ^
     --collect-all clr_loader ^

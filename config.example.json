@@ -24,8 +24,8 @@
   },
   "ui": {
     "refresh_interval_seconds": 5,
-    "daily_default_days": 30,
-    "theme": "dark"
+    "daily_default_days": 7,
+    "theme": "system"
   },
   "logging": {
     "level": "INFO",
@@ -41,5 +41,13 @@
     "check_enabled": false,
     "check_interval_hours": 24,
     "auto_download": false
+  },
+  "system": {
+    "enabled": true,
+    "poll_interval_seconds": 2,
+    "history_interval_seconds": 5,
+    "history_retention_hours": 48,
+    "advanced_sensors": true,
+    "advanced_sensor_interval_seconds": 5
   }
 }
