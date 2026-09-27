@@ -34,6 +34,13 @@ import tempfile
 import zipfile
 from pathlib import Path
 
+# CI（windows-2022）runner 默认 locale 下 stdout 是 cp1252：本脚本打印中文失败
+# 信息会 UnicodeEncodeError。统一重配 UTF-8（同 build_release.py）。
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from generate_checksums import sha256_file  # noqa: E402
 
@@ -240,13 +247,16 @@ def validate_release(release_dir: str | Path, version: str) -> list[str]:
             env.pop("LLAMAMONITOR_CONFIG", None)
             proc = subprocess.run(
                 [str(exe), "--version"],
-                capture_output=True, text=True, timeout=120, env=env,
+                capture_output=True, timeout=120, env=env,
                 cwd=str(exe.parent),
             )
+            # EXE 是 UTF-8（控制台）；按 UTF-8 解码避免 runner locale（cp1252）
+            # 解码未定义字节抛 UnicodeDecodeError。
+            got = (proc.stdout or b"").decode("utf-8", "replace").strip()
+            err = (proc.stderr or b"").decode("utf-8", "replace").strip()
             expected = f"LlamaMonitor {version}"
-            got = (proc.stdout or "").strip()
             if proc.returncode != 0:
-                failures.append(f"--version exit code {proc.returncode}: {proc.stderr.strip()[:200]}")
+                failures.append(f"--version exit code {proc.returncode}: {err[:200]}")
             elif expected not in got:
                 failures.append(f"--version output mismatch: {got!r} (expected to contain {expected!r})")
     except Exception as exc:  # noqa: BLE001

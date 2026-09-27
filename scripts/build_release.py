@@ -49,6 +49,14 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
+# CI（windows-2022）上 python 的 stdout 默认用 cp1252：打印中文（版本/进度/失败信息）
+# 会 UnicodeEncodeError 直接崩掉构建步骤。这里把 stdout/stderr 统一重配为 UTF-8，
+# 无法编码字符用 replace，保证任何 runner 上都不会因编码崩构建。
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -108,6 +116,14 @@ def find_iscc() -> str | None:
     return None
 
 
+def _decoded(b: bytes | None) -> str:
+    """子进程输出按 UTF-8 解码（errors=replace）：runner 默认 locale 下 text=True
+    用 cp1252 解码含中文/符号的 UTF-8 字节流会在未定义字节上抛 UnicodeDecodeError。"""
+    if not b:
+        return ""
+    return b.decode("utf-8", errors="replace")
+
+
 def run_tests() -> None:
     """构建前测试（§71：任何测试失败 -> 不生成正式 Release）。"""
     log("运行测试: python -m unittest discover -s tests")
@@ -115,9 +131,8 @@ def run_tests() -> None:
         [sys.executable, "-m", "unittest", "discover", "-s", "tests"],
         cwd=str(ROOT),
         capture_output=True,
-        text=True,
     )
-    tail = (proc.stderr or "").strip().splitlines()[-3:]
+    tail = _decoded(proc.stderr).strip().splitlines()[-3:]
     for line in tail:
         print(f"  {line}")
     if proc.returncode != 0:
@@ -202,9 +217,9 @@ def run_pyinstaller(version_info: Path) -> Path:
         "--collect-submodules", "uvicorn",
         "desktop.py",
     ]
-    proc = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True)
+    proc = subprocess.run(cmd, cwd=str(ROOT), capture_output=True)
     if proc.returncode != 0:
-        print((proc.stderr or proc.stdout or "")[-3000:])
+        print((_decoded(proc.stderr or proc.stdout))[-3000:])
         fail("PyInstaller 构建失败")
     exe = ROOT / "dist" / "LlamaMonitor" / "LlamaMonitor.exe"
     if not exe.is_file():
@@ -226,13 +241,13 @@ def smoke_test(exe: Path, version: str) -> None:
         env.pop("LLAMAMONITOR_CONFIG", None)
         proc = subprocess.run(
             [str(exe), "--version"],
-            capture_output=True, text=True, timeout=120, env=env,
+            capture_output=True, timeout=120, env=env,
             cwd=str(exe.parent),
         )
     expected = f"LlamaMonitor {version}"
-    got = (proc.stdout or "").strip()
+    got = _decoded(proc.stdout).strip()
     if proc.returncode != 0 or expected not in got:
-        fail(f"smoke test 失败: exit={proc.returncode} stdout={got!r} stderr={(proc.stderr or '')[:300]!r}")
+        fail(f"smoke test 失败: exit={proc.returncode} stdout={got!r} stderr={_decoded(proc.stderr)[:300]!r}")
     # 验证隔离：临时数据目录里不应出现数据库/配置（--version 不启动任何组件）
     leaked = [p.name for p in Path(td).rglob("*") if p.name in ("monitor.db", "config.json")] if os.path.isdir(td) else []
     if leaked:
@@ -252,8 +267,8 @@ def build_portable(version: str) -> Path:
 def build_installer(version: str, iscc: str) -> Path:
     log(f"构建 Installer（ISCC: {iscc}）...")
     cmd = [iscc, f"/DAppVersion={version}", str(ROOT / "installer" / "LlamaMonitor.iss")]
-    proc = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True)
-    tail = (proc.stdout or "").strip().splitlines()[-5:]
+    proc = subprocess.run(cmd, cwd=str(ROOT), capture_output=True)
+    tail = _decoded(proc.stdout).strip().splitlines()[-5:]
     for line in tail:
         print(f"  {line}")
     out = ROOT / "release" / f"LlamaMonitor-Setup-{version}-win-x64.exe"
