@@ -430,6 +430,21 @@
     tip.id = "tip-" + Math.random().toString(36).slice(2, 9);
     tip.textContent = text;
     btn.setAttribute("aria-describedby", tip.id);
+    // 1.1.3 §106：hover 设备 enter 300ms / leave 100ms 延迟（.tip-hover-open 类）。
+    // touch 设备（hover:none）不加——避免 tap 触发 hover 残留；tap 走 .tip-open 路径。
+    var hoverable = false;
+    try { hoverable = window.matchMedia("(hover: hover) and (pointer: fine)").matches; } catch (e) {}
+    if (hoverable) {
+      var _showT = null, _hideT = null;
+      wrap.addEventListener("mouseenter", function () {
+        clearTimeout(_hideT);
+        _showT = setTimeout(function () { wrap.classList.add("tip-hover-open"); }, 300);
+      });
+      wrap.addEventListener("mouseleave", function () {
+        clearTimeout(_showT);
+        _hideT = setTimeout(function () { wrap.classList.remove("tip-hover-open"); }, 100);
+      });
+    }
     wrap.appendChild(btn);
     wrap.appendChild(tip);
     return wrap;

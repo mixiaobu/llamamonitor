@@ -120,10 +120,12 @@
     return Math.floor(sec / 86400) + "d " + Math.floor((sec % 86400) / 3600) + "h";
   }
 
-  /** 相对时间（中文，如 "2 分钟前"） */
+  /** 相对时间（中文）。1.1.3 §33：≤5s 显示"刚刚"（避免"2秒前/3秒前"每轮跳动），
+  6-59s 才 X 秒前。 */
   function formatAgo(sec) {
     if (isBad(sec)) return "暂无数据";
     sec = Number(sec);
+    if (sec < 5) return "刚刚";
     if (sec < 60) return Math.round(sec) + " 秒前";
     if (sec < 3600) return Math.round(sec / 60) + " 分钟前";
     if (sec < 86400) return (sec / 3600).toFixed(1) + " 小时前";

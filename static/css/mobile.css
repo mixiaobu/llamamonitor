@@ -9,16 +9,55 @@
  hover 效果只在 (hover:hover) 生效（防手机点按残留）；
  - Chart 240-280px、Toast 上移到 Bottom Nav 上方居中；
  - GPU 卡：主指标 + 次要指标压缩，高级遥测/ECC 折叠进 details；
- - 320px 小屏：今日卡 breakdown 单列、hero 降档。
+ - 320px 小屏：今日卡 breakdown 降 2 列（320 手机实测无溢出、不裁切）。
  桌面规则一律不动（本文件所有规则都在 ≤760px 媒体查询内）。
  ============================================================ */
 
 @media (max-width: 760px) {
-  /* ---------- 页头：垂直组织（Title / Subtitle / Actions 全宽横滚） ---------- */
+  /* ---------- 页头：标题区 + 右侧 ••• Overflow（44×44 hit） ----------
+     1.1.3：核心页标题行右侧放 •••（辅助页入口）；时间筛选等 ph-actions
+     控件整行放在标题行下方（不挤标题）。 */
   .page-header {
     flex-direction: column;
     align-items: stretch;
     gap: var(--spacing-sm);
+  }
+  .page-header .ph-head { position: relative; }
+  .page-overflow {
+    display: flex;
+    position: absolute;
+    top: 50%;
+    right: 0;
+    transform: translateY(-50%);
+    width: 44px;
+    height: 44px;
+    margin: 0 -8px 0 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    border-radius: var(--radius-control);
+    color: var(--text-secondary);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .page-overflow:active { background: var(--bg-subtle-active); color: var(--text-primary); }
+  .page-overflow-icon {
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .page-overflow-icon svg {
+    width: 20px;
+    height: 20px;
+    stroke: currentColor;
+    fill: none;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
   }
   .page-header .ph-actions { width: 100%; }
   .page-header .ph-actions .seg { width: 100%; }
@@ -36,21 +75,32 @@
   .chart-box { padding: var(--spacing-md); }
   .charts-2col { grid-template-columns: 1fr; gap: var(--spacing-md); }
 
-  /* ---------- Section Header：标题与说明纵向，不挤压 ---------- */
+  /* ---------- Section Header：1.1.3 标题与 action 同行（放不下才换行） ----------
+     旧实现强制 column + action 独占整行 → 每个 section 多一行空白，页面节奏差。
+     现在：保持 flex 行内 + wrap；sh-sub 说明跟随标题行；sh-actions 靠右
+     （margin-left:auto），过挤时整体换到下一行右对齐。 */
   .section-header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 2px;
+    gap: var(--spacing-sm);
+    row-gap: 2px;
   }
-  .section-header .sh-actions { width: 100%; justify-content: flex-start; }
+  .section-header .sh-actions {
+    margin-left: auto;
+  }
+  /* 标题 + 说明 保持内联（sh-sub 本就 margin-left 跟随 sh-title） */
 
   /* ---------- 卡片 / stat 网格 ---------- */
   .card { padding: var(--card-pad); }
   .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
-  /* 今日卡：双 hero 保留 2 列（两数并排是核心信息），breakdown 单列 */
+  /* 今日卡：双 hero 保留 2 列（两数并排是核心信息）；
+     1.1.3：breakdown 保持 3 列（输入/缓存/输出），label 允许两行——
+     单列会让今日卡纵向拉到 >500px（14 行）。≤360 才降为 2 列。 */
   .today-hero { grid-template-columns: 1fr 1fr; gap: var(--spacing-md); }
-  .today-breakdown { grid-template-columns: 1fr; }
+  .today-breakdown { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .today-breakdown .tb-label {
+    white-space: normal;
+    line-height: 1.3;
+  }
   .ov-perf-grid { grid-template-columns: 1fr; }
   .status-strip { flex-direction: column; align-items: flex-start; gap: var(--spacing-sm); }
 
@@ -62,9 +112,7 @@
  每行一张卡：首列（日期/时间）作为卡头加粗；其余每格一行"标签 + 值"，
  列名来自 JS 注入的 td[data-label]。空态占位行（无 data-label）同样成卡。
  其余短表（GPU 进程 4 列等）不受影响，仍在 .table-wrap 内横向滚动。 */
-  .table-wrap:has(.table-daily),
-  .table-wrap:has(.table-gap),
-  .table-wrap:has(.table-events) {
+  .table-wrap.mobile-card-table {
     overflow-x: visible;
     max-height: none;
     padding: 0;
@@ -73,18 +121,12 @@
     border-radius: 0;
     box-shadow: none;
   }
-  .table-wrap:has(.table-daily) .table-full,
-  .table-wrap:has(.table-gap) .table-full,
-  .table-wrap:has(.table-events) .table-full {
+  .table-wrap.mobile-card-table .table-full {
     min-width: 0;
     table-layout: auto;
   }
-  .table-wrap:has(.table-daily) thead,
-  .table-wrap:has(.table-gap) thead,
-  .table-wrap:has(.table-events) thead { display: none; }
-  .table-wrap:has(.table-daily) tbody tr,
-  .table-wrap:has(.table-gap) tbody tr,
-  .table-wrap:has(.table-events) tbody tr {
+  .table-wrap.mobile-card-table thead { display: none; }
+  .table-wrap.mobile-card-table tbody tr {
     display: block;
     background: var(--bg-card);
     border: 1px solid var(--border-subtle);
@@ -94,13 +136,9 @@
     padding: 0;
     break-inside: avoid;
   }
-  .table-wrap:has(.table-daily) tbody tr:last-child,
-  .table-wrap:has(.table-gap) tbody tr:last-child,
-  .table-wrap:has(.table-events) tbody tr:last-child { margin-bottom: 0; }
+  .table-wrap.mobile-card-table tbody tr:last-child { margin-bottom: 0; }
   /* 卡头 = 首列（日期/开始时间） */
-  .table-wrap:has(.table-daily) tbody tr > td:first-child,
-  .table-wrap:has(.table-gap) tbody tr > td:first-child,
-  .table-wrap:has(.table-events) tbody tr > td:first-child {
+  .table-wrap.mobile-card-table tbody tr > td:first-child {
     display: block;
     font-weight: var(--font-weight-semibold);
     font-size: var(--font-size-body);
@@ -110,9 +148,7 @@
     white-space: nowrap;
   }
   /* 其余列：标签 + 值 一行（标签来自 data-label；无 data-label 时不显示标签） */
-  .table-wrap:has(.table-daily) tbody tr > td:not(:first-child),
-  .table-wrap:has(.table-gap) tbody tr > td:not(:first-child),
-  .table-wrap:has(.table-events) tbody tr > td:not(:first-child) {
+  .table-wrap.mobile-card-table tbody tr > td:not(:first-child) {
     display: flex;
     justify-content: space-between;
     align-items: baseline;
@@ -123,30 +159,33 @@
     font-size: var(--font-size-body);
     text-align: right;
   }
-  .table-wrap:has(.table-daily) tbody tr > td:not(:first-child)::before,
-  .table-wrap:has(.table-gap) tbody tr > td:not(:first-child)::before,
-  .table-wrap:has(.table-events) tbody tr > td:not(:first-child)::before {
+  .table-wrap.mobile-card-table tbody tr > td:not(:first-child)::before {
     content: attr(data-label);
     color: var(--text-secondary);
     font-size: var(--font-size-caption);
     flex: none;
   }
-  .table-wrap:has(.table-daily) tbody tr > td:not(:first-child):last-child,
-  .table-wrap:has(.table-gap) tbody tr > td:not(:first-child):last-child,
-  .table-wrap:has(.table-events) tbody tr > td:not(:first-child):last-child {
+  .table-wrap.mobile-card-table tbody tr > td:not(:first-child):last-child {
     border-bottom: none;
   }
+  /* 1.1.3 分组分隔线：td-group-start（如「输入 Token」「采集覆盖率」）前留空档 +
+  加深上边框，把 Card Row 内的字段分成视觉组（Token 总量组 / 明细组 / 覆盖率组）。 */
+  .table-wrap.mobile-card-table tbody tr > td.td-group-start:not(:first-child) {
+    margin-top: var(--spacing-xs);
+    border-top: 1px solid var(--border-default);
+    border-bottom: 1px solid var(--border-subtle);
+  }
   /* 事件表详情列：长文本纵向（标签在上，详情换行在下） */
-  .table-wrap:has(.table-events) td.ev-detail {
+  .table-wrap.mobile-card-table td.ev-detail {
     flex-direction: column;
     align-items: flex-start;
     gap: 2px;
     text-align: left;
   }
-  .table-wrap:has(.table-events) td.ev-detail::before { order: -1; }
+  .table-wrap.mobile-card-table td.ev-detail::before { order: -1; }
   /* "查看更多/收起" 行：通栏按钮（不成卡） */
-  .table-wrap:has(.table-events) tr.events-more-row,
-  .table-wrap:has(.table-events) tr.events-more-row td {
+  .table-wrap.mobile-card-table tr.events-more-row,
+  .table-wrap.mobile-card-table tr.events-more-row td {
     display: block;
     background: transparent;
     border: none;
@@ -156,8 +195,7 @@
     text-align: center;
   }
   /* 空态占位行（暂无数据）：整行单格 colspan，居中、不加粗、无卡头下边框 */
-  .table-wrap:has(.table-daily) tbody tr > td.na,
-  .table-wrap:has(.table-gap) tbody tr > td.na {
+  .table-wrap.mobile-card-table tbody tr > td.na {
     display: block;
     text-align: center;
     padding: var(--spacing-lg) var(--spacing-md);
@@ -172,7 +210,7 @@
   .settings-rail {
     position: sticky;
     top: 0;
-    z-index: 40;
+    z-index: var(--z-sticky);
     display: flex;
     flex-direction: row;
     flex-wrap: nowrap;       /* 禁多行（规格 47） */
@@ -294,26 +332,24 @@
  数据源是整机聚合值，故网格呈现 1 个聚合块 + 明确标注 */
   .core-heat-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
-    gap: 3px;
-    margin-top: var(--spacing-sm);
+    grid-template-columns: repeat(auto-fill, minmax(30px, 1fr));
+    gap: 2px;
   }
   .core-heat-grid .core-cell {
-    aspect-ratio: 1;
-    border-radius: 3px;
+    aspect-ratio: 1.2;
     background: var(--accent);
-    opacity: 0.3;
+    opacity: 0.14;
     position: relative;
-  }
-  .core-heat-grid .core-cell .core-val {
-    position: absolute;
-    inset: 0;
     display: flex;
     align-items: center;
     justify-content: center;
+  }
+  .core-heat-grid .core-cell .core-val {
     font-size: 10px;
+    line-height: 1;
     color: var(--text-primary);
     font-variant-numeric: tabular-nums;
+    font-weight: var(--font-weight-semibold);
   }
 
   /* ---------- Touch target：coarse 指针 ≥44px（规格 16/78） ---------- */
@@ -327,6 +363,12 @@
   .check-chip { min-height: 40px; }
   .nav-item { min-height: var(--nav-item-height); }
   .rail-item { min-height: 40px; }
+  /* 1.1.3：手机端输入框字号 ≥16px（iOS focus 自动放大规避）+ 高度 44px 触控 */
+  .input,
+  .select {
+    min-height: 44px;
+    font-size: 16px;
+  }
 
   /* tooltip：? 按钮放大 hit area（视觉仍 16px，点击区 44px） */
   .info-tip { position: relative; }
@@ -431,4 +473,12 @@
   .status-badge .dot {
     background: CanvasText;
   }
+}
+
+/* ---------- ≤360px 小屏（320 手机等；1.1.3） ----------
+  320 实测：3 列 breakdown 每列仅 ~76px，"缓存复用 Token" 等长 label 过挤。
+  降为 2 列（第 3 项独占一行）更舒展，且无横向溢出；hero 保持 2 列（并排核心信息）。 */
+@media (max-width: 360px) {
+  .today-breakdown { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .content-inner { padding-bottom: var(--spacing-lg); }
 }

@@ -77,7 +77,7 @@ class PollOnceTests(unittest.TestCase):
                      mem_total=16 * 1024 ** 3, mem_available=8 * 1024 ** 3):
         """构造一个 psutil 打桩（返回受控值）。"""
         return mock.Mock(
-            cpu_percent=lambda interval=None: cpu,
+            cpu_percent=lambda interval=None, percpu=False: ([cpu, cpu] if percpu else cpu),
             cpu_freq=lambda: SimpleNamespace(current=None),
             virtual_memory=lambda: SimpleNamespace(
                 total=mem_total, available=mem_available,
@@ -179,7 +179,7 @@ class PollOnceTests(unittest.TestCase):
         c, db = _make_collector(self.tmp, self.clock)
         c._cpu_warmed = True  # 跳过 warmup，直接测单指标异常兜底
         boom = mock.Mock(
-            cpu_percent=lambda interval=None: 20.0,
+            cpu_percent=lambda interval=None, percpu=False: ([20.0, 20.0] if percpu else 20.0),
             cpu_freq=lambda: (_ for _ in ()).throw(RuntimeError("boom")),
             virtual_memory=lambda: SimpleNamespace(total=1024, available=512, percent=50.0),
             disk_io_counters=lambda: SimpleNamespace(read_bytes=0, write_bytes=0),

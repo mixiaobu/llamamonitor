@@ -23,7 +23,8 @@
   var systemLive = null;          
   var systemRangeMinutes = 60;    // 系统页当前范围（分钟）
   var lastInventory = null;       // /api/system/inventory 缓存（运行时长/磁盘容量复用）
-  var lastCpu = null;             // /api/system/status cpu 子对象（每核心聚合视图用）
+  var lastCpu = null;             // /api/system/status cpu 子对象（每核心视图用）
+  var coreHeatView = "physical";  // 1.1.3 Heat Grid 视图：physical（默认）| logical
   var lastModel = null;           
   var lastSlots = null;           
 
@@ -68,38 +69,78 @@
     var body = $("sysCoreHeat");
     var details = body ? body.closest("details.core-heat") : null;
     if (!body || !details) return;
-    if (!logicalCpus || logicalCpus <= 16) {
-      details.hidden = true;
-      return;
-    }
+    var cpu = lastCpu;
+    var perCore = (cpu && cpu.per_core_percent) || null;
+    var hasPerCore = Array.isArray(perCore) && perCore.length > 1;
     details.hidden = false;
     body.innerHTML = "";
-    // 说明行：聚合口径 + 当前聚合值（利用率/温度/功耗，来自最近一次 status）
-    var note = document.createElement("div");
-    note.className = "stat-hint";
-    var cpu = lastCpu;
-    var parts = [];
-    if (cpu) {
-      if (cpu.usage_percent != null) parts.push("利用率 " + F.formatPercent(cpu.usage_percent, 0));
-      if (cpu.temperature_c != null) parts.push("温度 " + F.formatTemp(cpu.temperature_c));
-      if (cpu.package_power_w != null) parts.push("功耗 " + F.formatPower(cpu.package_power_w));
+    if (!logicalCpus || logicalCpus <= 2 || !hasPerCore) {
+      var agg = document.createElement("div");
+      agg.className = "stat-hint";
+      var aggTxt = (cpu && cpu.usage_percent != null)
+        ? F.formatPercent(cpu.usage_percent, 0)
+        : F.NA;
+      agg.textContent = (logicalCpus && logicalCpus > 2)
+        ? "\u6574\u673a\u805a\u5408\u5229\u7528\u7387 " + aggTxt + "\u3002\u9010\u6838\u6570\u636e\u91c7\u96c6\u4e2d\uff08\u9996\u4e2a\u6709\u6548\u91c7\u6837\u540e\u663e\u793a Heat Grid\uff09\u3002"
+        : "\u6838\u6570\u8f83\u5c11\uff0c\u4e0d\u663e\u793a\u9010\u6838\u7f51\u683c\u3002";
+      body.appendChild(agg);
+      return;
     }
-    note.textContent = "逻辑 CPU " + logicalCpus + " 核：数据源仅含整机聚合值，Heat Grid 每格颜色映射聚合利用率（非逐核拆分）。" +
-      (parts.length ? "当前：" + parts.join(" / ") : "");
-    body.appendChild(note);
-    // Heat Grid：logicalCpus 个格子；聚合利用率 null 时全格最淡（0.15）
-    var usage = cpu && cpu.usage_percent != null ? Number(cpu.usage_percent) : null;
+    var groups = (lastInventory && lastInventory.core_groups) || null;
+    var validGroups = Array.isArray(groups) && groups.length > 0;
+    if (coreHeatView === "physical" && !validGroups) coreHeatView = "logical";
+    // 顶行：口径说明 + 视图切换按钮
+    var head = document.createElement("div");
+    head.className = "core-heat-head";
+    var note = document.createElement("span");
+    note.className = "stat-hint";
+    note.textContent = coreHeatView === "physical"
+      ? "\u7269\u7406\u6838\u89c6\u56fe\uff08\u8d85\u7ebf\u7a0b sibling \u53d6\u5747\u503c\uff09"
+      : "\u903b\u8f91\u6838\u89c6\u56fe";
+    var toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "btn small core-heat-toggle";
+    toggle.textContent = coreHeatView === "physical"
+      ? "\u5207\u5230\u903b\u8f91\u6838" : "\u5207\u5230\u7269\u7406\u6838";
+    toggle.addEventListener("click", function () {
+      coreHeatView = coreHeatView === "physical" ? "logical" : "physical";
+      if (coreHeatView === "physical" && !validGroups) coreHeatView = "logical";
+      renderCoreHeat(lastInventory && lastInventory.logical_cpus);
+    });
+    head.appendChild(note);
+    head.appendChild(toggle);
+    body.appendChild(head);
+    // 每格（物理核或逻辑核）的真实利用率
+    var cells = [];
+    if (coreHeatView === "physical" && validGroups) {
+      groups.forEach(function (g, gi) {
+        var sum = 0, n = 0;
+        (g || []).forEach(function (li) {
+          var v = perCore[li];
+          if (v != null) { sum += Number(v); n++; }
+        });
+        cells.push({ label: "\u7269\u7406\u6838 " + (gi + 1), value: n ? sum / n : null });
+      });
+    } else {
+      for (var i = 0; i < perCore.length; i++) {
+        cells.push({ label: "\u903b\u8f91\u6838 " + (i + 1),
+          value: perCore[i] == null ? null : Number(perCore[i]) });
+      }
+    }
     var grid = document.createElement("div");
     grid.className = "core-heat-grid";
-    for (var i = 0; i < logicalCpus; i++) {
+    cells.forEach(function (c) {
       var cell = document.createElement("div");
       cell.className = "core-cell";
-      cell.title = "逻辑核 " + (i + 1) + " · 聚合 " + (usage == null ? "--" : F.formatPercent(usage, 0));
-      cell.style.backgroundColor = "var(--accent)";
-      cell.style.opacity = usage == null ? "0.15" :
-        String(Math.max(0.12, Math.min(1, usage / 100)));
+      cell.title = c.label + " \u00b7 " + (c.value == null ? "\u65e0\u6570\u636e" : F.formatPercent(c.value, 0));
+      cell.style.opacity = c.value == null ? "0.12" :
+        String(Math.max(0.14, Math.min(1, c.value / 100)));
+      var val = document.createElement("span");
+      val.className = "core-val";
+      val.textContent = c.value == null ? "\u2013" : String(Math.round(c.value));
+      cell.appendChild(val);
       grid.appendChild(cell);
-    }
+    });
     body.appendChild(grid);
   }
 

@@ -167,6 +167,22 @@
     };
   }
 
+  /* 1.1.3：bar 宽度按数据点数分档（spec §44-46：1 天 40-64 / 7 天 28-48 /
+     30 天 10-24 / 长历史更细）。避免 1 天 bar 占满、30 天 bar 挤成一团。 */
+  function barWidthFor(count) {
+    if (count <= 2) return 48;
+    if (count <= 7) return 32;
+    if (count <= 31) return 18;
+    return 12;
+  }
+
+  /* 1.1.3：token 值 tooltip 双显——compact + 完整千分位（spec §48：
+     "1.94M (1,942,381)"），避免大数只有缩写。 */
+  function tokenTooltipValue(v) {
+    if (v == null) return "--";
+    return F.formatTokenCount(v) + " (" + F.formatTokenCountFull(v) + ")";
+  }
+
   function baseAxisLabel(p, extra) {
     var l = { color: p.axisWeak, fontSize: 11 };
     if (extra) for (var k in extra) l[k] = extra[k];
@@ -221,6 +237,7 @@
     setEmpty(containerId, !hasData, "暂无历史",
       "LlamaMonitor 将在采集指标时开始建立用量历史。");
     if (!hasData) return;
+    var bw = barWidthFor(rows.length);
     c.setOption({
       animation: false,
       tooltip: Object.assign(baseTooltip(), {
@@ -232,7 +249,7 @@
           (params || []).forEach(function (it) {
             lines += "<div style='display:flex;justify-content:space-between;gap:16px'>" +
               "<span>" + it.marker + it.seriesName + "</span><span style='font-variant-numeric:tabular-nums'>" +
-              F.formatTokenCount(it.value) + "</span></div>";
+              tokenTooltipValue(it.value) + "</span></div>";
           });
           // Logical Total（tooltip 完整信息，
           var day = null;
@@ -271,19 +288,19 @@
       },
       series: [
         {
-          name: "输入 Token", type: "bar", stack: "tok", barMaxWidth: 28,
+          name: "输入 Token", type: "bar", stack: "tok", barMaxWidth: bw,
           itemStyle: { color: col.prompt, borderRadius: [0, 0, 0, 0] },
           emphasis: { focus: "series" },
           data: rows.map(function (r) { return r.prompt_tokens; }),
         },
         {
-          name: "缓存复用 Token", type: "bar", stack: "tok", barMaxWidth: 28,
+          name: "缓存复用 Token", type: "bar", stack: "tok", barMaxWidth: bw,
           itemStyle: { color: col.cached },
           emphasis: { focus: "series" },
           data: rows.map(function (r) { return r.cached_tokens; }),
         },
         {
-          name: "输出 Token", type: "bar", stack: "tok", barMaxWidth: 28,
+          name: "输出 Token", type: "bar", stack: "tok", barMaxWidth: bw,
           itemStyle: { color: col.output, borderRadius: [3, 3, 0, 0] },
           emphasis: { focus: "series" },
           data: rows.map(function (r) { return r.output_tokens; }),
@@ -386,7 +403,7 @@
         axisTick: { show: false },
       },
       yAxis: {
-        type: "value", max: 100,
+        type: "value", min: 0, max: 100,
         axisLabel: baseAxisLabel(p, { formatter: function (v) { return v + "%"; } }),
         splitLine: { lineStyle: { color: p.split } },
       },
@@ -415,6 +432,7 @@
       "llama-server 今日尚未报告按 Draft 位置的接受数据。");
     if (!pos.length) return;
     var base = pos[0] && pos[0].accepted_tokens ? pos[0].accepted_tokens : 0;
+    var posBw = barWidthFor(pos.length);
     c.setOption({
       animation: false,
       tooltip: Object.assign(baseTooltip(), {
@@ -424,7 +442,7 @@
           var it = params[0];
           var rel = base > 0 && it.value != null ? (it.value / base * 100).toFixed(1) + "%" : "--";
           return "<div style='font-weight:600;margin-bottom:4px'>" + it.name + "</div>" +
-            "已接受 Draft Token：<b>" + F.formatTokenCount(it.value) + "</b><br/>" +
+            "已接受 Draft Token：<b>" + tokenTooltipValue(it.value) + "</b><br/>" +
             "相对 Draft 位置 0：" + rel;
         },
       }),
@@ -442,7 +460,7 @@
         splitLine: { lineStyle: { color: p.split } },
       },
       series: [{
-        name: "已接受 Draft Token", type: "bar", barMaxWidth: 28,
+        name: "已接受 Draft Token", type: "bar", barMaxWidth: posBw,
         itemStyle: { color: col.mtp, borderRadius: [3, 3, 0, 0] },
         data: pos.map(function (x) { return x.accepted_tokens; }),
       }],
@@ -584,6 +602,13 @@
     var series = [];
     gpus.forEach(function (g) { var s = _gpuSeries(g, "temperature_c", col, {}); if (s) series.push(s); });
     if (!series.length) { setEmpty(containerId, true, "无温度数据", "GPU 未报告温度传感器（不支持）或尚未采集到温度样本。"); return; }
+    // 1.1.3：温度轴 nice lower bound ≈ min(data)-10（clamp ≥0），
+    // 避免 50-70°C 被 0 基线压扁看不出波动。
+    var tmin = Infinity;
+    gpus.forEach(function (g) { (g.points || []).forEach(function (pt) {
+      if (pt.temperature_c != null) tmin = Math.min(tmin, Number(pt.temperature_c));
+    }); });
+    var tFloor = !isFinite(tmin) ? 0 : Math.max(0, Math.floor((tmin - 10) / 10) * 10);
     c.setOption({
       animation: false,
       tooltip: Object.assign(baseTooltip(), {
@@ -594,7 +619,7 @@
       grid: { left: 8, right: 8, top: 32, bottom: 4, containLabel: true },
       xAxis: _gpuTimeAxis(p, id),
       yAxis: {
-        type: "value",
+        type: "value", min: tFloor,
         axisLabel: baseAxisLabel(p, { formatter: function (v) { return v + "\u00B0C"; } }),
         splitLine: { lineStyle: { color: p.split } },
       },

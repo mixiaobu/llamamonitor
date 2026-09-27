@@ -11,11 +11,11 @@
   min-width: 0;
 }
 .chart.tall { height: 360px; }
-@media (max-width: 1400px) {
+@media (max-width: 1366px) {
   .chart { height: 280px; }
 }
 /* 移动端：手机（≤700px）图表更紧凑，减少纵向滚动 */
-@media (max-width: 700px) {
+@media (max-width: 760px) {
   .chart { height: 240px; }
   .chart.tall { height: 260px; }
 }
@@ -31,11 +31,49 @@
 .chart-box.has-empty .chart { visibility: hidden; }
 .chart-box.has-empty .chart-empty-overlay { display: block; }
 
-/* ---------- GPU 设备卡（每 GPU 一卡；多卡网格；
- 列宽规则见下方 .gpu-grid 覆盖：320-400px 动态 + 移动端 min(320px,100%)） ---------- */
+/* ---------- per-core Heat Grid（1.1.3 §62：真逐核，全宽度通用样式） ----------
+ 基础样式放这里（桌面/手机都生效）；mobile.css 只调小格最小宽。
+ 每格 = 一个物理核（超线程 sibling 取均值）或逻辑核，显示真实利用率整数。 */
+.core-heat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+  gap: 3px;
+  margin-top: var(--spacing-sm);
+}
+.core-heat-grid .core-cell {
+  aspect-ratio: 1.4;
+  border-radius: var(--radius-micro);
+  background: var(--accent);
+  opacity: 0.14;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.core-heat-grid .core-cell .core-val {
+  font-size: 12px;
+  line-height: 1;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--font-weight-semibold);
+}
+.core-heat-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-xs);
+}
+.core-heat-toggle {
+  flex: none;
+}
+
+/* ---------- GPU 设备卡（每 GPU 一卡；多卡网格） ----------
+ 1.1.3：卡宽 300-520px（auto-fill 自然折行）。1 卡 ≤520 不拉满整行
+ （不再出现 2 卡各 774px 的过宽空卡）；手机单列 min(320px,100%)。 */
 .gpu-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 520px));
   gap: var(--spacing-lg);
 }
 .gpu-device {
@@ -251,7 +289,7 @@
   flex: 1 0 100%;
   text-align: right;
 }
-@media (max-width: 900px) {
+@media (max-width: 1099px) {
   .settings-footer { margin-left: 0; }
 }
 .dirty-badge {
@@ -304,6 +342,10 @@
   align-items: center;
   gap: var(--spacing-md);
   min-width: 0;
+  max-width: 100%;
+  /* 1.1.3：flex-basis 0 + max-width 100% 让左列按可用宽度伸缩（而非内容宽度），
+  长 URL/模型路径不撑开卡片（窄屏横向溢出修复）。 */
+  flex: 1 1 0;
 }
 .status-strip .ss-name {
   font-size: var(--font-size-subtitle);
@@ -418,7 +460,7 @@
 .perf-card .pc-value.dim { color: var(--text-disabled); }
 .perf-card .pc-value.small { font-size: var(--font-size-body); }
 
-@media (max-width: 900px) {
+@media (max-width: 1099px) {
   .today-hero, .today-breakdown, .perf-grid { grid-template-columns: 1fr; }
 }
 
@@ -443,16 +485,27 @@
   flex-direction: column;
   gap: 2px;
   min-width: 0;
+  max-width: 100%;
+  /* 1.1.3：列 flex item 允许收缩到内容以下，长 URL/模型行用 ellipsis 截断不撑宽 */
+  > * { min-width: 0; }
 }
 .status-strip .ss-name {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .status-strip .ss-url {
   font-size: var(--font-size-caption);
   color: var(--text-disabled);
   font-variant-numeric: tabular-nums;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .status-strip .ss-right {
   display: flex;
@@ -494,7 +547,7 @@
   white-space: nowrap;
 }
 .metric-strip .ms-value.dim { color: var(--text-disabled); }
-@media (max-width: 1100px) {
+@media (max-width: 1099px) {
   .metric-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .metric-strip .ms-item { border-left: none; padding: 0; }
 }
@@ -565,7 +618,7 @@
   font-variant-numeric: tabular-nums;
 }
 .gm-metric .v.dim { color: var(--text-disabled); font-weight: var(--font-weight-regular); }
-@media (max-width: 900px) {
+@media (max-width: 1099px) {
   .gpu-mini-grid { grid-template-columns: 1fr; }
   /* 手机单列下 2×2 指标格半宽只有 ~120px，22px 的「29.7 / 32.0 GiB」
  会从数字中间折断。降到 16px 后单行可容纳（~105px）。 */
@@ -578,7 +631,7 @@
   grid-template-columns: 1fr 1fr;
   gap: var(--spacing-lg);
 }
-@media (max-width: 900px) {
+@media (max-width: 1099px) {
   .ov-perf-grid { grid-template-columns: 1fr; }
 }
 
@@ -604,7 +657,7 @@
   overflow-x: visible;
   max-width: none;
 }
-@media (max-width: 900px) {
+@media (max-width: 1099px) {
   .gpu-toolbar #gpuPick {
     flex-direction: column;
     width: 100%;
@@ -620,7 +673,7 @@
   grid-template-columns: 1fr 1fr;
   gap: var(--spacing-lg);
 }
-@media (max-width: 1200px) {
+@media (max-width: 1366px) {
   .charts-2col { grid-template-columns: 1fr; }
 }
 
@@ -646,7 +699,7 @@
 .gpu-device .gd-primary .v.dim { color: var(--text-disabled); font-weight: var(--font-weight-regular); }
 /* 窄屏（手机单列 ~250-280px）主指标值字号 22px 会让「29.7 / 32.0 GiB」
  这类长串折行（数字从中间断开）。降一档 + 禁止断行 + 允许整体右移收缩。 */
-@media (max-width: 900px) {
+@media (max-width: 1099px) {
   .gpu-device .gd-primary {
     font-size: var(--font-size-body);
   }
@@ -755,7 +808,7 @@
   min-width: 0;
 }
 .settings-pane .settings-card[hidden] { display: none; }
-@media (max-width: 900px) {
+@media (max-width: 1099px) {
   .settings-shell { grid-template-columns: 1fr; }
   .settings-rail {
     position: static;
@@ -1036,10 +1089,10 @@ a.link:hover .arr { transform: translateX(2px); }
 .dq-summary .stat-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
-@media (max-width: 1200px) {
+@media (max-width: 1366px) {
   .dq-summary .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
-@media (max-width: 700px) {
+@media (max-width: 760px) {
   .dq-summary .stat-grid { grid-template-columns: 1fr; }
 }
 
@@ -1091,6 +1144,7 @@ a.link:hover .arr { transform: translateX(2px); }
   font-size: var(--font-size-caption);
   color: var(--text-secondary);
   margin-left: var(--spacing-sm);
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1185,7 +1239,7 @@ details.core-heat[open] summary::before { content: "▾ "; }
 }
 .kv-list .k { color: var(--text-secondary); }
 .kv-list .v { color: var(--text-primary); word-break: break-word; }
-@media (max-width: 640px) {
+@media (max-width: 760px) {
   .kv-list { grid-template-columns: 1fr; gap: 2px; }
   .kv-list .k { margin-top: var(--spacing-xs); }
 }

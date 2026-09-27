@@ -1002,8 +1002,8 @@
     tbody.innerHTML = rows.map(function (r) {
       var cov = r.monitoring_coverage_percent;
       // 1.1.2：data-label 驱动移动端 Card Rows（CSS::before 显示列名）
-      var covTd = cov == null ? "<td data-label='采集覆盖率'>" + F.NA + "</td>" :
-        "<td data-label='采集覆盖率' class='" + (cov >= 99.9 ? "cell-ok" : cov >= 95 ? "cell-warn" : "cell-bad") + "'>" + F.formatPercent(cov) + "</td>";
+      var covTd = cov == null ? "<td data-label='采集覆盖率' class='td-group-start'>" + F.NA + "</td>" :
+        "<td data-label='采集覆盖率' class='td-group-start " + (cov >= 99.9 ? "cell-ok" : cov >= 95 ? "cell-warn" : "cell-bad") + "'>" + F.formatPercent(cov) + "</td>";
       var gaps = r.gap_count || 0;
       var loss = r.possible_token_loss;
       var gapsTd = "<td data-label='缺口' class='" + (gaps === 0 ? "cell-ok" : loss ? "cell-bad" : "cell-warn") + "'>" + gaps + "</td>";
@@ -1012,12 +1012,17 @@
       var cacheTd = crDenom > 0
         ? "<td data-label='缓存复用率'>" + F.formatPercent(c / crDenom * 100) + "</td>"
         : "<td data-label='缓存复用率'>" + F.NA + "</td>";
+      // 1.1.3：列序按语义分组（总量/计算 | 输入/缓存/输出 | 复用率/覆盖率/缺口），
+      // 与桌面表头一致；mobile Card Rows 按此顺序做视觉分组。
+      // 1.1.3：td-group-start = 视觉分组起点（mobile Card Rows 加分组分隔线）。
+      // 分组：总量/计算 | 输入/缓存/输出 | 复用率/覆盖率/缺口。
       return "<tr data-date='" + r.date + "'><td>" + r.date + "</td>" +
-        "<td data-label='输入'>" + F.formatTokenCount(r.prompt_tokens) + "</td>" +
+        "<td data-label='Token 总量'>" + F.formatTokenCount(r.logical_tokens) + "</td>" +
+        "<td data-label='实际计算'>" + F.formatTokenCount(r.compute_tokens) + "</td>" +
+        "<td class='td-group-start' data-label='输入'>" + F.formatTokenCount(r.prompt_tokens) + "</td>" +
         "<td data-label='缓存复用'>" + F.formatTokenCount(r.cached_tokens) + "</td>" +
         "<td data-label='输出'>" + F.formatTokenCount(r.output_tokens) + "</td>" +
-        "<td data-label='实际计算'>" + F.formatTokenCount(r.compute_tokens) + "</td>" +
-        "<td data-label='Token 总量'>" + F.formatTokenCount(r.logical_tokens) + "</td>" + cacheTd + covTd + gapsTd + "</tr>";
+        cacheTd + covTd + gapsTd + "</tr>";
     }).join("");
   }
 
@@ -1298,8 +1303,14 @@
     document.querySelectorAll(".nav-icon[data-icon], .mnav-icon[data-icon], .sheet-icon[data-icon]").forEach(function (el) {
       el.innerHTML = LM.icons.get(el.getAttribute("data-icon"));
     });
-    var mnavMoreIcon = $("mnavMoreIcon");
-    if (mnavMoreIcon) mnavMoreIcon.innerHTML = LM.icons.get("more");
+    // 1.1.3：Card Rows 用显式 class（mobile-card-table）驱动，不再依赖 :has()
+    // （spec §143：显式 class 更健壮，旧 WebView2 也稳）。idempotent——
+    // daily 表动态重渲染但 table-wrap 是静态 DOM，一次标记即可。
+    document.querySelectorAll(".table-wrap").forEach(function (w) {
+      if (w.querySelector("table.table-daily, table.table-gap, table.table-events")) {
+        w.classList.add("mobile-card-table");
+      }
+    });
     var brand = $("brandIcon");
     if (brand) brand.innerHTML = LM.icons.brand();
     // 指标定义 InfoTooltip
@@ -1344,18 +1355,39 @@
         mq.addListener(apply);
       }
     })();
-    // +：远程（局域网 IP）客户端没有可改的配置（/api/config 等 loopback-only），
-    // 直接隐藏「设置」导航入口——比"进去看到只读表单"更干净。本机不变。
-    // 1.1.2：移动端 More Sheet 里的设置入口同步隐藏 + 顶部只读提示条显示。
+    // 远程（局域网 IP）客户端没有可改的配置（/api/config 等 loopback-only）：
+    // 桌面侧边栏「设置」入口隐藏；移动端 Overflow Sheet 里「设置」保留但禁用
+    // （+ 远程只读状态行），比直接消失更能解释"为什么不能改"。
     if (!LM.api.isLocal()) {
       document.querySelectorAll('.nav-item[data-page="settings"]').forEach(function (b) {
         b.style.display = "none";
       });
       document.querySelectorAll('.sheet-item[data-page="settings"]').forEach(function (b) {
-        b.style.display = "none";
+        b.disabled = true;
+        b.classList.add("sheet-item-disabled");
+        var t = b.querySelector(".sheet-title");
+        if (t) t.textContent = "设置（远程只读）";
       });
+      var remoteRow = $("moreSheetRemote");
+      if (remoteRow) remoteRow.hidden = false;
       var banner = $("remoteBanner");
-      if (banner) banner.hidden = false;
+      if (banner) {
+        var dismissed = false;
+        try { dismissed = sessionStorage.getItem("lm_remote_banner_dismissed") === "1"; } catch (e) {}
+        if (!dismissed) {
+          banner.hidden = false;
+          var close = document.createElement("button");
+          close.type = "button";
+          close.className = "remote-banner-close";
+          close.setAttribute("aria-label", "关闭提示");
+          close.textContent = "✕";
+          close.addEventListener("click", function () {
+            banner.hidden = true;
+            try { sessionStorage.setItem("lm_remote_banner_dismissed", "1"); } catch (e) {}
+          });
+          banner.appendChild(close);
+        }
+      }
     }
     // Settings 事件绑定（保存/重置/测试连接/dirty 标记/主题切换/自动启动/危险操作/更新）
     if (LM.settings && LM.settings.init) LM.settings.init();

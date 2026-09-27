@@ -1131,6 +1131,8 @@ def build_app(
             "available": system.available,
             "cpu": {
                 "usage_percent": latest.cpu_usage_percent,
+                # 1.1.3：逐逻辑核利用率（live-only，Heat Grid 真 per-core 数据源）
+                "per_core_percent": latest.cpu_per_core_percent,
                 "frequency_mhz": latest.cpu_frequency_mhz,
                 "temperature_c": latest.cpu_temperature_c,
                 "package_power_w": latest.cpu_package_power_w,

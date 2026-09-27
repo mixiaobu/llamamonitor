@@ -30,7 +30,9 @@
   --font-weight-regular: 400;
   --font-weight-semibold: 600;
   --font-weight-bold: 700;
-  --line-height: 1.45;
+  --line-height-tight: 1.2;     /* 1.1.3 §11：Page/Section 标题紧凑行高 */
+  --line-height: 1.45;          /* Body 常规行高 */
+  --line-height-relaxed: 1.6;   /* 长说明 / 多行描述 */
 
   /* ---------- 圆角（统一 7 级：micro 4 / control 8 / control-primary 10 /
  card-sm 10 / card 12 / sheet 16 / pill 999）；旧名保留兼容 ---------- */
@@ -41,9 +43,11 @@
   --radius-card: 12px;          /* 卡片 */
   --radius-sheet: 16px;         /* 底部 sheet / 移动端 Modal */
   --radius-pill: 999px;
-  --radius-small: 4px;          /* 旧名 → micro */
-  --radius-medium: 8px;         /* 旧名 → control */
-  --radius-large: 12px;         /* 旧名 → card */
+  /* DEPRECATED（1.1.3：组件代码改用上方主名；此三行仅过渡兼容，下版删除）：
+  small→micro / medium→control / large→card */
+  --radius-small: var(--radius-micro);
+  --radius-medium: var(--radius-control);
+  --radius-large: var(--radius-card);
 
   /* ---------- 间距（只用 4/8/12/16/20/24/32/40） ---------- */
   --spacing-xs: 4px;
@@ -66,17 +70,21 @@
   --card-pad: 16px;         /* Card 内 padding（16-20） */
   --card-pad-lg: 20px;
 
-  /* ---------- 全局布局（---------- */
+  /* ---------- 全局布局 ---------- */
   --nav-width: 212px;
-  --content-max: 1520px;
   --page-pad: 32px;         /* 页面左右 padding（24-32） */
   --page-pad-narrow: 24px;
 
-  /* ---------- 1.1.2 布局 token：逐页收窄 + 真 Mobile（≤760px） ---------- */
-  --content-max: 1560px;           /* 桌面内容最大宽度（覆盖上方旧值） */
-  --content-max-settings: 1280px;  /* 设置页：单列 rail +pane 过宽时读起来吃力 */
-  --content-max-about: 960px;      /* 关于页：短内容，收窄居中 */
-  --bottom-nav-height: 56px;       /* 移动端底部导航高度（不含 safe-area） */
+  /* ---------- 内容最大宽度（逐页，1.1.3 §21：一值一名，无覆盖） ----------
+  默认 1560（Overview/Usage/Performance/System 档 1480-1560）；
+  GPU 1600（GPU 卡宽，档 1560-1640）；History 1480（档 1440-1520）；
+  Settings 1280（档 1180-1280）；About 960（档 880-960）。 */
+  --content-max: 1560px;
+  --content-max-gpu: 1600px;
+  --content-max-history: 1480px;
+  --content-max-settings: 1280px;
+  --content-max-about: 960px;
+  --bottom-nav-height: 60px;       /* 移动端底部导航高度（1.1.3：56→60，触控更从容） */
   --nav-item-height: 44px;         /* 触屏导航单项最低高度 */
   --touch-target: 44px;            /* 触屏 hit target 下限 */
   --touch-target-lg: 48px;         /* 大触控目标 */
@@ -89,15 +97,20 @@
   --transition-normal: 150ms ease;
 }
 
-/* ---------- 1.1.2 真 Mobile（≤760px）字号档覆盖 ----------
- 手机上 14px body 偏小：body 15 / card 16 / hero 32 / metric 24。
- 只覆盖 token 值，组件规则不动（同一套规则跟随变量自动生效）。 */
+/* ---------- 真 Mobile（≤760px）字号档覆盖（1.1.3 §9/§10 完整设置） ----------
+ 手机上 12px caption / 13px secondary 偏小：caption 13 / secondary 14 /
+ body 15 / card 16 / metric 24 / display 28 / hero 32。
+ 只覆盖 token 值，组件规则不动（同一套规则跟随变量自动生效）。
+ 手机正文下限 13px（极弱 footnote / 图表轴标签可更低）。 */
 @media (max-width: 760px) {
   :root {
+    --font-size-caption: 13px;
+    --font-size-secondary: 14px;
     --font-size-body: 15px;
     --font-size-card: 16px;
-    --font-size-hero: 32px;
     --font-size-metric: 24px;
+    --font-size-display: 28px;
+    --font-size-hero: 32px;
   }
 }
 
@@ -123,7 +136,8 @@
 
   --text-primary: #f3f4f6;             /* 接近白但不刺眼 */
   --text-secondary: rgba(255, 255, 255, 0.64);
-  --text-muted: rgba(255, 255, 255, 0.45);
+  /* 1.1.3 §146：muted 提到 0.5（~4.6:1 on card）——原 0.45 仅 4.49:1 临界 */
+  --text-muted: rgba(255, 255, 255, 0.5);
   --text-disabled: rgba(255, 255, 255, 0.36);
 
   /* Accent：Windows 风格蓝，克制 */
@@ -171,7 +185,8 @@
 
   --text-primary: #1b1b1b;
   --text-secondary: #565656;
-  --text-muted: #8a8a8a;
+  /* 1.1.3 §146：muted 加深到 #6e6e6e（~4.6:1，正文级 AA）——原 #8a8a8a 仅 3.39:1 */
+  --text-muted: #6e6e6e;
   --text-disabled: #9a9a9a;
 
   --accent: #005fb8;

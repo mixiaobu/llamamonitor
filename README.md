@@ -4,7 +4,13 @@ llama.cpp 的纯旁路（sidecar）监控程序，Windows 11 桌面应用。
 
 只读取 llama-server 的**只读端点**（全部 HTTP GET，不代理、不修改、不启停
 llama-server，不占用 9091 端口）：`/metrics`（Token 采集）+ `/health`、`/slots`、
-`/props`、`/v1/models`（1.1 Runtime 遥测，分频 GET）。监控程序崩溃不影响 llama-server。
+`/props`、`/v1/models`（Runtime 遥测，分频 GET）。监控程序崩溃不影响 llama-server。
+
+## 界面预览
+
+| 桌面（1920×1080，Dark） | 手机（390×844，Dark） |
+| --- | --- |
+| ![桌面 Dashboard](docs/images/llamamonitor-desktop.png) | ![手机 Bottom Navigation](docs/images/llamamonitor-mobile.png) |
 
 ## 功能
 
@@ -12,17 +18,17 @@ llama-server，不占用 9091 端口）：`/metrics`（Token 采集）+ `/health
   运行时指标，服务器提供时显示）、Prompt/Decode TPS、MTP 接受率（含 per-position）
 - GPU 监控（NVIDIA）：负载/显存/温度/功耗/风扇/频率/PCIe，历史曲线（15m~24h）、
   今日能耗估算、按天 GPU 统计（永久保留）；数据来自系统 NVIDIA 驱动的 nvidia-smi（只读）
-- 系统监控（1.1）：CPU/内存/磁盘/网络/启动时间/硬件库存 + 高级硬件传感器
-  （CPU 温度/功耗、主板温度、风扇，经 LibreHardwareMonitor 只读桥；不可用时
-  显示 `--`）；已监测组件能耗（CPU + 被监控 GPU）按天累计；全程只读
-- llama.cpp Runtime 只读遥测（1.1）：模型信息 / 当前 Slot 状态 / 能力位
+- 系统监控：CPU（含每核心负载 Heat Grid）/内存/磁盘/网络/启动时间/硬件库存
+  + 高级硬件传感器（CPU 温度/功耗、主板温度、风扇，经 LibreHardwareMonitor 只读桥；
+  不可用时显示 `--`）；已监测组件能耗（CPU + 被监控 GPU）按天累计；全程只读
+- llama.cpp Runtime 只读遥测：模型信息 / 当前 Slot 状态 / 能力位
   （/props、/slots、/v1/models、/health，只发 GET）
 - MTP 深度统计：Draft Tokens / Accepted Tokens / 推测验证轮次（今日）、
   按草稿位置的接受 Token 数（Accepted Tokens by Draft Position，动态发现位置）
 - 历史统计：按天 Token 用量（输入/缓存复用/输出 Token）、累计、缓存复用率、每日 MTP 趋势
 - 数据：本地 SQLite（按天累计 + 48h 实时采样 + 计数器 state + GPU 采样/按天），
   Counter reset 安全；schema 版本化迁移（PRAGMA user_version，旧版本数据无损升级）
-- 可靠性与数据质量（Phase 11）：counter reset 事件审计、监控缺口（server 离线 /
+- 可靠性与数据质量：counter reset 事件审计、监控缺口（server 离线 /
   程序重启 / 系统睡眠 / 指标无效）记录与 possible_token_loss 标记、Monitoring Coverage、
   PRAGMA quick_check 健康检查与 protective mode、数据库自动/手动备份（创建后验证 + 轮转）；
   详细规则见下"数据可靠性与质量"与 `docs/REAL_SOAK_TEST.md`
@@ -30,13 +36,13 @@ llama-server，不占用 9091 端口）：`/metrics`（Token 采集）+ `/health
   页面隐藏时自动降低轮询频率
 - Windows 集成：系统托盘（关闭窗口=隐藏到托盘，监控继续）、单实例（Named Mutex +
   第二实例唤醒第一实例）、开机自启（HKCU Run，当前用户登录时进托盘）、优雅关闭
-- 设置页：服务器 / 采集 / 外观 / GPU / 系统监控（1.1）/ 数据与备份 / 应用 / 更新
+- 设置页：服务器 / 采集 / 外观 / GPU / 系统监控 / 数据与备份 / 应用 / 更新
   八个分区 + 关于页，Test Connection、保存（校验 + 原子写入）、
   Reset to Defaults；更新分区提供应用内安全更新（Check / Download / Install /
   Cancel，见"安全更新"章节）
 - 数据管理：CSV 导出（Excel 直接打开，含 GPU 每日 CSV）、SQLite Backup API 备份
   （手动 + 自动 + 验证 + 轮转）、数据库健康检查与 protective mode、清实时历史、重置统计
-- 版本管理（Phase 12）：`version.py` 单一版本号来源、`GET /api/version`、设置页 About
+- 版本管理：`version.py` 单一版本号来源、`GET /api/version`、设置页 About
   （Version/Platform/Data Dir/Schema + Copy Version Info）、PE 文件版本元数据、
   schema 降级保护（更新版本的库 → 只读 incompatible）、迁移前自动备份
   （`pre_migration_*.db`）；Inno Setup 6 安装器 + 一键发布脚本（见下"发布 / 安装器"）
@@ -58,7 +64,7 @@ python -m unittest discover -s tests   # 单元测试
 把整个 `dist\LlamaMonitor` 目录拷到另一台 Windows 11 机器即可运行
 （无需安装 Python；WebView2 运行时 Win11 自带）。
 
-### 发布 / 安装器（Phase 12）
+### 发布 / 安装器
 
 一键构建 + 校验（先跑完整测试，再出便携 ZIP + Inno Setup 安装器 + 校验和/清单）：
 
@@ -82,7 +88,7 @@ python scripts\validate_release.py  # 独立校验 release/ 产物
 CLI：`LlamaMonitor.exe --version`（打印版本并退出）、
 `LlamaMonitor.exe --shutdown-existing`（请求运行中实例优雅退出，供安装器调用）。
 
-## 安全更新（Secure Updates，Phase 13）
+## 安全更新（Secure Updates）
 
 **安装版**（installer）支持检查、验签、下载并静默执行官方安装器完成升级，
 完成后新版本自动启动。**便携版**：可检查/下载，但只提示"Open Download Folder"
@@ -202,7 +208,7 @@ Dashboard 顶部导航切换 **Dashboard / 设置**。设置页为左侧分类�
 - **外观**：主题（系统/浅色/深色，即时生效）、界面刷新间隔、默认统计范围（天数）。
 - **GPU**：启用开关、轮询间隔（1~3600s）、历史保留时长（小时）、Detected GPUs 勾选
   （来自 nvidia-smi 实时探测；见上节）。
-- **系统监控**（1.1）：启用开关、基础遥测轮询间隔、历史落库间隔、历史保留时长、
+- **系统监控**：启用开关、基础遥测轮询间隔、历史落库间隔、历史保留时长、
   高级硬件传感器开关与轮询间隔（见"系统监控"节）。
 - **数据与备份**：数据库路径（留空 = 默认路径）与 WAL 开关、日志级别/滚动大小/保留份数、
   数据管理（备份 / 数据库检查 / CSV 导出 / 清实时历史 / 重置统计，见下节）、
@@ -210,7 +216,7 @@ Dashboard 顶部导航切换 **Dashboard / 设置**。设置页为左侧分类�
 - **应用**：LlamaMonitor 自身 Host/Port（改 host 离开 127.0.0.1 会提示局域网暴露警告）、
   开机自启开关（HKCU Run，仅当前用户）、退出应用、
   集成信息（frozen/background/单实例/托盘/数据目录/uptime）。
-- **更新**（Phase 13）：安装版应用内安全更新——Check for Update / Download /
+- **更新**：安装版应用内安全更新——Check for Update / Download /
   Install / Cancel，状态区显示当前版本与可用版本、release notes（纯文本渲染）、
   签名 key_id；详见"安全更新（Secure Updates）"章节。
 
@@ -264,7 +270,7 @@ Dashboard 顶部导航切换 **Dashboard / 设置**。设置页为左侧分类�
 - live_samples / gpu_samples 的自动清理（按各自保留时长配置）继续生效；
   daily_usage / gpu_daily 永远不自动删除。
 
-## 数据可靠性与质量（Phase 11）
+## 数据可靠性与质量
 
 LlamaMonitor 是只读 sidecar：Token 统计全部来自 llama-server 的**累计 Counter delta**，
 因此"server 重启 / 断网 / 程序重启 / 睡眠 / 时钟跳变"等事件下的正确性由以下规则保证。
@@ -338,10 +344,10 @@ logs\monitor.log    滚动日志（默认 10MB x 5；记录启动/关闭/状态�
 升级/替换 `dist\LlamaMonitor` 目录不会删除或覆盖上述任何文件。
 
 **数据库 schema 迁移**：monitor.db 用 `PRAGMA user_version` 标记版本
-（当前 **v4**：Phase 13 增加 `app_state`（更新状态 / ETag 等运行时元数据）；
-v3 = Phase 11 的 `monitor_events`（counter_reset / sleep_gap /
+（当前 **v4**：增加 `app_state`（更新状态 / ETag 等运行时元数据）；
+v3 = `monitor_events`（counter_reset / sleep_gap /
 database_* / backup_* 等事件审计）/ `data_gaps`（已知监控缺口，永久保留）/
-`backup_history`（备份元数据与验证状态）；v2 = Phase 9 GPU 表）。
+`backup_history`（备份元数据与验证状态）；v2 = GPU 表）。
 启动时自动检测并逐版本迁移：旧版本（含早期无版本号的库）数据无损升级，
 迁移在独立事务内完成，失败自动回滚并在下次启动重试；从不 DROP/DELETE 旧数据。
 **Counter 事务审计**：所有修改类写（daily 归集、state baseline、live 清理、
@@ -415,7 +421,7 @@ busy/locked 重试 + busy_timeout），任何一步失败整体回滚，不存�
 - `POST /api/data/backup` / `clear-live` / `reset-statistics`
 - `PUT /api/app/autostart`、`POST /api/app/open-folder`、`POST /api/app/exit`
 - 全部 5 个 `/api/update/*` 端点
-- **敏感只读** API 也回环保护（Phase 14 AUDIT-SEC-001/002）：
+- **敏感只读** API 也回环保护（AUDIT-SEC-001/002）：
   `GET /api/config`、`GET /api/app/integration`（其余只读 API
   /api/status、/api/summary、/api/daily、/api/live、GPU 等远程可读）。
   完整端点清单见 [`docs/API.md`](docs/API.md)。
@@ -437,14 +443,9 @@ Dashboard：把配置里 `web.host` 改为 `0.0.0.0`（保存后重启应用生�
 同一局域网，浏览器打开 `http://<电脑局域网IP>:8765/` 即可。
 
 - 手机打开的是**同一套 UI 的真 Mobile 模式**（≤760px）：底部导航
-  （概览 / Token / 性能 / GPU / 更多），更多内含系统 / 监控历史 / 设置 / 关于；
+  （概览 / 用量 / 性能 / GPU / 系统五个主导航），辅助页（监控历史 / 设置 / 关于）
+  收进每页头部右上角的「•••」菜单（More Sheet，含焦点陷阱与滚动锁定）；
   触控目标 ≥44px、表格变卡片行、图表高度适配小屏。
 - 远程（非本机）访问是**只读**的：设置分区在导航中隐藏，界面顶部显示只读提示；
   所有修改类 API 仍按实际 socket 地址回环保护（见上节）。
 - 安全边界不变：Dashboard 仍只读 llama-server（GET），不代理、不修改 llama-server。
-
-## 界面预览
-
-| 桌面（1920×1080，Dark） | 手机（390×844，Dark） |
-| --- | --- |
-| ![桌面 Dashboard](docs/images/llamamonitor-desktop.png) | ![手机 Bottom Navigation](docs/images/llamamonitor-mobile.png) |

@@ -71,12 +71,74 @@ def _safe(callable_, *args, **kwargs):
         return None
 
 
+def _core_groups() -> list[list[int]]:
+    """1.1.3：逻辑核 -> 物理核分组（每个物理核的一组逻辑核，含超线程 sibling）。
+
+    数据源优先级（都失败才 []，前端回退逻辑核平铺视图，**不伪造**）：
+    1. Windows：GLPIEx(RELATION_PROCESSOR_CORE) 直接给每个物理核的逻辑核掩码（最准）。
+    2. Linux：psutil.cpu_affinity 按亲和集合分组。
+    3. 兜底：physical/logical 为整除 N 倍时，按交织步长配对（常见 HT sibling 布局
+       0↔N/2、1↔N/2+1…）——仅在能确定 sibling 数时启用，否则返回 []。
+    返回形如 [[0,48],[1,49],...]（每个物理核的逻辑核 id）。"""
+    # --- Windows：GetLogicalProcessorInformationEx(RELATION_PROCESSOR_CORE=5) ---
+    if _IS_WINDOWS:
+        try:
+            import ctypes
+            import struct as _struct
+            buf = ctypes.create_string_buffer(65536)
+            ret = ctypes.c_ulong(65536)
+            k = ctypes.WinDLL("kernel32", use_last_error=True)
+            if k.GetLogicalProcessorInformationEx(5, buf, ctypes.byref(ret)) and ret.value:
+                base = ctypes.addressof(buf)
+                n = ret.value
+                off = 0
+                groups: list[list[int]] = []
+                while off + 8 <= n:
+                    rel, size = _struct.unpack_from("<II", buf.raw, off)
+                    if not size:
+                        break
+                    if rel == 5:
+                        mask = _struct.unpack_from("<Q", buf.raw, off + 8)[0]
+                        ids = sorted(i for i in range(64) if (mask >> i) & 1)
+                        if ids:
+                            groups.append(ids)
+                    off += size
+                if len(groups) >= 2:  # 2 个以上物理核才可信（排除单核 VM 的伪条目）
+                    return groups
+        except Exception:
+            pass
+    # --- Linux：cpu_affinity ---
+    try:
+        groups = {}
+        order = []
+        for i in range(_safe(psutil.cpu_count, logical=True) or 0):
+            aff = frozenset(_safe(psutil.cpu_affinity, i) or [i])
+            if aff not in groups:
+                groups[aff] = []
+                order.append(aff)
+            groups[aff].append(i)
+        if len(order) >= 2:
+            return [groups[a] for a in order]
+    except Exception:
+        pass
+    # --- 兜底：N:N 整除时按交织步长配对 ---
+    logical = _safe(psutil.cpu_count, logical=True) or 0
+    physical = _safe(psutil.cpu_count, logical=False) or 0
+    if physical >= 2 and logical > physical and logical % physical == 0:
+        n_sib = logical // physical
+        return [[p + n_sib * s for s in range(n_sib)] for p in range(physical)]
+    return []
+
+
 @dataclass
 class SystemSample:
     """一条系统采样点（system_samples 行 + UI 实时展示）。None = 不可用（绝不存 0）。"""
 
     timestamp: float
     cpu_usage_percent: float | None = None
+    # 1.1.3：逐逻辑核利用率（live-only，不进 DB——schema 保持 5）。
+    # None = 尚未 warmup / 不可用；列表长度 = 逻辑核数。
+    cpu_per_core_percent: list[float] | None = None
     cpu_frequency_mhz: float | None = None
     cpu_temperature_c: float | None = None       # 来自高级传感器（可空）
     cpu_package_power_w: float | None = None     # 来自高级传感器（可空）
@@ -185,6 +247,10 @@ class SystemCollector:
         inv["cpu_model"] = _safe(lambda: (psutil.cpu_freq() and "") or _cpu_model())
         inv["logical_cpus"] = _safe(psutil.cpu_count, logical=True)
         inv["physical_cores"] = _safe(psutil.cpu_count, logical=False)
+        # 1.1.3：Heat Grid 视图元数据——逻辑核到物理核的分组（cpu_affinity），
+        # 供前端"物理核 / 逻辑核"切换。失败时 core_groups 为空（前端回退逻辑核平铺）。
+        inv["core_view"] = "physical"  # 默认物理核视图（规格 §62）
+        inv["core_groups"] = _core_groups()
         mem = _safe(psutil.virtual_memory)
         if mem is not None:
             inv["installed_ram_bytes"] = mem.total
@@ -330,11 +396,14 @@ class SystemCollector:
         保持 db 单连接单线程不变量）。
         """
         usage = _safe(psutil.cpu_percent, interval=None)
+        # 1.1.3：逐逻辑核利用率（percpu=True，与聚合值同一次采样窗口对齐）。
+        # 首次 warmup 返回全 0/None——由 _apply_sample 的 _cpu_warmed 统一丢弃。
+        per_core = _safe(psutil.cpu_percent, percpu=True, interval=None)
         freq = _safe(psutil.cpu_freq)
         vm = _safe(psutil.virtual_memory)
         dio = _safe(psutil.disk_io_counters)
         nio = _safe(psutil.net_io_counters)
-        return (usage, freq, vm, dio, nio)
+        return (usage, per_core, freq, vm, dio, nio)
 
     def poll_once(self) -> SystemSample | None:
         """
@@ -376,15 +445,17 @@ class SystemCollector:
 
     def _apply_sample(self, sample: SystemSample, raw: tuple, now_mono: float) -> None:
         """把原始 psutil 值填入 sample（速率用 monotonic；counter reset 安全）。"""
-        usage, freq, vm, dio, nio = raw
+        usage, per_core, freq, vm, dio, nio = raw
 
         # CPU 利用率（interval=None 非阻塞；首次 warmup：本条不写 DB、不作为有效利用率）
         if usage is not None:
             if not self._cpu_warmed:
-                # 首次：只建立基线
+                # 首次：只建立基线（per_core 同窗口，一并丢弃）
                 self._cpu_warmed = True
             else:
                 sample.cpu_usage_percent = usage
+                if per_core is not None:
+                    sample.cpu_per_core_percent = [float(x) for x in per_core]
         if freq is not None and freq.current is not None:
             sample.cpu_frequency_mhz = freq.current
 

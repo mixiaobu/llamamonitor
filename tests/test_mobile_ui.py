@@ -1,15 +1,16 @@
 """
-1.1.2 Mobile & Visual Experience 回归测试（静态层）。
+1.1.2/1.1.3 Mobile & Visual Experience 回归测试（静态层）。
 
 静态断言（前端字符串级，风格同 test_ui_terminology.py）：
-- 真 Mobile 模式（≤760px）：Bottom Navigation + More Sheet + safe-area
-- 表格 → Card Rows（td[data-label] 注入 + CSS 规则）
+- 真 Mobile 模式（≤760px）：Bottom Navigation（1.1.3：5 核心页）+
+  每页页头 ••• overflow More Sheet（focus trap + 滚动锁）+ safe-area
+- 表格 → Card Rows（td[data-label] 注入 + 显式 .mobile-card-table CSS 规则）
 - Settings 横向 tabs + sticky save bar
 - Touch / tooltip / remote read-only / 逐页 max-width
 - 设计 token 唯一视觉源（mobile 变量存在）
 
 动态行为（overflow/touch target/结构）由 CDP 巡检覆盖：
-scripts/ui_patrol_112.js（136 viewport×page 矩阵）。
+scripts/ui_patrol_113.js（17 viewport×page 矩阵）。
 
 运行：python -m unittest discover -s tests
 """
@@ -38,22 +39,23 @@ class MobileSkeletonTests(unittest.TestCase):
         cls.nav_js = _read("js/navigation.js")
 
     def test_mobile_nav_dom_present(self):
+        # 1.1.3：底部导航 = 5 个核心监控域（概览/用量/性能/GPU/系统）；
+        # 辅助页（历史/设置/关于）改由每页页头 ••• overflow（.page-overflow）触发。
         for frag in [
             '<nav class="mobile-nav"',
             'data-page="overview"',
             'data-page="usage"',
             'data-page="performance"',
             'data-page="gpu"',
-            'class="mnav-item mnav-more" id="mnavMore"',
-            'id="mnavMoreIcon"',
+            'data-page="system"',
         ]:
             self.assertIn(frag, self.html, "Mobile Nav DOM 缺失: %s" % frag)
 
     def test_more_sheet_dom_present(self):
+        # 1.1.3：overflow sheet 只含辅助页（历史/设置/关于），system 已进底部导航。
         for frag in [
             'id="moreSheetScrim"',
-            'id="moreSheet" role="dialog"',
-            'class="sheet-item" data-page="system"',
+            'id="moreSheet" role="dialog" aria-modal="true"',
             'data-page="history"',
             'data-page="settings"',
             'data-page="about"',
@@ -75,7 +77,13 @@ class MobileSkeletonTests(unittest.TestCase):
         self.assertIn("initMobileNav", self.nav_js)
         self.assertIn("registerNavGuard", self.nav_js,
                       "nav guard 必须存在（设置页未保存确认 desktop/mobile 共用）")
-        self.assertIn("mnav-more", self.nav_js)
+        # 1.1.3：••• overflow 按钮由 navigation.js 注入并接线（旧 mnav-more tab 已移除）
+        self.assertIn("page-overflow", self.nav_js)
+        self.assertIn("openSheet", self.nav_js)
+        self.assertIn("closeSheet", self.nav_js)
+        # focus trap + 滚动锁（spec §49）
+        self.assertIn("trapFocus", self.nav_js, "sheet 必须有 focus trap")
+        self.assertIn("lockBodyScroll", self.nav_js, "sheet 打开必须锁 body 滚动")
 
     def test_mobile_css_registered_in_html(self):
         self.assertIn('href="/static/css/mobile.css"', self.html,
@@ -110,14 +118,19 @@ class TableCardRowTests(unittest.TestCase):
             self.assertIn(label, self.app_js, "事件行缺少 %s" % label)
 
     def test_card_row_css_present(self):
+        # 1.1.3：card row 选择器由 :has() 改为显式 .mobile-card-table 类
+        # （app.js init 时对 daily/gap/events 的 .table-wrap 注入），规避旧浏览器 :has 缺失。
         for frag in [
-            ":has(.table-daily)",
-            ":has(.table-gap)",
-            ":has(.table-events)",
+            ".table-wrap.mobile-card-table",
             "content: attr(data-label)",
             "thead",
         ]:
             self.assertIn(frag, self.mobile_css, "card rows CSS 缺失: %s" % frag)
+
+    def test_card_row_class_injection(self):
+        # app.js 必须注入 .mobile-card-table（CSS 依赖它定位三张卡行表）
+        self.assertIn("mobile-card-table", self.app_js,
+                      "app.js 未注入 mobile-card-table 类")
 
 
 class SettingsMobileTests(unittest.TestCase):

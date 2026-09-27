@@ -7,7 +7,77 @@
 > 互相视为"不同系列"：安装器降级保护按数值比较（1.0.0 > 0.13.x），从 1.0.0 安装
 > 0.13.x 会被识别为降级并拒绝（实测行为，非缺陷）。
 
-## [1.1.2] - 2026-09-28
+## [1.1.3] - 2026-09-27
+
+**Pixel & Interaction Refinement**。不新增后端功能、不新增页面、不改变监控语义、
+数据库 schema **保持 5**。重点是：设计 token 唯一视觉源清理、断点体系归并、
+Mobile 导航重设计、Heat Grid 真 per-core、图表/表格/交互/状态/对比度/布局的系统性精修。
+
+### 设计体系
+- 设计 token 唯一视觉源：content-max 单一定义（+GPU/history 变体）、radius 三档
+  别名、**z-index 10 级 token**（content 0 → tooltip 90，全量裸值替换）、
+  line-height 3 档、mobile ≤760px 字号体系（caption 13 → hero 32）。
+- 断点体系归并为 **1366 / 1099 / 760 / 360** 四档 + 功能查询：旧 900/1100/1200/1400/
+  700/640 全部归并（900/1100→1099，1200/1400→1366，700/640→760），消除断点碎片。
+
+### Mobile 导航重设计（≤760px）
+- 底部导航 = **5 个核心监控域一键直达**（概览 / 用量 / 性能 / GPU / 系统），
+  60px + safe-area；active 态改为 accent icon + `--accent-subtle` pill
+  （替代 1.1.2 的 3px 顶线）。
+- 辅助页（监控历史 / 设置 / 关于）收进**每页页头右侧 ••• overflow**（44×44）
+  打开 More Sheet：焦点陷阱（Tab 循环）+ body 滚动锁 + ESC 关闭 + 焦点归还 +
+  aria-expanded/aria-modal。
+- 每页 scrollTop 记忆；重击当前页回到顶部；远程只读时设置项禁用并标注。
+
+### Heat Grid 真 per-core（系统页 CPU 负载）
+- 1.1.2 用整机聚合值填充 N 个格子（明确标注"非逐核拆分"）；1.1.3 改为
+  **真实逐核利用率**：collector 增 `cpu_percent(percpu=True)`（live-only，
+  不进 DB），`/api/system/status` 返回 `cpu.per_core_percent`。
+- 每格显示真实利用率整数 + 颜色连续映射（accent × opacity）；
+  **物理核 / 逻辑核视图切换**（物理核 = 超线程 sibling 取均值，默认）。
+- 物理核分组三级回退：Windows GLPIEx（精确）→ Linux cpu_affinity →
+  physical/logical 整除 N 倍时确定性配对；全部失败才回退逻辑核平铺。
+- 无逐核数据（首条 warmup / 核数过少）→ 只显示聚合口径说明行，**禁止画多格
+  假 per-core**。
+
+### 图表
+- GPU 温度图 y 轴 nice lower bound（min(data)−10 取整，clamp ≥0）：
+  50-70°C 波动不再被 0 基线压扁。
+- Token bar 宽度按数据点数分档（≤2→48 / ≤7→32 / ≤31→18 / 更多→12），
+  避免稀疏数据 hairline / 密集数据糊块。
+- Token 类图表 tooltip 双显：`1.23M (1,234,567)`（紧凑 + 千分位全整数）。
+
+### 表格
+- 每日用量表列序按阅读逻辑重排（日期 | Token 总量 | 实际计算 | 输入 |
+  缓存复用 | 输出 | 复用率 | 采集覆盖率 | 缺口）；mobile card rows 内
+  增加**分组分隔线**（`.td-group-start`）。
+- card rows 选择器由 `:has()` 改为显式 `.mobile-card-table` 类（JS 注入），
+  规避旧浏览器 `:has` 缺失。
+- GPU 进程表包裹 `.table-wrap`：修复 759-1099px 区间长进程名导致的
+  页面横向溢出（1059px→容器内横滚）。
+
+### 交互与状态
+- 相对时间 ≤5s 显示"刚刚"（6-59s 才 X 秒前）：消除"2秒前/3秒前"逐秒跳动。
+- tooltip hover 揭示加 300ms 进入 / 100ms 离开延迟（hover 设备；
+  键盘 focus 即时，触屏 tap 路径不受影响）。
+- 远程只读 banner 可关闭（sessionStorage 记忆）。
+- 布局 bug：概览 status-strip 长 URL/模型路径溢出（mobile 390 下 723px
+  内容被 overflow-x:hidden 裁切）→ ellipsis + flex-basis 0 修复。
+
+### 可访问性 / 对比度
+- light `--text-muted` #8a8a8a → #6e6e6e（3.39:1 → 4.6:1，正文级 AA）；
+  dark muted 0.45 → 0.50（4.49 → ~4.7:1）。
+- 输入框 32→34px；**mobile 输入 44px + 16px 字号**（iOS focus 不自动缩放）。
+- 暗色主题 success/warning/error/info 对比度实测 5.67-7.46:1（AA 通过）。
+
+### 文档 / 仓库
+- README：界面预览置顶、清理 Phase 11/12/13/14 术语、mobile 导航描述更新、
+  截图重拍（desktop 57KB / mobile 82KB，真 PNG < 500KB）。
+- `docs/UI_AUDIT_1.1.3.md`（27 项编码问题清单）、`docs/UI_REVIEW_1.1.3.md`
+  （逐页×主题 PASS/FIXED/KNOWN + gate 结果）。
+- 1.1.2 条目日期更正为 2026-09-27。
+
+## [1.1.2] - 2026-09-27
 
 **Mobile & Visual Experience Update**。不新增后端功能、不改变监控语义、
 数据库 schema **保持 5**。重点是：≤760px 真 Mobile 模式 + 视觉 token 统一

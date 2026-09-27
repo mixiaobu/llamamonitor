@@ -183,8 +183,9 @@
   margin: 0 auto;
   padding: var(--spacing-2xl) var(--page-pad) var(--spacing-3xl);
 }
-/* 1.1.2：设置/关于页逐页收窄——rail +pane 单列布局在 1520px 下左右留白过多，
- 行距阅读吃力；关于页内容短。其他页保持 .content-inner 的 1520 宽。 */
+/* 1.1.3：逐页收窄（一个页一个 token，见 tokens.css）——
+ 设置 rail+pane 单列过宽阅读吃力；关于页内容短；历史页表格列多但行少，
+ 过宽时行距横向拉扯；GPU 页多卡需要更宽。其他页保持 .content-inner 默认宽。 */
 #page-settings {
   max-width: var(--content-max-settings);
   margin: 0 auto;
@@ -195,11 +196,23 @@
   margin: 0 auto;
   width: 100%;
 }
+#page-gpu {
+  max-width: var(--content-max-gpu);
+  margin: 0 auto;
+  width: 100%;
+}
+#page-history {
+  max-width: var(--content-max-history);
+  margin: 0 auto;
+  width: 100%;
+}
 @media (max-width: 1366px) {
   .content-inner { padding-left: var(--page-pad-narrow); padding-right: var(--page-pad-narrow); }
 }
+/* 4K（≥2560）：内容适度放大到 1920 保持密度（不是 2500 拉伸，也不是 800 居中空岛） */
 @media (min-width: 2560px) {
   .content-inner { max-width: 1920px; }
+  #page-gpu { max-width: 1920px; }
 }
 /* 1.1.2：真 Mobile（≤760px）——侧边栏隐藏（导航移交底部 Bottom Navigation，
  样式见文件尾 .mobile-nav），内容全宽；底部给 Bottom Nav + safe-area 留空，
@@ -261,11 +274,11 @@
   gap: var(--spacing-sm);
   flex: none;
 }
-/* 窄屏（≤900px 含手机）页头改列式——标题独占一行，时间筛选整行铺满。
+/* compact 档（≤1099px，含手机）页头改列式——标题独占一行，时间筛选整行铺满。
  此前 .seg 固定 258px 起，320px 视口下右边界溢出 .content，整排筛选被推出
  可视区（用户反馈"手机上看不到时间筛选"）。整行 + .seg overflow-x auto：
- 放不下时内部横滚而不是溢出页面。 */
-@media (max-width: 900px) {
+ 放不下时内部横滚而不是溢出页面。1.1.3：断点 900→1099（五档归并）。 */
+@media (max-width: 1099px) {
   .page-header {
     flex-direction: column;
     align-items: stretch;
@@ -325,10 +338,15 @@
   margin-bottom: 0;
 }
 
-/* ============ 1.1.2 Mobile Bottom Navigation（≤760px 显示） ============
- 桌面隐藏；≤760px 固定底栏 5 列（概览/Token/性能/GPU/更多）。
- 选中态 = 顶部 3px accent 指示条（与侧边栏左侧指示条同语言）。 */
+/* ============ 1.1.3 Mobile Bottom Navigation（≤760px 显示） ============
+ 桌面隐藏；≤760px 固定底栏 5 核心监控页（概览/用量/性能/GPU/系统）。
+ 辅助页（历史/设置/关于）在每页页头右侧 ••• Overflow。
+ 选中态 = icon accent + 极轻 accent-subtle pill（32×24）。 */
 .mobile-nav {
+  display: none;
+}
+/* ••• Overflow 按钮：桌面隐藏（JS 注入；≤760px 显示，样式在 mobile.css） */
+.page-overflow {
   display: none;
 }
 @media (max-width: 760px) {
@@ -337,7 +355,7 @@
     left: 0;
     right: 0;
     bottom: 0;
-    z-index: 50;
+    z-index: var(--z-mobile-nav);
     display: grid;
     grid-template-columns: repeat(5, minmax(0, 1fr));
     align-items: stretch;
@@ -351,44 +369,48 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 2px;
+    gap: 3px;
     min-height: var(--bottom-nav-height);
     background: none;
     border: none;
     color: var(--text-secondary);
-    font-size: var(--font-size-caption);
+    font-size: 13px;
     cursor: pointer;
     transition: color var(--transition-fast);
     -webkit-tap-highlight-color: transparent;
   }
+  /* 1.1.3 active：icon 用 accent + 极轻 pill 底（32×24 accent-subtle），
+     不再用顶部 3px 指示条（那是 web tab 语言）。 */
   .mnav-item[aria-current="page"] {
-    color: var(--text-primary);
+    color: var(--accent);
     font-weight: var(--font-weight-semibold);
   }
-  .mnav-item[aria-current="page"]::before {
+  .mnav-item[aria-current="page"] .mnav-icon::before {
     content: "";
     position: absolute;
-    top: 0;
     left: 50%;
-    transform: translateX(-50%);
+    top: 50%;
+    transform: translate(-50%, -50%);
     width: 32px;
-    height: 3px;
-    border-radius: 0 0 2px 2px;
-    background: var(--accent);
+    height: 24px;
+    border-radius: var(--radius-pill);
+    background: var(--accent-subtle);
+    z-index: -1;
   }
   .mnav-icon {
-    width: 20px;
-    height: 20px;
+    position: relative;
+    width: 22px;
+    height: 22px;
     display: flex;
     align-items: center;
     justify-content: center;
   }
   .mnav-icon svg {
-    width: 20px;
-    height: 20px;
+    width: 22px;
+    height: 22px;
     stroke: currentColor;
     fill: none;
-    stroke-width: 1.5;
+    stroke-width: 1.7;
     stroke-linecap: round;
     stroke-linejoin: round;
   }
@@ -407,8 +429,8 @@
     display: block;
     position: fixed;
     inset: 0;
-    z-index: 60;
-    background: rgba(0, 0, 0, 0.4);
+    z-index: var(--z-sheet-scrim);
+    background: var(--overlay-scrim);
   }
   .sheet-scrim[hidden] {
     display: none;
@@ -420,7 +442,7 @@
     left: 0;
     right: 0;
     bottom: 0;
-    z-index: 61;
+    z-index: var(--z-sheet);
     background: var(--bg-elevated);
     border-radius: var(--radius-sheet) var(--radius-sheet) 0 0;
     border-top: 1px solid var(--border-subtle);
@@ -496,12 +518,13 @@
   }
 }
 
-/* ============ 1.1.2 远程只读提示（非 loopback 访问） ============ */
+/* ============ 1.1.3 远程只读提示（非 loopback 访问） ============
+ compact 单行、可关闭（session 记忆）；关闭状态在 Overflow Sheet 内保留。 */
 .remote-banner {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
-  padding: var(--spacing-sm) var(--spacing-md);
+  padding: var(--spacing-xs) var(--spacing-md);
   margin-bottom: var(--section-gap);
   background: var(--bg-elevated);
   border: 1px solid var(--border-default);
@@ -512,4 +535,44 @@
 }
 .remote-banner[hidden] {
   display: none;
+}
+.remote-banner-close {
+  margin-left: auto;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: var(--radius-control);
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+.remote-banner-close:hover {
+  background: var(--bg-subtle-hover);
+  color: var(--text-primary);
+}
+/* Overflow Sheet 内的远程只读状态行 */
+.more-sheet-remote {
+  padding: var(--spacing-sm) var(--spacing-sm);
+  margin-bottom: var(--spacing-xs);
+  border-radius: var(--radius-control);
+  background: var(--accent-subtle);
+  color: var(--text-secondary);
+  font-size: var(--font-size-caption);
+}
+.more-sheet-remote[hidden] {
+  display: none;
+}
+/* 禁用（远程只读）的 sheet 项 */
+.sheet-item:disabled,
+.sheet-item-disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.sheet-item:disabled:active {
+  background: none;
 }

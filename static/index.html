@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>LlamaMonitor</title>
+<!-- 1.1.3：内联 SVG favicon（accent 蓝 + 监控折线）——消除浏览器回落 /favicon.ico
+     的 404 console 噪音（浏览器版每次打开都会请求）。 -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230f6bb8'/%3E%3Cpath d='M6 20l5-6 4 4 5-8 6 9' stroke='%23fff' stroke-width='2.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <!-- 1.0：默认主题跟随系统。CSS 解析前按系统配色设置 data-theme，避免浅色系统首屏闪深色 -->
 <script>
   try {
@@ -65,27 +68,28 @@
     </div>
   </nav>
 
-  <!-- ============ Mobile Bottom Navigation（≤760px 显示，桌面隐藏） ============ -->
+  <!-- ============ Mobile Bottom Navigation（≤760px 显示，桌面隐藏） ============
+   1.1.3：核心监控域 5 页全部一键到达（概览/用量/性能/GPU/系统）；
+   辅助功能（历史/设置/关于）进每页页头右侧 ••• Overflow（44×44）。 -->
   <nav class="mobile-nav" aria-label="主导航（移动端）">
     <button class="mnav-item" data-page="overview" type="button">
       <span class="mnav-icon" data-icon="overview"></span><span class="mnav-label">概览</span></button>
     <button class="mnav-item" data-page="usage" type="button">
-      <span class="mnav-icon" data-icon="usage"></span><span class="mnav-label">Token</span></button>
+      <span class="mnav-icon" data-icon="usage"></span><span class="mnav-label">用量</span></button>
     <button class="mnav-item" data-page="performance" type="button">
       <span class="mnav-icon" data-icon="performance"></span><span class="mnav-label">性能</span></button>
     <button class="mnav-item" data-page="gpu" type="button">
       <span class="mnav-icon" data-icon="gpu"></span><span class="mnav-label">GPU</span></button>
-    <button class="mnav-item mnav-more" id="mnavMore" type="button" aria-haspopup="dialog" aria-controls="moreSheet">
-      <span class="mnav-icon" id="mnavMoreIcon"></span><span class="mnav-label">更多</span></button>
+    <button class="mnav-item" data-page="system" type="button">
+      <span class="mnav-icon" data-icon="system"></span><span class="mnav-label">系统</span></button>
   </nav>
 
-  <!-- ============ More Sheet（移动端二级页：系统/历史/设置/关于） ============ -->
+  <!-- ============ Overflow Sheet（移动端辅助页：历史/设置/关于） ============
+   由每页页头右侧 ••• 按钮（.page-overflow）触发；focus trap + 滚动锁。 -->
   <div class="sheet-scrim" id="moreSheetScrim" hidden></div>
   <div class="more-sheet" id="moreSheet" role="dialog" aria-modal="true" aria-label="更多页面" hidden>
     <div class="more-sheet-handle"></div>
-    <button class="sheet-item" data-page="system" type="button">
-      <span class="sheet-icon" data-icon="system"></span>
-      <span class="sheet-text"><span class="sheet-title">系统</span><span class="sheet-desc">CPU / 内存 / 磁盘 / 传感器</span></span></button>
+    <div class="more-sheet-remote" id="moreSheetRemote" hidden>远程只读模式</div>
     <button class="sheet-item" data-page="history" type="button">
       <span class="sheet-icon" data-icon="history"></span>
       <span class="sheet-text"><span class="sheet-title">监控历史</span><span class="sheet-desc">按天统计 / 缺口 / 导出</span></span></button>
@@ -330,8 +334,9 @@
             <div class="table-wrap card-like">
               <table class="table-full table-daily">
                 <thead><tr>
-                  <th>日期</th><th>输入 Token</th><th>缓存复用 Token</th><th>输出 Token</th>
-                  <th>实际计算</th><th>Token 总量</th><th>缓存复用率</th><th>采集覆盖率</th><th>缺口</th>
+                  <th>日期</th><th>Token 总量</th><th>实际计算</th>
+                  <th>输入 Token</th><th>缓存复用 Token</th><th>输出 Token</th>
+                  <th>缓存复用率</th><th>采集覆盖率</th><th>缺口</th>
                 </tr></thead>
                 <tbody id="dailyTbody"><tr><td colspan="9" class="na">暂无数据。</td></tr></tbody>
               </table>
@@ -776,7 +781,7 @@
             <span class="sh-title">GPU 进程（只读）</span>
           </div>
           <div class="section-body">
-            <div class="card">
+            <div class="table-wrap card-like">
               <table class="table-full" id="gpuProcTableWrap" style="width:100%">
                 <thead><tr>
                   <th>PID</th><th>进程</th><th>GPU</th><th>显存</th>
