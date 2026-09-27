@@ -1,13 +1,13 @@
 /* ============================================================
-   LlamaMonitor — Components（Phase 15）
-   统一组件：Card / Stat / Button / Input / Switch / Segmented /
-   InfoBar / StatusBadge / Toast / Modal / Table / EmptyState /
-   InfoTooltip / Progress / SettingRow。
-   颜色只走 tokens.css 变量（spec §3/§20）。
-   ============================================================ */
+ LlamaMonitor — Components
+ 统一组件：Card / Stat / Button / Input / Switch / Segmented /
+ InfoBar / StatusBadge / Toast / Modal / Table / EmptyState /
+ InfoTooltip / Progress / SettingRow。
+ 颜色只走 tokens.css 变量。
+ ============================================================ */
 
-/* ============ Card（spec §14/§15：8-10px 圆角，subtle 边框，轻 shadow；
-   不可点击的 card 不假装 clickable） ============ */
+/* ============ Card（8-10px 圆角，subtle 边框，轻 shadow；
+ 不可点击的 card 不假装 clickable） ============ */
 .card {
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
@@ -24,8 +24,8 @@
   background: var(--bg-card-hover);
   border-color: var(--border-default);
 }
-/* Card Header（Phase 16D §11 同构：标题区 / 内容区 / 可选底部说明区）
-   Card Title 15/600（低于 Section Title 18/700，高于 Body 14） */
+/* Card Header（同构：标题区 / 内容区 / 可选底部说明区）
+ Card Title 15/600（低于 Section Title 18/700，高于 Body 14） */
 .card-title {
   display: flex;
   align-items: center;
@@ -42,7 +42,7 @@
   font-weight: var(--font-weight-regular);
   color: var(--text-muted);
 }
-/* 卡片底部说明区（Phase 16D §11：仅当确需数据来源/注释时使用） */
+/* 卡片底部说明区（仅当确需数据来源/注释时使用） */
 .card-footer {
   margin-top: var(--spacing-md);
   padding-top: var(--spacing-sm);
@@ -56,7 +56,7 @@
   border-top: 1px solid var(--border-subtle);
 }
 
-/* 网格容器：内容自适应列数（spec §54：<1100px 收敛） */
+/* 网格容器：内容自适应列数（<1100px 收敛） */
 .grid {
   display: grid;
   gap: var(--spacing-lg);
@@ -75,8 +75,8 @@
   .grid.cols-2 { grid-template-columns: minmax(0, 1fr); }
 }
 
-/* ============ Stat（spec §12/§13：数字层级 28-36 / 18-24 / 12-14；
-   一大 card 内排多个 statistic，不做 15 张小卡） ============ */
+/* ============ Stat（数字层级 28-36 / 18-24 / 12-14；
+ 一大 card 内排多个 statistic，不做 15 张小卡） ============ */
 .stat-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -118,12 +118,12 @@
 .stat-hint.warn { color: var(--warning); }
 .stat-hint.bad { color: var(--error); }
 .stat-hint.ok { color: var(--success); }
-/* 数值语义色（与 stat-hint 同色板，16D 数据质量卡 tone 复用） */
+/* 数值语义色（与 stat-hint 同色板，数据质量卡 tone 复用） */
 .stat-value.ok { color: var(--success); }
 .stat-value.warn { color: var(--warning); }
 .stat-value.bad { color: var(--error); }
 
-/* ============ Button（spec §19/§20：32-36px 高，5-7px 圆角，统一四类） ============ */
+/* ============ Button（32-36px 高，5-7px 圆角，统一四类） ============ */
 .btn {
   display: inline-flex;
   align-items: center;
@@ -184,7 +184,7 @@
   color: var(--text-primary);
 }
 
-/* Danger（spec §20：默认克制，hover 才强调红） */
+/* Danger（默认克制，hover 才强调红） */
 .btn.danger {
   background: var(--bg-card);
   border-color: var(--border-default);
@@ -209,7 +209,7 @@
   align-items: center;
 }
 
-/* ============ Input / Select / NumberBox（spec §21：32px 高，统一 border/focus/disabled） ============ */
+/* ============ Input / Select / NumberBox（32px 高，统一 border/focus/disabled） ============ */
 .input,
 .select {
   height: 32px;
@@ -258,9 +258,9 @@
   min-width: 0;
 }
 
-/* 输入框宽度工具类（Phase 16D §24 统一宽度规范，避免 HTML 内联 style）。
-   数字/端口 96-120 · select 160-220 · URL/路径 360-420。
-   显式宽度类优先于下方 .setting-row 的默认宽度。 */
+/* 输入框宽度工具类（统一宽度规范，避免 HTML 内联 style）。
+ 数字/端口 96-120 · select 160-220 · URL/路径 360-420。
+ 显式宽度类优先于下方 .setting-row 的默认宽度。 */
 .input.w-s { width: 110px; }   /* 数字类：96-120 */
 .input.w-m { width: 160px; }   /* 短文本 */
 .input.w-l { width: 380px; }   /* URL / 基础地址：360-420 */
@@ -284,7 +284,7 @@
   color: var(--error);
 }
 
-/* ============ Switch（spec §22：Win11 toggle，底层仍 checkbox） ============ */
+/* ============ Switch（Win11 toggle，底层仍 checkbox） ============ */
 .switch {
   position: relative;
   display: inline-flex;
@@ -344,7 +344,7 @@
   font-size: var(--font-size-body);
 }
 
-/* ============ Segmented Control（spec §70/§71：统一组件） ============ */
+/* ============ Segmented Control（统一组件） ============ */
 .seg {
   display: inline-flex;
   gap: 2px;
@@ -354,8 +354,8 @@
   max-width: 100%;
   overflow-x: auto;
 }
-/* 16D 移动端：横向滚动条压内容（Safari 经典坑）—— 滚动容器上下留白，
-   按钮垂直居中，滚动条落在留白区不遮挡文字 */
+/* 移动端：横向滚动条压内容（Safari 经典坑）—— 滚动容器上下留白，
+ 按钮垂直居中，滚动条落在留白区不遮挡文字 */
 @media (max-width: 900px) {
   .seg {
     padding-top: 6px;
@@ -369,8 +369,8 @@
   color: var(--text-secondary);
   font-size: var(--font-size-caption);
   padding: 3px 12px;
-  /* 16D：手机端点按后 sticky hover/focus 高亮会持续显示——4px 小圆角看起来像直角，
-     统一到控件标准半径 */
+  /* 手机端点按后 sticky hover/focus 高亮会持续显示——4px 小圆角看起来像直角，
+ 统一到控件标准半径 */
   border-radius: var(--radius-control);
   cursor: pointer;
   white-space: nowrap;
@@ -391,7 +391,7 @@
   box-shadow: var(--shadow-card);
 }
 
-/* ============ InfoBar（spec §18：icon + title + message + action + close） ============ */
+/* ============ InfoBar（icon + title + message + action + close） ============ */
 .infobar {
   display: flex;
   align-items: flex-start;
@@ -462,7 +462,7 @@
   color: var(--text-primary);
 }
 
-/* ============ StatusBadge（spec §16/§17：小圆点 + 文本，不整块着色） ============ */
+/* ============ StatusBadge（小圆点 + 文本，不整块着色） ============ */
 .status-badge {
   display: inline-flex;
   align-items: center;
@@ -484,7 +484,7 @@
 .status-badge.updating .dot { background: var(--info); }
 .status-badge.paused .dot { background: var(--text-disabled); }
 
-/* ============ Toast（spec §80/§81：右下，3-5s，去重） ============ */
+/* ============ Toast（右下，3-5s，去重） ============ */
 .toast-box {
   position: fixed;
   right: var(--spacing-lg);
@@ -535,7 +535,7 @@
   to { transform: none; opacity: 1; }
 }
 
-/* ============ Modal（spec §78/§79：轻 dim + Win11 面板 + focus trap） ============ */
+/* ============ Modal（轻 dim + Win11 面板 + focus trap） ============ */
 .modal-overlay {
   position: fixed;
   inset: 0;
@@ -579,9 +579,9 @@
   gap: var(--spacing-md);
 }
 
-/* ============ Table（spec §67/§68/§69：Win11 DataGrid 风格） ============
-   16D：表格容器即卡片（去掉外层 .card 包裹层），视觉标准与 .card 一致
-   （bg-card / border-subtle / radius-large / shadow-card）。 */
+/* ============ Table（Win11 DataGrid 风格） ============
+ 表格容器即卡片（去掉外层 .card 包裹层），视觉标准与 .card 一致
+ （bg-card / border-subtle / radius-large / shadow-card）。 */
 .table-wrap {
   overflow-y: auto;
   overflow-x: auto;
@@ -629,9 +629,9 @@
 .table-full td.cell-warn { color: var(--warning); }
 .table-full td.cell-bad { color: var(--error); }
 .table-full td.cell-ok { color: var(--success); }
-/* 不内滚的表（16D：最近缺口表交给页面外层滚动，直接完整展示）：
-   去掉 max-height 与纵向滚动；sticky 表头在无滚动容器时会粘到页面顶部，
-   一并取消，保持普通文档流。 */
+/* 不内滚的表（最近缺口表交给页面外层滚动，直接完整展示）：
+ 去掉 max-height 与纵向滚动；sticky 表头在无滚动容器时会粘到页面顶部，
+ 一并取消，保持普通文档流。 */
 .table-flat {
   max-height: none;
   overflow-y: visible;
@@ -640,10 +640,10 @@
 /* 允许换行的单元格（长原因/说明），覆盖 td 默认 nowrap */
 .table-full td.cell-wrap { white-space: normal; }
 
-/* ============ 表格列宽规范（16D 审计） ============
-   原则：短列（时间/枚举/标记）固定宽度；信息列弹性撑满剩余空间；
-   表格整体设 min-width——桌面撑满容器，窄屏在 .table-wrap 内横向滚动
-   而不是挤压变形。 */
+/* ============ 表格列宽规范（审计） ============
+ 原则：短列（时间/枚举/标记）固定宽度；信息列弹性撑满剩余空间；
+ 表格整体设 min-width——桌面撑满容器，窄屏在 .table-wrap 内横向滚动
+ 而不是挤压变形。 */
 
 /* 用量页「每日明细」表（9 列） */
 .table-daily { table-layout: fixed; min-width: 920px; }
@@ -671,7 +671,7 @@
 .table-events th:nth-child(2), .table-events td:nth-child(2) { width: 140px; } /* 类型 */
 .table-events th:nth-child(3), .table-events td:nth-child(3) { width: auto; }  /* 详情（弹性） */
 
-/* ============ EmptyState（spec §38/§110：icon + 标题 + 说明） ============ */
+/* ============ EmptyState（icon + 标题 + 说明） ============ */
 .empty-state {
   display: flex;
   flex-direction: column;
@@ -683,9 +683,9 @@
   gap: var(--spacing-sm);
   min-height: 160px;
 }
-/* Phase 16C（HISTORY-001/002 根因）：author 的 display:flex 会压过 UA 的
-   [hidden]{display:none}，导致 .hidden=true 的空态仍可见。
-   统一空态开关 ui.setEmptyState 用这两个类锁定显隐。 */
+/* （HISTORY-001/002 根因）：author 的 display:flex 会压过 UA 的
+ [hidden]{display:none}，导致 .hidden=true 的空态仍可见。
+ 统一空态开关 ui.setEmptyState 用这两个类锁定显隐。 */
 .empty-state.force-show { display: flex !important; }
 .empty-state.force-hide { display: none !important; }
 .empty-state[hidden] { display: none; }
@@ -715,7 +715,7 @@
   line-height: 1.5;
 }
 
-/* ============ InfoTooltip（spec §61-63：? 图标 + hover/focus 定义文本） ============ */
+/* ============ InfoTooltip（? 图标 + hover/focus 定义文本） ============ */
 .info-tip {
   position: relative;
   display: inline-flex;
@@ -790,7 +790,7 @@
   transition: width 250ms ease;
 }
 
-/* ============ SettingRow（spec §23/§25：左 Title+Description，右 Control） ============ */
+/* ============ SettingRow（左 Title +Description，右 Control） ============ */
 .setting-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -833,8 +833,8 @@
   .setting-row .setting-control {
     justify-content: flex-start;
   }
-  /* 16E：文件夹行三个按钮（打开数据/日志/备份）横向排列总宽 ~294px，
-     窄屏（内容宽 < 300px）溢出被裁。改为纵向全宽堆叠。 */
+  /* 文件夹行三个按钮（打开数据/日志/备份）横向排列总宽 ~294px，
+ 窄屏（内容宽 < 300px）溢出被裁。改为纵向全宽堆叠。 */
   .setting-row .setting-control:has(> .btn) {
     flex-direction: column;
     align-items: stretch;

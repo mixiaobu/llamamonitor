@@ -1,0 +1,434 @@
+/* ============================================================
+ LlamaMonitor — Mobile（≤760px 真 Mobile 模式，1.1.2 新增）
+ 职责：在 tokens/base/layout/components/pages 之上做手机端收敛。
+ - 表格 → Card Rows（daily / gaps / events）：不横滚，每行一卡，
+ 列名由 JS 的 td[data-label] 驱动 CSS::before 显示；
+ - Settings：rail 变单行横向 tabs（可横滚、禁折行） + sticky save bar
+ 钉在 Bottom Navigation 上方（含 safe-area）；
+ - Touch：coarse 指针下 hit target ≥44px、tooltip 可 tap、
+ hover 效果只在 (hover:hover) 生效（防手机点按残留）；
+ - Chart 240-280px、Toast 上移到 Bottom Nav 上方居中；
+ - GPU 卡：主指标 + 次要指标压缩，高级遥测/ECC 折叠进 details；
+ - 320px 小屏：今日卡 breakdown 单列、hero 降档。
+ 桌面规则一律不动（本文件所有规则都在 ≤760px 媒体查询内）。
+ ============================================================ */
+
+@media (max-width: 760px) {
+  /* ---------- 页头：垂直组织（Title / Subtitle / Actions 全宽横滚） ---------- */
+  .page-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--spacing-sm);
+  }
+  .page-header .ph-actions { width: 100%; }
+  .page-header .ph-actions .seg { width: 100%; }
+
+  /* 页头内的状态徽标跟随副标题换行，不挤标题 */
+  .page-subtitle { flex-wrap: wrap; }
+
+  /* ---------- 正文可读性：表格/caption 类不低于 14px ---------- */
+  .table-full { font-size: var(--font-size-secondary); }
+  .stat-hint { font-size: var(--font-size-caption); }
+
+  /* ---------- 图表高度 240-280px（规格 29/37/40） ---------- */
+  .chart { height: 240px; }
+  .chart.tall { height: 280px; }
+  .chart-box { padding: var(--spacing-md); }
+  .charts-2col { grid-template-columns: 1fr; gap: var(--spacing-md); }
+
+  /* ---------- Section Header：标题与说明纵向，不挤压 ---------- */
+  .section-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+  .section-header .sh-actions { width: 100%; justify-content: flex-start; }
+
+  /* ---------- 卡片 / stat 网格 ---------- */
+  .card { padding: var(--card-pad); }
+  .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+  /* 今日卡：双 hero 保留 2 列（两数并排是核心信息），breakdown 单列 */
+  .today-hero { grid-template-columns: 1fr 1fr; gap: var(--spacing-md); }
+  .today-breakdown { grid-template-columns: 1fr; }
+  .ov-perf-grid { grid-template-columns: 1fr; }
+  .status-strip { flex-direction: column; align-items: flex-start; gap: var(--spacing-sm); }
+
+  /* ---------- 指标条：5 项 → 2 列（最后一项独占一行） ---------- */
+  .metric-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .metric-strip .ms-item { border-left: none; padding: var(--spacing-sm) 0; }
+
+  /* ---------- 表格 → Card Rows（规格 30/31：daily/gaps/events 不横滚） ----------
+ 每行一张卡：首列（日期/时间）作为卡头加粗；其余每格一行"标签 + 值"，
+ 列名来自 JS 注入的 td[data-label]。空态占位行（无 data-label）同样成卡。
+ 其余短表（GPU 进程 4 列等）不受影响，仍在 .table-wrap 内横向滚动。 */
+  .table-wrap:has(.table-daily),
+  .table-wrap:has(.table-gap),
+  .table-wrap:has(.table-events) {
+    overflow-x: visible;
+    max-height: none;
+    padding: 0;
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .table-wrap:has(.table-daily) .table-full,
+  .table-wrap:has(.table-gap) .table-full,
+  .table-wrap:has(.table-events) .table-full {
+    min-width: 0;
+    table-layout: auto;
+  }
+  .table-wrap:has(.table-daily) thead,
+  .table-wrap:has(.table-gap) thead,
+  .table-wrap:has(.table-events) thead { display: none; }
+  .table-wrap:has(.table-daily) tbody tr,
+  .table-wrap:has(.table-gap) tbody tr,
+  .table-wrap:has(.table-events) tbody tr {
+    display: block;
+    background: var(--bg-card);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-card);
+    margin: 0 0 var(--spacing-md);
+    padding: 0;
+    break-inside: avoid;
+  }
+  .table-wrap:has(.table-daily) tbody tr:last-child,
+  .table-wrap:has(.table-gap) tbody tr:last-child,
+  .table-wrap:has(.table-events) tbody tr:last-child { margin-bottom: 0; }
+  /* 卡头 = 首列（日期/开始时间） */
+  .table-wrap:has(.table-daily) tbody tr > td:first-child,
+  .table-wrap:has(.table-gap) tbody tr > td:first-child,
+  .table-wrap:has(.table-events) tbody tr > td:first-child {
+    display: block;
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-body);
+    color: var(--text-primary);
+    padding: var(--spacing-sm) var(--spacing-md);
+    border-bottom: 1px solid var(--border-subtle);
+    white-space: nowrap;
+  }
+  /* 其余列：标签 + 值 一行（标签来自 data-label；无 data-label 时不显示标签） */
+  .table-wrap:has(.table-daily) tbody tr > td:not(:first-child),
+  .table-wrap:has(.table-gap) tbody tr > td:not(:first-child),
+  .table-wrap:has(.table-events) tbody tr > td:not(:first-child) {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: var(--spacing-md);
+    padding: var(--spacing-xs) var(--spacing-md);
+    border-bottom: 1px solid var(--border-subtle);
+    white-space: normal;
+    font-size: var(--font-size-body);
+    text-align: right;
+  }
+  .table-wrap:has(.table-daily) tbody tr > td:not(:first-child)::before,
+  .table-wrap:has(.table-gap) tbody tr > td:not(:first-child)::before,
+  .table-wrap:has(.table-events) tbody tr > td:not(:first-child)::before {
+    content: attr(data-label);
+    color: var(--text-secondary);
+    font-size: var(--font-size-caption);
+    flex: none;
+  }
+  .table-wrap:has(.table-daily) tbody tr > td:not(:first-child):last-child,
+  .table-wrap:has(.table-gap) tbody tr > td:not(:first-child):last-child,
+  .table-wrap:has(.table-events) tbody tr > td:not(:first-child):last-child {
+    border-bottom: none;
+  }
+  /* 事件表详情列：长文本纵向（标签在上，详情换行在下） */
+  .table-wrap:has(.table-events) td.ev-detail {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    text-align: left;
+  }
+  .table-wrap:has(.table-events) td.ev-detail::before { order: -1; }
+  /* "查看更多/收起" 行：通栏按钮（不成卡） */
+  .table-wrap:has(.table-events) tr.events-more-row,
+  .table-wrap:has(.table-events) tr.events-more-row td {
+    display: block;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    padding: 0;
+    margin: var(--spacing-md) 0 0;
+    text-align: center;
+  }
+  /* 空态占位行（暂无数据）：整行单格 colspan，居中、不加粗、无卡头下边框 */
+  .table-wrap:has(.table-daily) tbody tr > td.na,
+  .table-wrap:has(.table-gap) tbody tr > td.na {
+    display: block;
+    text-align: center;
+    padding: var(--spacing-lg) var(--spacing-md);
+    border-bottom: none;
+    font-weight: var(--font-weight-regular);
+    font-size: var(--font-size-body);
+    color: var(--text-secondary);
+  }
+
+  /* ---------- Settings：单行横向 category tabs（禁多行 wrap） ---------- */
+  .settings-shell { display: block; }
+  .settings-rail {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;       /* 禁多行（规格 47） */
+    overflow-x: auto;
+    gap: 2px;
+    background: var(--bg-base);
+    padding: var(--spacing-xs) 0 var(--spacing-sm);
+    margin: 0 calc(-1 * var(--page-pad));
+    padding-left: var(--page-pad);
+    padding-right: var(--page-pad);
+    scrollbar-width: none;   /* 横滚 tabs 不出滚动条，手势滚动可用 */
+  }
+  .settings-rail::-webkit-scrollbar { display: none; }
+  .settings-rail .rail-item {
+    flex: none;
+    min-height: 40px;        /* 规格 16：segmented 类单项 ≥40px */
+    padding: var(--spacing-sm) var(--spacing-md);
+    min-width: var(--touch-target);
+  }
+  .settings-pane { margin-top: var(--spacing-sm); }
+
+  /* sticky save bar：钉在 Bottom Navigation 上方（含 safe-area，规格 49） */
+  .settings-footer {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom));
+    margin: 0;
+    border-radius: var(--radius-card) var(--radius-card) 0 0;
+    border-left: none;
+    border-right: none;
+    border-bottom: none;
+    padding: var(--spacing-md) var(--page-pad);
+    padding-bottom: var(--spacing-md);
+    gap: var(--spacing-sm);
+  }
+  .settings-footer .dirty-badge {
+    flex: none;
+    text-align: left;
+    white-space: nowrap;
+  }
+  .settings-footer .btn { flex: 1 1 auto; justify-content: center; }
+  .page-settings.active {
+    min-height: 0;
+    /* 给 fixed save bar 预留空间，避免内容被遮 */
+    padding-bottom: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom) + var(--spacing-2xl) + 48px);
+  }
+
+  /* ---------- GPU：卡内压缩 + 高级遥测/ECC 折叠 ---------- */
+  .gpu-grid { grid-template-columns: 1fr; }
+  .gpu-toolbar { flex-wrap: wrap; }
+  .gpu-toolbar #gpuPick {
+    flex-direction: row;
+    flex-wrap: nowrap;
+    overflow-x: auto;        /* GPU 过滤 chips 横滚（规格 37），禁竖排占高 */
+    scrollbar-width: none;
+  }
+  .gpu-toolbar #gpuPick::-webkit-scrollbar { display: none; }
+  .gpu-toolbar #gpuPick .check-chip { flex: none; }
+  /* 次要指标：2×2 网格（原单行在小屏换行难看） */
+  .gpu-device .gd-secondary {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2px var(--spacing-md);
+  }
+  /* 高级遥测 / ECC / throttle：手机上折叠为 details，默认收起（规格 40：
+ 先展示主 4 指标 + 次要 4 项；其余按需展开）。桌面 summary 隐藏。 */
+  .gpu-adv {
+    margin-top: var(--spacing-sm);
+    padding-top: var(--spacing-sm);
+    border-top: 1px solid var(--border-subtle);
+  }
+  .gpu-adv > summary {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    min-height: var(--touch-target);
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-secondary);
+    cursor: pointer;
+    list-style: none;
+    padding: 0;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .gpu-adv > summary::-webkit-details-marker { display: none; }
+  .gpu-adv > summary::before {
+    content: "▸";
+    transition: transform var(--transition-fast);
+  }
+  .gpu-adv[open] > summary::before { transform: rotate(90deg); }
+  .gpu-adv > summary:active { color: var(--text-primary); }
+
+  /* ---------- 系统页：长列表折叠（规格 41） ----------
+ 传感器/库存/磁盘长列表在手机上默认收起，details 标题可展开。
+ 由 JS 包裹；纯 CSS 兜底：kv-list 已是单列，长表自然文档流。 */
+  details.long-fold > summary {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    min-height: var(--touch-target);
+    padding: var(--spacing-sm) 0;
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-secondary);
+    cursor: pointer;
+    list-style: none;
+  }
+  details.long-fold > summary::-webkit-details-marker { display: none; }
+  details.long-fold > summary::before {
+    content: "▸";
+    transition: transform var(--transition-fast);
+  }
+  details.long-fold[open] > summary::before { transform: rotate(90deg); }
+  details.long-fold > summary:active { color: var(--text-primary); }
+
+  /* per-core Heat Grid（>16 核时显示；规格 42）：
+ 数据源是整机聚合值，故网格呈现 1 个聚合块 + 明确标注 */
+  .core-heat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+    gap: 3px;
+    margin-top: var(--spacing-sm);
+  }
+  .core-heat-grid .core-cell {
+    aspect-ratio: 1;
+    border-radius: 3px;
+    background: var(--accent);
+    opacity: 0.3;
+    position: relative;
+  }
+  .core-heat-grid .core-cell .core-val {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ---------- Touch target：coarse 指针 ≥44px（规格 16/78） ---------- */
+  .seg button {
+    min-height: 40px;
+    padding: var(--spacing-sm) var(--spacing-md);
+    font-size: var(--font-size-secondary);
+  }
+  .btn { min-height: 44px; }
+  .btn.small { min-height: 40px; }
+  .check-chip { min-height: 40px; }
+  .nav-item { min-height: var(--nav-item-height); }
+  .rail-item { min-height: 40px; }
+
+  /* tooltip：? 按钮放大 hit area（视觉仍 16px，点击区 44px） */
+  .info-tip { position: relative; }
+  .info-tip .tip-btn {
+    width: 16px;
+    height: 16px;
+    font-size: 10px;
+    position: relative;
+  }
+  .info-tip .tip-btn::after {
+    content: "";
+    position: absolute;
+    inset: -14px;           /* 16px 视觉 + 上下左右 14px = 44px hit area */
+  }
+  .info-tip .tip-text {
+    max-width: min(300px, calc(100vw - 32px));  /* 规格 17：不超屏 */
+    left: 50%;
+  }
+  .info-tip.tip-align-right .tip-text {
+    left: auto;
+    right: -8px;
+  }
+  /* tap 打开态（JS 切换 .tip-open） */
+  .info-tip.tip-open .tip-text { display: block; }
+
+  /* switch：整行可点（label 行高 ≥44 由 setting-row 保证） */
+  .switch { min-height: 40px; }
+
+  /* ---------- Toast：Bottom Navigation 上方居中（规格 51） ---------- */
+  .toast-box {
+    left: var(--page-pad);
+    right: var(--page-pad);
+    max-width: none;
+    bottom: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom) + var(--spacing-sm));
+  }
+
+  /* ---------- Modal：手机底部弹出式（规格 52） ---------- */
+  .modal-overlay { align-items: flex-end; padding: 0; }
+  .modal {
+    width: 100%;
+    max-width: none;
+    border-radius: var(--radius-sheet) var(--radius-sheet) 0 0;
+    border-left: none;
+    border-right: none;
+    border-bottom: none;
+    max-height: calc(100dvh - var(--bottom-nav-height) - env(safe-area-inset-bottom));
+    padding-bottom: calc(var(--spacing-2xl) + env(safe-area-inset-bottom));
+  }
+
+  /* ---------- About：居中收窄（页级 max-width 已在 layout.css） ---------- */
+  #page-about .about-hero { flex-direction: column; text-align: center; }
+
+  /* ---------- 数值条（GPU 进程等保留表格者）：窄表不横滚时缩字号 ---------- */
+  #gpuProcTableWrap .table-full { font-size: var(--font-size-caption); }
+}
+
+/* ---------- Hover 只在真 hover 设备生效（规格 55：防手机点按残留高亮） ----------
+ 手机点按会触发:hover 并残留；把桌面 hover 态限定到 (hover:hover) 设备。
+ 选择器只收敛"纯装饰性 hover"，focus-visible/active/选中态不变。 */
+@media (hover: none), (pointer: coarse) {
+  .nav-item:hover { background: none; color: var(--text-secondary); }
+  .nav-item[aria-current="page"]:hover { background: var(--bg-subtle-active); color: var(--text-primary); }
+  .table-full tbody tr:hover td { background: none; }
+  .settings-rail .rail-item:hover { background: none; color: var(--text-secondary); }
+  .settings-rail .rail-item[aria-current="true"]:hover { background: var(--bg-subtle-active); color: var(--text-primary); }
+  .info-tip .tip-btn:hover { color: var(--text-secondary); border-color: var(--border-strong); }
+  .info-tip .tip-btn:focus-visible { color: var(--accent); border-color: var(--accent); }
+  .check-chip:hover { border-color: var(--border-default); }
+  a:hover { text-decoration: none; }
+}
+/* hover 设备保留原 hover（显式声明，避免 (hover:none) 规则误伤桌面） */
+@media (hover: hover) and (pointer: fine) {
+  /* 原 components.css 的 hover 规则在此生效，无需重复 */
+}
+
+/* ---------- Forced Colors / Windows 高对比（规格 86：基础可用） ----------
+ 高对比模式下浏览器会用系统色替换颜色；保底：
+ - 边框强制 visible 的 CanvasText（否则卡片/分割线消失）；
+ - 关键文本强制 CanvasText；accent 指示条强制 Highlight。 */
+@media (forced-colors: active) {
+  .card,
+  .table-wrap,
+  .settings-card,
+  .modal,
+  .more-sheet,
+  .mobile-nav,
+  .toast,
+  .seg,
+  .info-tip .tip-text,
+  .status-strip,
+  .metric-strip {
+    border: 1px solid CanvasText;
+  }
+  .page-title, .sh-title, .card-title, .stat-value, td, .ms-value,
+  .mnav-item, .sheet-item, .rail-item, .nav-item {
+    color: CanvasText;
+  }
+  .nav-item[aria-current="page"]::before,
+  .mnav-item[aria-current="page"]::before {
+    background: Highlight;
+  }
+  .status-badge .dot {
+    background: CanvasText;
+  }
+}

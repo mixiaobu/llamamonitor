@@ -1,9 +1,9 @@
 /* ============================================================
-   LlamaMonitor — Icons（Phase 15）
-   本地 SVG 线性图标（spec §9：不引入字体图标/CDN）。
-   24x24 viewBox，stroke=currentColor，由 CSS 控制尺寸。
-   用法：LM.icons.get('gpu') -> SVG 字符串（内联注入）。
-   ============================================================ */
+ LlamaMonitor — Icons
+ 本地 SVG 线性图标（不引入字体图标/CDN）。
+ 24x24 viewBox，stroke=currentColor，由 CSS 控制尺寸。
+ 用法：LM.icons.get('gpu') -> SVG 字符串（内联注入）。
+ ============================================================ */
 (function () {
   "use strict";
 
@@ -27,14 +27,17 @@
     about:
       '<circle cx="12" cy="12" r="8.5"/><path d="M12 11v5.5"/><path d="M12 7.6h.01"/>',
 
-    /* ---- InfoBar / Toast ---- */
+    /* 1.1.2：更多（移动端底栏 More 按钮，水平三点） */
+    more: '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
+
+    
     info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 7.8h.01"/>',
     success: '<circle cx="12" cy="12" r="9"/><path d="M8.2 12.4l2.6 2.6 4.8-5.6"/>',
     warning: '<path d="M12 3.6L21.4 19.8H2.6z"/><path d="M12 9.8v4.4"/><path d="M12 17.2h.01"/>',
     error: '<circle cx="12" cy="12" r="9"/><path d="M9.3 9.3l5.4 5.4M14.7 9.3l-5.4 5.4"/>',
     check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
 
-    /* ---- EmptyState ---- */
+    
     emptyChart: '<path d="M4 20h16"/><path d="M6.5 20v-6.5M11 20V8M15.5 20v-9.5M20 20V12"/>',
     emptyDb:
       '<ellipse cx="12" cy="6" rx="7.5" ry="3"/><path d="M4.5 6v12c0 1.66 3.36 3 7.5 3s7.5-1.34 7.5-3V6"/><path d="M4.5 12c0 1.66 3.36 3 7.5 3s7.5-1.34 7.5-3"/>',
@@ -57,7 +60,7 @@
     return '<svg xmlns="' + NS + '" viewBox="0 0 24 24" aria-hidden="true" focusable="false">' + p + "</svg>";
   }
 
-  /** 品牌标识（spec §115：极简 LM 标识，accent 色由 CSS 提供）。 */
+  /** 品牌标识（极简 LM 标识，accent 色由 CSS 提供）。 */
   function brand() {
     return (
       '<svg xmlns="' + NS + '" viewBox="0 0 28 28" aria-hidden="true" focusable="false">' +

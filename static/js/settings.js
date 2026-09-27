@@ -1,17 +1,17 @@
 /* ============================================================
-   LlamaMonitor — Settings（Phase 15, spec §23-§25/§90/§91/§92）
-   Settings 页逻辑：
-   - 表单加载一次（不轮询，避免覆盖未保存编辑——沿用 Phase 语义）；
-   - dirty 跟踪 + Save（PUT /api/config 后端校验 + 原子写）+
-     Reset to Defaults（只重置表单，Save 才写盘）+ 切页未保存确认；
-   - Test Connection（后端只 GET，避免前端 CORS）；
-   - Data Management（info/backup/clear-live/reset/CSV/db check）；
-   - Application（integration/autostart/exit）；
-   - Updates（状态轮询走中央调度器 UI-023；check/download/install/cancel）；
-   - About（版本/schema/数据目录，唯一来源 /api/version）。
-   危险操作：confirmModal 统一确认（spec §91）；连续点击靠按钮 disabled
-   防重入（沿用 Phase 语义）。
-   ============================================================ */
+ LlamaMonitor — Settings, 
+ Settings 页逻辑：
+ - 表单加载一次（不轮询，避免覆盖未保存编辑——沿用 原有语义）；
+ - dirty 跟踪 + Save（PUT /api/config 后端校验 + 原子写） +
+ Reset to Defaults（只重置表单，Save 才写盘） + 切页未保存确认；
+ - Test Connection（后端只 GET，避免前端 CORS）；
+ - Data Management（info/backup/clear-live/reset/CSV/db check）；
+ - Application（integration/autostart/exit）；
+ - Updates（状态轮询走中央调度器 UI-023；check/download/install/cancel）；
+ - About（版本/schema/数据目录，唯一来源 /api/version）。
+ 危险操作：confirmModal 统一确认（；连续点击靠按钮 disabled
+ 防重入（沿用 原有语义）。
+ ============================================================ */
 (function () {
   "use strict";
 
@@ -24,7 +24,7 @@
   var lastPaths = null;
   var gpuPickSignature = null;   // UI-002：detected 列表签名，未变不重建
   var updateStatus = null;
-  var lastTestConn = null;       // Phase 16C §21：最近一次"测试连接"结果
+  var lastTestConn = null;       // 最近一次"测试连接"结果
 
   /* ================= 表单 ================= */
 
@@ -172,7 +172,7 @@
   }
 
   async function loadSettings() {
-    // 16E：/api/config 读写都 loopback-only。远程（局域网 IP）客户端是只读端
+    // /api/config 读写都 loopback-only。远程（局域网 IP）客户端是只读端
     // ——不发配置请求（避免 403），表单显示占位并给出提示。
     if (!LM.api.isLocal()) {
       settingsLoaded = true;
@@ -322,7 +322,7 @@
       box.appendChild(none);
       return;
     }
-    // BUG-G 修复（spec §61）：每卡一行——checkbox + 型号第一行，UUID 缩进第二行。
+    // BUG-G 修复（每卡一行——checkbox + 型号第一行，UUID 缩进第二行。
     // 不再把 checkbox/名称/长 UUID 挤在同一行。
     detected.forEach(function (g) {
       var row = document.createElement("div");
@@ -353,7 +353,7 @@
     box.appendChild(hint);
   }
 
-  /* ================= Data Management（spec §90/§91） ================= */
+  /* ================= Data Management（================= */
 
   function kvRow(box, k, v) {
     var rowK = document.createElement("span");
@@ -555,7 +555,7 @@
     ui.toast("GPU CSV 已导出（见下载目录）。", "ok");
   }
 
-  /* ================= Application（Phase 10 集成） ================= */
+  /* ================= Application（集成） ================= */
 
   function fmtUptime(sec) {
     sec = Math.max(0, sec | 0);
@@ -568,7 +568,7 @@
   async function loadAppIntegration() {
     var box = $("appInfo");
     box.innerHTML = "";
-    // 16E：/api/app/integration 是 loopback-only——远程客户端不发（含可执行文件
+    // /api/app/integration 是 loopback-only——远程客户端不发（含可执行文件
     // 路径等本机信息），占位说明代替 403。
     if (!LM.api.isLocal()) {
       kvRow(box, "状态", "远程只读：本机信息仅在本机可见");
@@ -657,7 +657,7 @@
     });
   }
 
-  /* ================= Updates（Phase 13 语义，UI-023 走中央调度器） ================= */
+  /* ================= Updates（语义，UI-023 走中央调度器） ================= */
 
   function renderUpdateStatus(st) {
     if (!st) return;
@@ -725,7 +725,7 @@
   }
 
   async function loadUpdateStatus() {
-    // 16E：/api/update/* 是 loopback-only。远程（局域网 IP）客户端不发该请求
+    // /api/update/* 是 loopback-only。远程（局域网 IP）客户端不发该请求
     // ——此前每 30s 全局轮询在手机上刷 403；本机行为不变。
     if (!LM.api.isLocal()) return;
     try {
@@ -763,10 +763,10 @@
     }
   }
 
-  /* ================= About ================= */
+  
 
   async function loadAbout() {
-    // 品牌图标（Phase 16C §23；注意 brand 是函数，必须调用取 SVG 字符串）
+    // 品牌图标（；注意 brand 是函数，必须调用取 SVG 字符串）
     try { var lg = $("aboutLogo"); if (lg && LM.icons && !lg.innerHTML) lg.innerHTML = LM.icons.brand(); } catch (e) {}
     var ver = "--";
     try {
@@ -780,7 +780,7 @@
     }
     $("aboutVersion").textContent = ver;
     var row = $("aboutVersionRow"); if (row) row.textContent = ver;
-    // 16E：/api/config loopback-only——远程不发（数据目录是本地路径，不外露）
+    // /api/config loopback-only——远程不发（数据目录是本地路径，不外露）
     if (LM.api.isLocal()) {
       try {
         var c = await api.get("/api/config");
@@ -819,14 +819,14 @@
     })();
   }
 
-  /* ================= 分区定位（Phase 16B spec §55：内部二级导航 rail） =================
-     托盘桥与更新横幅通过 goToSection 定位到分类；rail 按钮同步高亮。
-     data-sec 分组：data 分类 = 存储+备份+日志+数据管理+危险区。 */
+  /* ================= 分区定位（内部二级导航 rail） =================
+ 托盘桥与更新横幅通过 goToSection 定位到分类；rail 按钮同步高亮。
+ data-sec 分组：data 分类 = 存储 +备份 +日志 +数据管理 +危险区。 */
   var activeSection = "server";
 
-  /* Phase 16C §21：服务器连接状态（轻量；复用 LM.app.serverConnectionState()
-     —— 它来自 /api/status 既有轮询与用户点击"测试连接"的结果，
-     不额外高频探测）。测试连接成功/失败后也刷新此块。 */
+  /* 服务器连接状态（轻量；复用 LM.app.serverConnectionState
+ —— 它来自 /api/status 既有轮询与用户点击"测试连接"的结果，
+ 不额外高频探测）。测试连接成功/失败后也刷新此块。 */
   function updateServerConnStatus() {
     var box = $("serverConnStatus");
     if (!box) return;
@@ -913,7 +913,7 @@
     bind("btnOpenBackups", "click", function () { openFolderTarget("backups"); });
     bind("btnExitApp", "click", exitApp);
     bind("btnCopyVersion", "click", copyVersionInfo);
-    // Phase 16C 审计：About 页"打开数据目录"按钮此前无任何处理器（死按钮）
+    // 审计：About 页"打开数据目录"按钮此前无任何处理器（死按钮）
     bind("btnAboutOpenData", "click", function () { openFolderTarget("data"); });
     bind("btnUpdateCheck", "click", function () { updateAction("check"); });
     bind("btnUpdateDownload", "click", function () { updateAction("download"); });
@@ -957,7 +957,7 @@
     var gpuBox = $("gpuDetected");
     if (gpuBox) gpuBox.addEventListener("change", markDirty);
 
-    // 内部二级导航 rail（Phase 16B spec §55）：点击切换分类 pane
+    // 内部二级导航 rail（点击切换分类 pane
     document.querySelectorAll(".settings-rail .rail-item").forEach(function (b) {
       b.addEventListener("click", function () {
         goToSection(b.getAttribute("data-sec"));
@@ -966,9 +966,48 @@
     showSection("server");
   }
 
+  /* 1.1.2：离开设置页守卫——有未保存修改时弹确认，阻止静默丢失。
+ 重入保护：用户确认"离开"后由本函数再次调 showPage(dest)，此时守卫会
+ 被二次触发；guardReentry 标记让内层守卫放行，避免确认框死循环。 */
+  var guardReentry = false;
+  function unsavedGuard(dest) {
+    if (!settingsDirty) return;
+    if (guardReentry) return; // 内层放行（外层已确认）
+    ui.modal({
+      title: "设置未保存",
+      text: "有未保存的设置修改。离开设置页？（未保存的修改将丢失）",
+      okLabel: "离开",
+      danger: true,
+      onDone: function (ok) {
+        if (!ok) return;
+        guardReentry = true;
+        LM.nav.showPage(dest); // 同步执行：守卫内层放行
+        guardReentry = false;
+      },
+    });
+    return false;
+  }
+
+  /* 1.1.2：版本号填充（About 页 / 移动端 More Sheet 共用）：/api/version -> "LlamaMonitor x.y.z"。 */
+  async function loadAboutVersion(el) {
+    if (!el) return;
+    try {
+      var d = await api.get("/api/version");
+      el.textContent = (d.name || "LlamaMonitor") + " " + (d.version || "--");
+    } catch (e) {
+      el.textContent = "LlamaMonitor --";
+    }
+  }
+
+  function initSettings() {
+    init();
+    // 1.1.2：注册离开守卫（导航层在 settings 之后加载时也能工作）
+    if (LM.nav && LM.nav.registerNavGuard) LM.nav.registerNavGuard("settings", unsavedGuard);
+  }
+
   window.LM = window.LM || {};
   LM.settings = {
-    init: init,
+    init: initSettings,
     loadSettings: loadSettings,
     isLoaded: function () { return settingsLoaded; },
     isDirty: function () { return settingsDirty; },
@@ -976,6 +1015,7 @@
     activeSection: function () { return activeSection; },
     loadAppIntegration: loadAppIntegration,
     loadAbout: loadAbout,
+    loadAboutVersion: loadAboutVersion,
     loadUpdateStatus: loadUpdateStatus,
     refreshDataInfo: refreshDataInfo,
     resetToDefaults: resetToDefaults,

@@ -7,6 +7,65 @@
 > 互相视为"不同系列"：安装器降级保护按数值比较（1.0.0 > 0.13.x），从 1.0.0 安装
 > 0.13.x 会被识别为降级并拒绝（实测行为，非缺陷）。
 
+## [1.1.2] - 2026-09-28
+
+**Mobile & Visual Experience Update**。不新增后端功能、不改变监控语义、
+数据库 schema **保持 5**。重点是：≤760px 真 Mobile 模式 + 视觉 token 统一
+（Telemetry Fluent 设计语言）+ 触控/可访问性/图表/表格的 Mobile UX 精修。
+
+### 真 Mobile 模式（≤760px）
+- 隐藏桌面侧边栏，启用固定 Bottom Navigation（概览 / Token / 性能 / GPU / 更多，
+  56px 高 + safe-area-inset-bottom）；"更多"打开底部 Bottom Sheet（系统 / 监控历史 /
+  设置 / 关于，顶部圆角 16px，支持点空白 / ESC / 返回关闭，内含版本号）。
+- 页头改纵向（标题 + 副标题 + 操作按钮堆叠）；图表 240-280px；stat 网格 2 列；
+  正文 15px / 辅助 14px / 指标 24-26px 的 mobile 排版层。
+- 触控目标 ≥44×44px（按钮、分段选择 ≥40px、chip/导航 ≥40px）；
+  `@media (hover:none)` 收敛装饰性 hover（防点按高亮残留）；允许用户缩放。
+- 信息提示（i）按钮支持点按开/关（tap 外部关闭），气泡 `max-width: min(300px, calc(100vw - 32px))` 不超屏。
+- Toast 移到 Bottom Navigation 上方；Modal 在手机上改为底部弹出式。
+- Windows 高对比（forced-colors）：CanvasText 边框 + Highlight 指示条。
+
+### 表格 → Card Rows（≤760px）
+- Token 页"每日明细 / 缺口 / 事件"三张表在小屏变为卡片行：表头隐藏、
+  首列作卡片标题、其余字段变"标签: 值"纵向行（`td[data-label]` +
+  `content: attr(data-label)`）。GPU 进程表（4 短列）保持表格。
+
+### 视觉统一（Telemetry Fluent）
+- `tokens.css` 重写为唯一视觉源：统一 spacing（4-40）、radius（micro→pill 7 级）、
+  字号体系、`--touch-target` 44/48、`--bottom-nav-height` 56、逐页 content-max
+  （settings 1280 / about 960）、图表高度 token（desktop 320 / mobile 260）。
+- 新增 `mobile.css` 承载 ≤760px 全部覆盖（layout 结构在 layout.css 的 760 断点内）。
+- 清理 Phase/spec §xx 流水账注释（保留 WHY 说明）。
+
+### 页面 Mobile 精修
+- GPU 页：单列布局 + 指标 chips 横滚；"高级遥测 / 健康"（performance_state、
+  throttle、ECC）收进可折叠 `<details>`（桌面默认展开观感不变，手机默认收起）。
+- System 页：每核心负载 >16 核时渲染 Heat Grid（`core-heat-grid`，每格颜色映射
+  当前整机聚合利用率，并注明数据源口径）；传感器列表 / 卷容量 / Heat Grid
+  在手机上默认折叠（桌面默认展开，随视口宽度自动切换）。
+- Settings ≤760px：分区 rail 单行横向滚动（禁 wrap）；保存栏 sticky 钉在
+  Bottom Navigation 上方（含 safe-area）。
+- 概览副标题改为"集中查看 llama.cpp 服务、Token、推理性能、GPU、主机与数据采集状态。"
+
+### 远程只读体验
+- 非本机访问（`web.host: 0.0.0.0` + 局域网 IP）时界面顶部显示轻量只读 banner，
+  并在桌面/移动导航中隐藏"设置"。后端边界不变（修改类 API 仍按实际 socket
+  地址回环保护，不信任 X-Forwarded-For）。
+
+### 文档
+- README 顶部新增"界面预览"（桌面 1920×1080 + 手机 390×844 真实运行截图，
+  `docs/images/`）与"手机访问 Dashboard"章节（`web.host: 0.0.0.0` + 局域网 IP
+  访问说明、只读边界说明）。
+- 新增 CDP 巡检脚本 `scripts/ui_patrol_112.js`（17 视口 × 8 页矩阵：水平溢出 /
+  结构 / 触控目标 gate）与 `scripts/capture_112.js`（README 截图 + 数据断言）。
+
+### 回归
+- 新增 `tests/test_mobile_ui.py`（Bottom Nav / More Sheet / card rows /
+  sticky save bar / touch / token 源等静态断言）。
+- 506 项既有测试 + 新增测试全绿；136 viewport×page 巡检 0 水平溢出 /
+  0 结构失败 / 0 触控失败（无真机，Chrome Responsive 覆盖，
+  Real device not available）。
+
 ## [1.1.1] - 2026-09-27
 
 **Quality & UX 维护版（Quality & UX Maintenance Release）**。基于 1.1.0 的全项目

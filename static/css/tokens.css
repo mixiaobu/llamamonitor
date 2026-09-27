@@ -1,21 +1,21 @@
 /* ============================================================
-   LlamaMonitor — Design Tokens（Phase 16D 统一设计语言）
-   所有颜色 / 字体 / 间距 / 圆角 / 布局 的唯一来源。
-   组件 CSS 只引用变量，不写裸值；主题只在这里切换。
+ LlamaMonitor — Design Tokens（统一设计语言）
+ 所有颜色 / 字体 / 间距 / 圆角 / 布局 的唯一来源。
+ 组件 CSS 只引用变量，不写裸值；主题只在这里切换。
 
-   统一原则（Phase 16D 四条核心）：
-   1）动作只出现在 Page Header 右侧 / Section Header 右侧；
-   2）所有卡片同构：标题区 / 内容区 / 可选底部说明区；
-   3）所有页面按 页头 → 分区 → 卡片 组织；
-   4）所有视觉走同一套 token。
-   ============================================================ */
+ 统一原则（四条核心）：
+ 1）动作只出现在 Page Header 右侧 / Section Header 右侧；
+ 2）所有卡片同构：标题区 / 内容区 / 可选底部说明区；
+ 3）所有页面按 页头 → 分区 → 卡片 组织；
+ 4）所有视觉走同一套 token。
+ ============================================================ */
 
 :root {
-  /* ---------- 字体（Phase 16D spec §5 统一层级） ----------
-     Page Title 24/700 · Page Subtitle 13/400 · Section Title 18/700
-     Card Title 15/600 · Metric Big 40（概览）/32（普通）
-     Metric Medium 22/600 · Body 14 · Secondary 13 · Caption 12
-     （变量名沿用 Phase 15 以兼容既有引用，值统一到规范） */
+  /* ---------- 字体（统一层级） ----------
+ Page Title 24/700 · Page Subtitle 13/400 · Section Title 18/700
+ Card Title 15/600 · Metric Big 40（概览）/32（普通）
+ Metric Medium 22/600 · Body 14 · Secondary 13 · Caption 12
+ （变量名沿用 以兼容既有引用，值统一到规范） */
   --font-family: "Segoe UI Variable Text", "Segoe UI Variable Display",
     "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", Arial, sans-serif;
   --font-size-caption: 12px;
@@ -32,16 +32,20 @@
   --font-weight-bold: 700;
   --line-height: 1.45;
 
-  /* ---------- 圆角（Phase 16D spec §6 统一） ----------
-     大卡片 12 · 小卡片 10 · 按钮/输入 8 · 更小组件 4 · 胶囊 999 */
-  --radius-small: 4px;
+  /* ---------- 圆角（统一 7 级：micro 4 / control 8 / control-primary 10 /
+ card-sm 10 / card 12 / sheet 16 / pill 999）；旧名保留兼容 ---------- */
+  --radius-micro: 4px;
   --radius-control: 8px;
-  --radius-medium: 8px;
-  --radius-large: 12px;         /* 大卡片 */
+  --radius-control-primary: 10px;
   --radius-card-sm: 10px;       /* 小卡片（gpu mini / chip 类） */
+  --radius-card: 12px;          /* 卡片 */
+  --radius-sheet: 16px;         /* 底部 sheet / 移动端 Modal */
   --radius-pill: 999px;
+  --radius-small: 4px;          /* 旧名 → micro */
+  --radius-medium: 8px;         /* 旧名 → control */
+  --radius-large: 12px;         /* 旧名 → card */
 
-  /* ---------- 间距（Phase 16D spec §7 只用 4/8/12/16/20/24/32/40） ---------- */
+  /* ---------- 间距（只用 4/8/12/16/20/24/32/40） ---------- */
   --spacing-xs: 4px;
   --spacing-sm: 8px;
   --spacing-md: 12px;
@@ -49,32 +53,62 @@
   --spacing-xl: 20px;
   --spacing-2xl: 24px;
   --spacing-3xl: 32px;
+  --spacing-4xl: 40px;
 
-  /* 布局级节奏（Phase 16D spec §30 统一视觉节奏） */
+  /* 图表高度档（桌面 320 / 高 360 / 中 280 / 手机 260 在上方 mobile 块外定义） */
+  --chart-height: 320px;
+  --chart-height-tall: 360px;
+  --chart-height-md: 280px;
+
+  /* 布局级节奏（统一视觉节奏） */
   --section-gap: 24px;      /* 页头→首分区 / 分区间距 */
   --section-head-gap: 12px; /* Section Header → Body */
   --card-pad: 16px;         /* Card 内 padding（16-20） */
   --card-pad-lg: 20px;
 
-  /* ---------- 全局布局（Phase 16D spec §8） ---------- */
+  /* ---------- 全局布局（---------- */
   --nav-width: 212px;
   --content-max: 1520px;
   --page-pad: 32px;         /* 页面左右 padding（24-32） */
   --page-pad-narrow: 24px;
+
+  /* ---------- 1.1.2 布局 token：逐页收窄 + 真 Mobile（≤760px） ---------- */
+  --content-max: 1560px;           /* 桌面内容最大宽度（覆盖上方旧值） */
+  --content-max-settings: 1280px;  /* 设置页：单列 rail +pane 过宽时读起来吃力 */
+  --content-max-about: 960px;      /* 关于页：短内容，收窄居中 */
+  --bottom-nav-height: 56px;       /* 移动端底部导航高度（不含 safe-area） */
+  --nav-item-height: 44px;         /* 触屏导航单项最低高度 */
+  --touch-target: 44px;            /* 触屏 hit target 下限 */
+  --touch-target-lg: 48px;         /* 大触控目标 */
+  --icon-nav-mobile: 20px;         /* 移动端底部导航图标 */
+  --icon-brand-mobile: 24px;
+  --chart-height-mobile: 260px;    /* 手机图表默认高度（规格 29） */
 
   /* ---------- Motion（极轻，100-150ms） ---------- */
   --transition-fast: 100ms ease;
   --transition-normal: 150ms ease;
 }
 
-/* ============ DARK（Windows 11 深色，spec §4） ============
-   App Background #202124 · Sidebar 更暗 · Main surface #26282B
-   Card #2B2D31 · Elevated 比 Card 略亮 · Border 0.07-0.10 */
+/* ---------- 1.1.2 真 Mobile（≤760px）字号档覆盖 ----------
+ 手机上 14px body 偏小：body 15 / card 16 / hero 32 / metric 24。
+ 只覆盖 token 值，组件规则不动（同一套规则跟随变量自动生效）。 */
+@media (max-width: 760px) {
+  :root {
+    --font-size-body: 15px;
+    --font-size-card: 16px;
+    --font-size-hero: 32px;
+    --font-size-metric: 24px;
+  }
+}
+
+/* ============ DARK（Windows 11 深色， ============
+ App Background #202124 · Sidebar 更暗 · Main surface #26282B
+ Card #2B2D31 · Elevated 比 Card 略亮 · Border 0.07-0.10 */
 :root,
 [data-theme="dark"] {
   --bg-base: rgba(32, 33, 36, 0.96);   /* App / 主内容背景 ≈ #202124（透出 Mica） */
   --bg-layer: #1b1c1f;                 /* Sidebar（比主内容略暗） */
-  --bg-card: #2b2d31;                  /* Card Surface */
+  --bg-card: #2b2d31;                  
   --bg-card-hover: #33363b;
   --bg-elevated: #313439;             /* 弹层 / 表头 / tooltip（比 card 略亮） */
   --bg-input: #212327;

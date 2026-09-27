@@ -13,14 +13,15 @@
     );
   } catch (e) { /* 保持 HTML 回退值 */ }
 </script>
-<!-- Phase 15：Windows 11 Fluent UI。资源全部本地（spec §123）：
-     CSS 按 tokens/base/layout/components/pages 分层（spec §121）；
-     JS 按职责分模块（spec §122）。无 CDN / 无框架 / 无新依赖。 -->
+<!--Windows 11 Fluent UI。资源全部本地
+ CSS 按 tokens/base/layout/components/pages 分层；
+ JS 按职责分模块（。无 CDN / 无框架 / 无新依赖。 -->
 <link rel="stylesheet" href="/static/css/tokens.css">
 <link rel="stylesheet" href="/static/css/base.css">
 <link rel="stylesheet" href="/static/css/layout.css">
 <link rel="stylesheet" href="/static/css/components.css">
 <link rel="stylesheet" href="/static/css/pages.css">
+<link rel="stylesheet" href="/static/css/mobile.css">
 <script src="/static/echarts.min.js"></script>
 <script src="/static/js/icons.js"></script>
 <script src="/static/js/formatters.js"></script>
@@ -36,7 +37,7 @@
 <body>
 <div class="app" id="appShell">
 
-  <!-- ============ NavigationView（spec §6-§9） ============ -->
+  <!-- ============ NavigationView（============ -->
   <nav class="navview" aria-label="主导航">
     <div class="nav-brand">
       <button class="brand-icon" id="brandIcon" type="button" style="color:var(--accent)" title="收起侧边栏" aria-label="收起侧边栏"></button>
@@ -64,24 +65,59 @@
     </div>
   </nav>
 
-  <!-- ============ Page Content（唯一滚动区，spec §56） ============ -->
+  <!-- ============ Mobile Bottom Navigation（≤760px 显示，桌面隐藏） ============ -->
+  <nav class="mobile-nav" aria-label="主导航（移动端）">
+    <button class="mnav-item" data-page="overview" type="button">
+      <span class="mnav-icon" data-icon="overview"></span><span class="mnav-label">概览</span></button>
+    <button class="mnav-item" data-page="usage" type="button">
+      <span class="mnav-icon" data-icon="usage"></span><span class="mnav-label">Token</span></button>
+    <button class="mnav-item" data-page="performance" type="button">
+      <span class="mnav-icon" data-icon="performance"></span><span class="mnav-label">性能</span></button>
+    <button class="mnav-item" data-page="gpu" type="button">
+      <span class="mnav-icon" data-icon="gpu"></span><span class="mnav-label">GPU</span></button>
+    <button class="mnav-item mnav-more" id="mnavMore" type="button" aria-haspopup="dialog" aria-controls="moreSheet">
+      <span class="mnav-icon" id="mnavMoreIcon"></span><span class="mnav-label">更多</span></button>
+  </nav>
+
+  <!-- ============ More Sheet（移动端二级页：系统/历史/设置/关于） ============ -->
+  <div class="sheet-scrim" id="moreSheetScrim" hidden></div>
+  <div class="more-sheet" id="moreSheet" role="dialog" aria-modal="true" aria-label="更多页面" hidden>
+    <div class="more-sheet-handle"></div>
+    <button class="sheet-item" data-page="system" type="button">
+      <span class="sheet-icon" data-icon="system"></span>
+      <span class="sheet-text"><span class="sheet-title">系统</span><span class="sheet-desc">CPU / 内存 / 磁盘 / 传感器</span></span></button>
+    <button class="sheet-item" data-page="history" type="button">
+      <span class="sheet-icon" data-icon="history"></span>
+      <span class="sheet-text"><span class="sheet-title">监控历史</span><span class="sheet-desc">按天统计 / 缺口 / 导出</span></span></button>
+    <button class="sheet-item" data-page="settings" type="button">
+      <span class="sheet-icon" data-icon="settings"></span>
+      <span class="sheet-text"><span class="sheet-title">设置</span><span class="sheet-desc">服务器 / 采集 / 备份 / 更新</span></span></button>
+    <button class="sheet-item" data-page="about" type="button">
+      <span class="sheet-icon" data-icon="about"></span>
+      <span class="sheet-text"><span class="sheet-title">关于</span><span class="sheet-desc">版本 / 数据目录 / Schema</span></span></button>
+    <div class="more-sheet-version" id="moreSheetVersion"></div>
+  </div>
+
+  <!-- ============ Page Content（唯一滚动区， ============ -->
   <main class="content">
     <div class="content-inner">
 
       <!-- 全局 InfoBar 槽位（Offline / Update available，UI-015） -->
       <div id="globalInfobars"></div>
+      <!-- 远程只读提示（非 loopback 访问时显示：设置页只读，编辑需本机访问） -->
+      <div class="remote-banner" id="remoteBanner" hidden>当前为远程只读模式：数据正常展示，设置页不可编辑（编辑需从本机访问）。</div>
 
-      <!-- ================= Overview（Phase 16B §3：现在状态摘要；
-           无大图/无趋势/无累计——那些属于用量与历史页） ================= -->
+      <!-- ================= Overview（现在状态摘要；
+ 无大图/无趋势/无累计——那些属于用量与历史页） ================= -->
       <section class="page" id="page-overview">
         <div class="page-header">
           <div class="ph-head">
             <h1 class="page-title">概览</h1>
-            <p class="page-subtitle">10 秒看懂：服务是否正常、今天用了多少、当前性能、GPU 与数据健康。</p>
+            <p class="page-subtitle">集中查看 llama.cpp 服务、Token、推理性能、GPU、主机与数据采集状态。</p>
           </div>
         </div>
 
-        <!-- 2. 服务器状态（§18.2：横向状态卡，与卡片同构） -->
+        <!-- 2. 服务器状态（横向状态卡，与卡片同构） -->
         <div class="status-strip card">
           <div class="ss-left">
             <span class="ss-main">
@@ -93,13 +129,13 @@
             </span>
           </div>
           <div class="ss-right">
-            <!-- 16D：常态（在线）不显示"最后更新 X 秒前 / X 秒后刷新"（轮询频率高，信息量低）；
-                 仅离线/后端不可达时此处显示状态说明 -->
+            <!-- 常态（在线）不显示"最后更新 X 秒前 / X 秒后刷新"（轮询频率高，信息量低）；
+ 仅离线/后端不可达时此处显示状态说明 -->
             <span class="stat-hint" id="ovLastUpdate"></span>
           </div>
         </div>
 
-        <!-- 3. 今日用量（§18.3：一张完整大卡，不拆碎；动作在 Section Header 右侧） -->
+        <!-- 3. 今日用量（一张完整大卡，不拆碎；动作在 Section Header 右侧） -->
         <div class="section">
           <div class="section-header">
             <span class="sh-title">今日用量</span>
@@ -127,7 +163,7 @@
           </div>
         </div>
 
-        <!-- 4. 当前性能与运行（§18.4：两张并排卡；动作归位 Section Header 右侧） -->
+        <!-- 4. 当前性能与运行（两张并排卡；动作归位 Section Header 右侧） -->
         <div class="section">
           <div class="section-header">
             <span class="sh-title">当前性能与运行</span>
@@ -183,7 +219,7 @@
           </div>
         </div>
 
-        <!-- 5. GPU（§18.5：摘要行 + mini cards；动作归位 Section Header 右侧） -->
+        <!-- 5. GPU（摘要行 + mini cards；动作归位 Section Header 右侧） -->
         <div class="section">
           <div class="section-header">
             <span class="sh-title">GPU
@@ -196,7 +232,7 @@
           </div>
         </div>
 
-        <!-- 6. 数据质量（§18.6：横向 summary card；动作归位 Section Header 右侧） -->
+        <!-- 6. 数据质量（横向 summary card；动作归位 Section Header 右侧） -->
         <div class="section">
           <div class="section-header">
             <span class="sh-title">数据质量</span>
@@ -221,7 +257,7 @@
                   <div class="stat-hint" id="dqDbHint"></div>
                 </div>
               </div>
-              <!-- 持续缺口提示（16D：从"最近有效采样"项移出到卡底部，仅在有 open gap 时显示） -->
+              <!-- 持续缺口提示（从"最近有效采样"项移出到卡底部，仅在有 open gap 时显示） -->
               <div class="card-footer" id="dqOpenGapWrap" hidden>
                 <span class="stat-hint bad" id="dqOpenGap"></span>
               </div>
@@ -230,7 +266,7 @@
         </div>
       </section>
 
-      <!-- ================= Usage（Phase 16D §19） ================= -->
+      
       <section class="page" id="page-usage">
         <div class="page-header">
           <div class="ph-head">
@@ -240,9 +276,9 @@
           <div class="ph-actions"><div class="seg" id="usageRange" role="group" aria-label="时间范围"></div></div>
         </div>
 
-        <!-- 范围摘要卡（Phase 16C §3/USAGE-001：卡片恒为所选范围汇总；
-             标题即具体范围名（今日/近 7 天/本月（2026-09）/全部…），
-             不再用"累计"徽标——30 天汇总是范围汇总，不是全生命周期累计） -->
+        <!-- 范围摘要卡（卡片恒为所选范围汇总；
+ 标题即具体范围名（今日/近 7 天/本月（2026-09）/全部…），
+ 不再用"累计"徽标——30 天汇总是范围汇总，不是全生命周期累计） -->
         <div class="section">
           <div class="section-header">
             <span class="sh-title" id="sumRangeLabel">所选范围</span>
@@ -304,7 +340,7 @@
         </div>
       </section>
 
-      <!-- ================= Performance（Phase 16D §20） ================= -->
+      
       <section class="page" id="page-performance">
         <div class="page-header">
           <div class="ph-head">
@@ -313,7 +349,7 @@
           </div>
         </div>
 
-        <!-- 2. 实时指标条（§20.2：横向 5 项，无单独 Section 动作） -->
+        <!-- 2. 实时指标条（横向 5 项，无单独 Section 动作） -->
         <div class="metric-strip card">
           <div class="ms-item">
             <div class="ms-key">Prompt TPS</div>
@@ -337,7 +373,7 @@
           </div>
         </div>
 
-        <!-- 3. Token 吞吐（§20.3：无数据时统一 Empty State，不留空坐标轴） -->
+        <!-- 3. Token 吞吐（无数据时统一 Empty State，不留空坐标轴） -->
         <div class="section">
           <div class="section-header">
             <span class="sh-title">Token 吞吐率</span>
@@ -351,7 +387,7 @@
           </div>
         </div>
 
-        <!-- 4. 服务器运行状态（§20.4：6 项，2~3 列） -->
+        <!-- 4. 服务器运行状态（6 项，2~3 列） -->
         <div class="section">
           <div class="section-header">
             <span class="sh-title">服务器运行状态</span>
@@ -432,7 +468,7 @@
           </div>
         </div>
 
-        <!-- 5. MTP（§20.5：summary metrics + 两张并排图，作为一个整体） -->
+        <!-- 5. MTP（summary metrics + 两张并排图，作为一个整体） -->
         <div class="section">
           <div class="section-header">
             <span class="sh-title">MTP（Multi-Token 预测） <span class="info-tip-slot" data-tip="llama.cpp 的推测解码（Speculative Decoding）实现：草稿 Token 由主模型批量验证。"></span></span>
@@ -524,9 +560,9 @@
                 <div class="stat"><div class="stat-label">Package 温度</div><div class="stat-value small" id="sysCpuTemp">--</div></div>
                 <div class="stat"><div class="stat-label">Package 功耗</div><div class="stat-value small" id="sysCpuPower">--</div></div>
               </div>
-              <details class="core-heat">
-                <summary>每核心负载（逻辑 CPU &gt; 16 时建议查看）</summary>
-                <div class="core-heat-body" id="sysCoreHeat"></div>
+              <details class="core-heat long-fold" id="coreHeatFold" data-auto-fold>
+                <summary>每核心负载 Heat Grid（逻辑 CPU &gt; 16 时显示）</summary>
+                <div class="core-heat-body" id="sysCoreHeat" style="margin-top:var(--spacing-sm)"></div>
               </details>
             </div>
           </div>
@@ -565,7 +601,10 @@
             </div>
             <div class="card" style="margin-top:var(--spacing-md)">
               <div class="card-title">卷容量</div>
-              <div class="disk-list" id="sysDiskList"></div>
+              <details class="long-fold" id="diskFold" data-auto-fold>
+                <summary>卷容量</summary>
+                <div class="disk-list" id="sysDiskList" style="margin-top:var(--spacing-sm)"></div>
+              </details>
             </div>
           </div>
         </div>
@@ -622,7 +661,10 @@
           <div class="section-body">
             <div class="card">
               <div id="sysFans"></div>
-              <div class="sensor-list" id="sysSensorList"></div>
+              <details class="long-fold" id="sensorFold" data-auto-fold>
+                <summary>传感器列表</summary>
+                <div class="sensor-list" id="sysSensorList"></div>
+              </details>
             </div>
           </div>
         </div>
@@ -649,7 +691,7 @@
         </div>
       </section>
 
-      <!-- ================= GPU（Phase 16D §21） ================= -->
+      
       <section class="page" id="page-gpu">
         <div class="page-header">
           <div class="ph-head">
@@ -664,7 +706,7 @@
           <div class="ph-actions"><div class="seg" id="gpuRange" role="group" aria-label="GPU 历史范围"></div></div>
         </div>
 
-        <!-- 2. GPU 概览（§21.2：卡片网格；主 4 指标 + VRAM 进度条 + 次要指标，高度一致） -->
+        <!-- 2. GPU 概览（卡片网格；主 4 指标 + VRAM 进度条 + 次要指标，高度一致） -->
         <div class="section">
           <div class="section-header">
             <span class="sh-title">GPU 概览</span>
@@ -676,13 +718,13 @@
           </div>
         </div>
 
-        <!-- 3. GPU 过滤器条（§21.3：图表区上方单独一行，统一 chip 风格） -->
+        <!-- 3. GPU 过滤器条（图表区上方单独一行，统一 chip 风格） -->
         <div class="gpu-toolbar">
           <div class="seg" id="gpuPick" role="group" aria-label="GPU 过滤"></div>
           <span class="stat-hint" id="gpuRangeHint"></span>
         </div>
 
-        <!-- 4. GPU 利用率与显存占用（§21.4：全宽图表卡） -->
+        <!-- 4. GPU 利用率与显存占用（全宽图表卡） -->
         <div class="section">
           <div class="section-header">
             <span class="sh-title">GPU 利用率与显存占用</span>
@@ -696,7 +738,7 @@
           </div>
         </div>
 
-        <!-- 5. 功耗与温度（§21.5：功耗 + 温度并排；不支持功耗的卡不建 series / 不显示图例） -->
+        <!-- 5. 功耗与温度（功耗 + 温度并排；不支持功耗的卡不建 series / 不显示图例） -->
         <div class="section">
           <div class="section-header">
             <span class="sh-title">功耗与温度</span>
@@ -715,7 +757,7 @@
           </div>
         </div>
 
-        <!-- 6. 能耗估算（§21.6：摘要卡；数据来源说明在 Section Header 右侧） -->
+        <!-- 6. 能耗估算（摘要卡；数据来源说明在 Section Header 右侧） -->
         <div class="section">
           <div class="section-header">
             <span class="sh-title">能耗估算</span>
@@ -746,7 +788,7 @@
         </div>
       </section>
 
-      <!-- ================= History（Phase 16D §22） ================= -->
+      
       <section class="page" id="page-history">
         <div class="page-header">
           <div class="ph-head">
@@ -755,7 +797,7 @@
           </div>
         </div>
 
-        <!-- 2. 数据质量（§22.2：summary card） -->
+        <!-- 2. 数据质量（summary card） -->
         <div class="section">
           <div class="section-header">
             <span class="sh-title">数据质量</span>
@@ -788,7 +830,7 @@
           </div>
         </div>
 
-        <!-- 3. 最近缺口（§22.3：有数据绝不显示空态） -->
+        <!-- 3. 最近缺口（有数据绝不显示空态） -->
         <div class="section">
           <div class="section-header">
             <span class="sh-title">最近缺口</span>
@@ -811,7 +853,7 @@
           </div>
         </div>
 
-        <!-- 4. 监控事件（§22.4：人类可读化详情；无数据才显示空态） -->
+        <!-- 4. 监控事件（人类可读化详情；无数据才显示空态） -->
         <div class="section">
           <div class="section-header">
             <span class="sh-title">监控事件</span>
@@ -832,7 +874,7 @@
           </div>
         </div>
 
-        <!-- 5. 导出（§22.5） -->
+        <!-- 5. 导出 -->
         <div class="section">
           <div class="section-header">
             <span class="sh-title">导出</span>
@@ -849,7 +891,7 @@
         </div>
       </section>
 
-      <!-- ================= Settings（Phase 16D §23-26：rail + Section Card 统一） ================= -->
+      <!-- ================= Settings（rail + Section Card 统一） ================= -->
       <section class="page page-settings" id="page-settings">
         <div class="page-header">
           <div class="ph-head">
@@ -874,7 +916,7 @@
           <div class="settings-card" id="sec-server" data-sec="server">
             <h2>llama-server</h2>
             <p class="settings-desc">配置 llama-server 监控端点。LlamaMonitor 仅通过 HTTP GET 读取指标数据，不代理或修改推理请求。</p>
-            <!-- Phase 16C §21：轻量连接状态（复用已有状态/测试结果，不额外高频探测） -->
+            <!-- 轻量连接状态（复用已有状态/测试结果，不额外高频探测） -->
             <div class="conn-status" id="serverConnStatus">
               <span class="cs-dot"></span>
               <span class="cs-text">未测试</span>
@@ -975,7 +1017,7 @@
                 <input class="input w-s" id="setGpuRetention" type="number" min="1" max="8760" aria-label="GPU 保留小时数">
               </div>
             </div>
-            <!-- BUG-G 修复：设备选择改为整行（checkbox+名称 / UUID 缩进第二行），不再挤在一行 -->
+            <!-- BUG-G 修复：设备选择改为整行（checkbox +名称 / UUID 缩进第二行），不再挤在一行 -->
             <div class="setting-row">
               <div class="setting-info"><div class="setting-title">监控的 GPU</div><div class="setting-desc">未选择时监控所有已检测到的 GPU。</div></div>
               <div class="setting-control" style="flex-direction:column;align-items:stretch;flex:1;max-width:640px">
@@ -1208,7 +1250,7 @@
             </div>
           </div>
 
-          <!-- 危险区（spec §63：页面最底部，与常规设置视觉分离） -->
+          <!-- 危险区（页面最底部，与常规设置视觉分离） -->
           <div class="settings-card danger-zone" id="sec-danger" data-sec="data">
             <h2>危险操作</h2>
             <p class="settings-desc">以下操作不可撤销。确认后立即生效（重置统计数据需输入确认词）。</p>
@@ -1218,8 +1260,8 @@
             </div>
           </div>
 
-        </div><!-- /settings-pane -->
-        </div><!-- /settings-shell -->
+        </div>
+        </div>
 
         <div class="settings-footer">
           <span class="dirty-badge" id="dirtyBadge" hidden>有未保存的更改</span>
@@ -1230,8 +1272,8 @@
         </div>
       </section>
 
-      <!-- ================= About（Phase 16C §23/§24：品牌头部 + 信息表 + 说明；
-           max-width 900px 由 .page-about 控制） ================= -->
+      <!-- ================= About（品牌头部 + 信息表 + 说明；
+ max-width 900px 由 .page-about 控制） ================= -->
       <section class="page page-about" id="page-about">
         <div class="page-header">
           <div class="ph-head">
@@ -1239,7 +1281,7 @@
           </div>
         </div>
 
-        <!-- 1. 品牌卡（§27.1：Logo + 名称 + 版本 + 副标题） -->
+        <!-- 1. 品牌卡（Logo + 名称 + 版本 + 副标题） -->
         <div class="card about-hero-card">
           <div class="about-hero">
             <div class="ah-logo" id="aboutLogo"></div>
@@ -1251,7 +1293,7 @@
           </div>
         </div>
 
-        <!-- 2. 应用信息（§27.2：信息表 + 操作 + 说明） -->
+        <!-- 2. 应用信息（信息表 + 操作 + 说明） -->
         <div class="section">
           <div class="section-header">
             <span class="sh-title">应用信息</span>
@@ -1284,10 +1326,10 @@
   </main>
 </div>
 
-<!-- Toast 槽位（spec §80：右下） -->
+<!-- Toast 槽位（右下） -->
 <div id="toastBox" class="toast-box" role="status" aria-live="polite"></div>
 
-<!-- Modal（spec §78/§79：role=dialog + focus trap） -->
+<!-- Modal（role=dialog + focus trap） -->
 <div id="modalOverlay" class="modal-overlay" hidden>
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitleEl">
     <h3 class="modal-title" id="modalTitleEl"></h3>

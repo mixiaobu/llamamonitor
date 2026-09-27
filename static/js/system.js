@@ -1,31 +1,31 @@
 /* ============================================================
-   LlamaMonitor — System（1.1）
-   系统页 + 概览主机状态 + 性能页模型/Slot 接线。
-   职责：
-   - refreshStatus()：/api/system/status -> 系统概览 + CPU/内存/功耗 + 概览主机状态摘要
-   - refreshLive()：/api/system/live?minutes=N -> CPU/磁盘/网络 图表
-   - refreshDaily()：/api/system/daily?days=1 -> 今日已监测组件能耗
-   - refreshSensors()：/api/system/sensors -> 散热与传感器（风扇/传感器列表/Provider 状态）
-   - refreshInventory()：/api/system/inventory -> 硬件信息 + 磁盘容量 + 运行时长
-   - refreshLlamaInfo()/refreshLlamaSlots()：/api/llama/info + /api/llama/slots
-     -> 性能页「模型与服务」 + 概览服务器模型行
-   设计原则（与 app.js 一致）：
-   - 每个 refresh 独立 catch（一个 API 失败不拖垮其他区）；
-   - null = 不可用 -> F.NA（--），绝不把 null 变 0（风扇/功耗/温度）；
-   - 只读监控：无控制按钮。
-   ============================================================ */
+ LlamaMonitor — System（1.1）
+ 系统页 + 概览主机状态 + 性能页模型/Slot 接线。
+ 职责：
+ - refreshStatus：/api/system/status -> 系统概览 + CPU/内存/功耗 + 概览主机状态摘要
+ - refreshLive：/api/system/live?minutes=N -> CPU/磁盘/网络 图表
+ - refreshDaily：/api/system/daily?days=1 -> 今日已监测组件能耗
+ - refreshSensors：/api/system/sensors -> 散热与传感器（风扇/传感器列表/Provider 状态）
+ - refreshInventory：/api/system/inventory -> 硬件信息 + 磁盘容量 + 运行时长
+ - refreshLlamaInfo/refreshLlamaSlots：/api/llama/info + /api/llama/slots
+ -> 性能页「模型与服务」 + 概览服务器模型行
+ 设计原则（与 app.js 一致）：
+ - 每个 refresh 独立 catch（一个 API 失败不拖垮其他区）；
+ - null = 不可用 -> F.NA（--），绝不把 null 变 0（风扇/功耗/温度）；
+ - 只读监控：无控制按钮。
+ ============================================================ */
 (function () {
   "use strict";
 
   var F = LM.fmt, api = LM.api, ui = LM.ui, charts = LM.charts;
   var $ = function (id) { return document.getElementById(id); };
 
-  var systemLive = null;          // /api/system/live points
+  var systemLive = null;          
   var systemRangeMinutes = 60;    // 系统页当前范围（分钟）
   var lastInventory = null;       // /api/system/inventory 缓存（运行时长/磁盘容量复用）
   var lastCpu = null;             // /api/system/status cpu 子对象（每核心聚合视图用）
-  var lastModel = null;           // /api/llama/info model
-  var lastSlots = null;           // /api/llama/slots
+  var lastModel = null;           
+  var lastSlots = null;           
 
   /* ---------- 小工具 ---------- */
 
@@ -61,9 +61,9 @@
     return d > 0 ? d : null;
   }
 
-  /* 每核心负载视图：数据源只有聚合值（无逐核拆分），
-     因此仅当 logical_cpus > 16（多核大 CPU，聚合值参考意义有限）时显示，
-     并明确标注"聚合视图"，不伪造逐核数字。 */
+  /* 每核心负载 Heat Grid（1.1.2）：数据源只有聚合值（无逐核拆分），
+ 因此仅当 logical_cpus > 16（多核大 CPU）时显示；网格每个格子的颜色
+ 映射整机聚合利用率（非逐核拆分，说明行明确标注），不伪造逐核数字。 */
   function renderCoreHeat(logicalCpus) {
     var body = $("sysCoreHeat");
     var details = body ? body.closest("details.core-heat") : null;
@@ -74,18 +74,9 @@
     }
     details.hidden = false;
     body.innerHTML = "";
+    // 说明行：聚合口径 + 当前聚合值（利用率/温度/功耗，来自最近一次 status）
     var note = document.createElement("div");
     note.className = "stat-hint";
-    note.textContent = "逻辑 CPU " + logicalCpus + " 核：数据源仅含整机聚合值，此处为聚合视图（非逐核拆分）。";
-    body.appendChild(note);
-    var row = document.createElement("div");
-    row.className = "fan-row";
-    var k = document.createElement("span");
-    k.className = "sensor-name";
-    k.textContent = "聚合（全部核心）";
-    var v = document.createElement("span");
-    v.className = "sensor-val";
-    // 聚合值取自最近一次 /api/system/status（refreshStatus 中写入 lastCpu）
     var cpu = lastCpu;
     var parts = [];
     if (cpu) {
@@ -93,10 +84,23 @@
       if (cpu.temperature_c != null) parts.push("温度 " + F.formatTemp(cpu.temperature_c));
       if (cpu.package_power_w != null) parts.push("功耗 " + F.formatPower(cpu.package_power_w));
     }
-    v.textContent = parts.length ? parts.join(" · ") : "--";
-    row.appendChild(k);
-    row.appendChild(v);
-    body.appendChild(row);
+    note.textContent = "逻辑 CPU " + logicalCpus + " 核：数据源仅含整机聚合值，Heat Grid 每格颜色映射聚合利用率（非逐核拆分）。" +
+      (parts.length ? "当前：" + parts.join(" / ") : "");
+    body.appendChild(note);
+    // Heat Grid：logicalCpus 个格子；聚合利用率 null 时全格最淡（0.15）
+    var usage = cpu && cpu.usage_percent != null ? Number(cpu.usage_percent) : null;
+    var grid = document.createElement("div");
+    grid.className = "core-heat-grid";
+    for (var i = 0; i < logicalCpus; i++) {
+      var cell = document.createElement("div");
+      cell.className = "core-cell";
+      cell.title = "逻辑核 " + (i + 1) + " · 聚合 " + (usage == null ? "--" : F.formatPercent(usage, 0));
+      cell.style.backgroundColor = "var(--accent)";
+      cell.style.opacity = usage == null ? "0.15" :
+        String(Math.max(0.12, Math.min(1, usage / 100)));
+      grid.appendChild(cell);
+    }
+    body.appendChild(grid);
   }
 
   /* ================= 系统概览 + CPU/内存/功耗 + 概览主机状态 ================= */
@@ -499,8 +503,8 @@
     card.appendChild(head);
 
     // 术语按 docs/UI_TERMINOLOGY.md（AUDIT-1.1.1 BUG-1111-009）：
-    //   上下文窗口上限（原"上下文容量"）/ 输入 Token（原"Prompt Token"）/
-    //   缓存复用 Token / 输出 Token（原"已生成"）/ 剩余输出 Token。
+    // 上下文窗口上限（原"上下文容量"）/ 输入 Token（原"Prompt Token"）/
+    // 缓存复用 Token / 输出 Token（原"已生成"）/ 剩余输出 Token。
     // 每行第 3 个元素 = staleWhenIdle：该字段是"当次请求"的运行值，Slot 空闲时
     // 是上一次请求的残留（is_processing 每 2/10s 更新，但数字字段最长陈旧 ~10s）。
     // AUDIT-1.1.1 BUG-1111-010：空闲时把这些 per-request 字段淡化 + 标注"上次"，

@@ -1,19 +1,20 @@
 /* ============================================================
-   LlamaMonitor — Layout（Phase 15）
-   App shell：左侧 NavigationView + 右侧页面内容（spec §6/§56）。
-   Navigation 固定，Content 是唯一的垂直滚动区域。
-   ============================================================ */
+ LlamaMonitor — Layout
+ App shell：左侧 NavigationView + 右侧页面内容。
+ Navigation 固定，Content 是唯一的垂直滚动区域。
+ ============================================================ */
 
 .app {
   display: grid;
   grid-template-columns: var(--nav-width) minmax(0, 1fr);
   height: 100vh;
-  /* 16D 移动端：手机浏览器工具栏动态伸缩时 100vh 比可视区大，
-     底部内容被推出可视区（"滚不到最下面被遮挡"）。dvh 跟随可视区。 */
+  /* 1.1.2：手机浏览器工具栏动态伸缩——地址栏 / 手势条收起与展开时真实可视区高度
+ 变化，固定 100vh 会超出（底部内容被遮）或短于可视区。dvh 跟随可视区实时
+ 调整；不支持 dvh 的旧浏览器保留上面的 100vh 回退。 */
   height: 100dvh;
 }
 
-/* ============ NavigationView（spec §7/§8/§9） ============ */
+/* ============ NavigationView（============ */
 .navview {
   background: var(--bg-layer);
   border-right: 1px solid var(--border-subtle);
@@ -25,9 +26,9 @@
   user-select: none;
 }
 
-/* 品牌区（spec §114/§115：极简，不重复大标题）
-   16D 细节：左 padding 8px（= .navview padding 8 + 8），使 28px logo 在
-   compact 60px 内容区（60-16=44）恰好水平居中，展开/收起切换零偏移。 */
+/* 品牌区（极简，不重复大标题）
+ 细节：左 padding 8px（= .navview padding 8 + 8），使 28px logo 在
+ compact 60px 内容区（60-16=44）恰好水平居中，展开/收起切换零偏移。 */
 .nav-brand {
   display: flex;
   align-items: center;
@@ -148,11 +149,11 @@
   text-overflow: ellipsis;
 }
 
-/* ============ Compact 模式（spec §8/§54：窗口窄时 60px） ============
-   16D 细节：左右 padding 与展开态完全一致（.navview 8px / 内部 12px），
-   logo、nav-icon、选中指示条在展开/收起切换时 x 位置不变，不跳动。
-   60px - 2*8 = 44px 内容宽：nav-icon 20px + 2*12 = 44 恰好居中；
-   brand-icon 28px + 12 起点对齐展开态。 */
+/* ============ Compact 模式（窗口窄时 60px） ============
+ 细节：左右 padding 与展开态完全一致（.navview 8px / 内部 12px），
+ logo、nav-icon、选中指示条在展开/收起切换时 x 位置不变，不跳动。
+ 60px - 2*8 = 44px 内容宽：nav-icon 20px + 2*12 = 44 恰好居中；
+ brand-icon 28px + 12 起点对齐展开态。 */
 .app.compact {
   --nav-width: 60px;
 }
@@ -168,9 +169,9 @@
   display: none;
 }
 
-/* ============ 内容区（Phase 16D spec §8：统一宽度与留白） ============
-   Content 100%，max-width 1520px 居中；Settings 1280；About 900。
-   页面左右 padding 32px（窄屏 24px）。 */
+/* ============ 内容区（统一宽度与留白） ============
+ Content 100%，max-width 1520px 居中；Settings 1280；About 900。
+ 页面左右 padding 32px（窄屏 24px）。 */
 .content {
   overflow-y: auto;
   overflow-x: hidden;
@@ -182,17 +183,54 @@
   margin: 0 auto;
   padding: var(--spacing-2xl) var(--page-pad) var(--spacing-3xl);
 }
-/* 16D：设置/关于页不再单独收窄（原 1280/900 与左右留白不一致），
-   恢复默认 = 与其他页共用 .content-inner 的 1520 宽 + 32px 左右 padding */
+/* 1.1.2：设置/关于页逐页收窄——rail +pane 单列布局在 1520px 下左右留白过多，
+ 行距阅读吃力；关于页内容短。其他页保持 .content-inner 的 1520 宽。 */
+#page-settings {
+  max-width: var(--content-max-settings);
+  margin: 0 auto;
+  width: 100%;
+}
+#page-about {
+  max-width: var(--content-max-about);
+  margin: 0 auto;
+  width: 100%;
+}
 @media (max-width: 1366px) {
   .content-inner { padding-left: var(--page-pad-narrow); padding-right: var(--page-pad-narrow); }
 }
 @media (min-width: 2560px) {
   .content-inner { max-width: 1920px; }
 }
+/* 1.1.2：真 Mobile（≤760px）——侧边栏隐藏（导航移交底部 Bottom Navigation，
+ 样式见文件尾 .mobile-nav），内容全宽；底部给 Bottom Nav + safe-area 留空，
+ 避免最后一行被底栏遮挡。 */
+@media (max-width: 760px) {
+  .app {
+    grid-template-columns: 1fr;
+  }
+  .navview {
+    display: none;
+  }
+  .content-inner {
+    max-width: none;
+    padding-bottom: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom) + var(--spacing-2xl));
+  }
+  .page-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--spacing-sm);
+  }
+  .page-header .ph-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .page-header .ph-actions .seg {
+    width: 100%;
+  }
+}
 
-/* ============ 页面（Phase 16D spec §9 统一页面骨架） ============
-   页头 → 分区 → 卡片。100-150ms fade。 */
+/* ============ 页面（统一页面骨架） ============
+ 页头 → 分区 → 卡片。100-150ms fade。 */
 .page {
   display: none;
 }
@@ -205,7 +243,7 @@
   to { opacity: 1; }
 }
 
-/* Page Header：左 Title+Subtitle，右可选全局动作（spec §9） */
+/* Page Header：左 Title +Subtitle，右可选全局动作*/
 .page-header {
   display: flex;
   align-items: flex-start;
@@ -223,10 +261,10 @@
   gap: var(--spacing-sm);
   flex: none;
 }
-/* 16E：窄屏（≤900px 含手机）页头改列式——标题独占一行，时间筛选整行铺满。
-   此前 .seg 固定 258px 起，320px 视口下右边界溢出 .content，整排筛选被推出
-   可视区（用户反馈"手机上看不到时间筛选"）。整行 + .seg overflow-x auto：
-   放不下时内部横滚而不是溢出页面。 */
+/* 窄屏（≤900px 含手机）页头改列式——标题独占一行，时间筛选整行铺满。
+ 此前 .seg 固定 258px 起，320px 视口下右边界溢出 .content，整排筛选被推出
+ 可视区（用户反馈"手机上看不到时间筛选"）。整行 + .seg overflow-x auto：
+ 放不下时内部横滚而不是溢出页面。 */
 @media (max-width: 900px) {
   .page-header {
     flex-direction: column;
@@ -242,7 +280,7 @@
   }
 }
 
-/* Section：统一 标题行 + Body（spec §10/§30：页头 24 → 分区 12 → 卡片 20） */
+/* Section：统一 标题行 + Body（页头 24 → 分区 12 → 卡片 20） */
 .section {
   margin-bottom: var(--section-gap);
 }
@@ -285,4 +323,193 @@
 }
 .page-section:last-child {
   margin-bottom: 0;
+}
+
+/* ============ 1.1.2 Mobile Bottom Navigation（≤760px 显示） ============
+ 桌面隐藏；≤760px 固定底栏 5 列（概览/Token/性能/GPU/更多）。
+ 选中态 = 顶部 3px accent 指示条（与侧边栏左侧指示条同语言）。 */
+.mobile-nav {
+  display: none;
+}
+@media (max-width: 760px) {
+  .mobile-nav {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 50;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    align-items: stretch;
+    background: var(--bg-layer);
+    border-top: 1px solid var(--border-subtle);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .mnav-item {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    min-height: var(--bottom-nav-height);
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: var(--font-size-caption);
+    cursor: pointer;
+    transition: color var(--transition-fast);
+    -webkit-tap-highlight-color: transparent;
+  }
+  .mnav-item[aria-current="page"] {
+    color: var(--text-primary);
+    font-weight: var(--font-weight-semibold);
+  }
+  .mnav-item[aria-current="page"]::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 32px;
+    height: 3px;
+    border-radius: 0 0 2px 2px;
+    background: var(--accent);
+  }
+  .mnav-icon {
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .mnav-icon svg {
+    width: 20px;
+    height: 20px;
+    stroke: currentColor;
+    fill: none;
+    stroke-width: 1.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+}
+
+/* ============ 1.1.2 More Sheet（移动端二级页选择） ============
+ 底部弹出 sheet：系统 / 监控历史 / 设置 / 关于 + 版本号。 */
+.sheet-scrim {
+  display: none;
+}
+.more-sheet {
+  display: none;
+}
+@media (max-width: 760px) {
+  .sheet-scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    background: rgba(0, 0, 0, 0.4);
+  }
+  .sheet-scrim[hidden] {
+    display: none;
+  }
+  .more-sheet {
+    display: flex;
+    flex-direction: column;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 61;
+    background: var(--bg-elevated);
+    border-radius: var(--radius-sheet) var(--radius-sheet) 0 0;
+    border-top: 1px solid var(--border-subtle);
+    padding: var(--spacing-sm) var(--spacing-lg) calc(var(--spacing-lg) + env(safe-area-inset-bottom));
+    box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.3);
+  }
+  .more-sheet[hidden] {
+    display: none;
+  }
+  .more-sheet-handle {
+    width: 32px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--border-strong);
+    margin: 0 auto var(--spacing-sm);
+  }
+  .sheet-item {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+    width: 100%;
+    min-height: 44px;
+    padding: var(--spacing-sm) var(--spacing-sm);
+    background: none;
+    border: none;
+    border-radius: var(--radius-control);
+    color: var(--text-primary);
+    text-align: left;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .sheet-item:active {
+    background: var(--bg-subtle-active);
+  }
+  .sheet-icon {
+    width: 20px;
+    height: 20px;
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-secondary);
+  }
+  .sheet-icon svg {
+    width: 20px;
+    height: 20px;
+    stroke: currentColor;
+    fill: none;
+    stroke-width: 1.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .sheet-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .sheet-title {
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-semibold);
+  }
+  .sheet-desc {
+    font-size: var(--font-size-caption);
+    color: var(--text-muted);
+  }
+  .more-sheet-version {
+    margin-top: var(--spacing-sm);
+    padding-top: var(--spacing-sm);
+    border-top: 1px solid var(--border-subtle);
+    font-size: var(--font-size-caption);
+    color: var(--text-muted);
+    text-align: center;
+  }
+}
+
+/* ============ 1.1.2 远程只读提示（非 loopback 访问） ============ */
+.remote-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  margin-bottom: var(--section-gap);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-card-sm);
+  color: var(--text-secondary);
+  font-size: var(--font-size-secondary);
+}
+.remote-banner[hidden] {
+  display: none;
 }

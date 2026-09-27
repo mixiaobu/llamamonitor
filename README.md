@@ -427,5 +427,24 @@ busy/locked 重试 + busy_timeout），任何一步失败整体回滚，不存�
 
 ## 端口
 
-- 8765：LlamaMonitor 自身（127.0.0.1，仅本机，可用 `web.host`/`web.port` 配置）
+- 8765：LlamaMonitor 自身（默认 127.0.0.1，仅本机；可用 `web.host`/`web.port` 配置）
 - 9091：llama-server（只读 GET：`/metrics`、`/health`、`/slots`、`/props`、`/v1/models`）
+
+## 手机访问 Dashboard
+
+默认 `web.host` 为 `127.0.0.1`（仅本机可访问）。想在手机浏览器上看同一块
+Dashboard：把配置里 `web.host` 改为 `0.0.0.0`（保存后重启应用生效），手机连
+同一局域网，浏览器打开 `http://<电脑局域网IP>:8765/` 即可。
+
+- 手机打开的是**同一套 UI 的真 Mobile 模式**（≤760px）：底部导航
+  （概览 / Token / 性能 / GPU / 更多），更多内含系统 / 监控历史 / 设置 / 关于；
+  触控目标 ≥44px、表格变卡片行、图表高度适配小屏。
+- 远程（非本机）访问是**只读**的：设置分区在导航中隐藏，界面顶部显示只读提示；
+  所有修改类 API 仍按实际 socket 地址回环保护（见上节）。
+- 安全边界不变：Dashboard 仍只读 llama-server（GET），不代理、不修改 llama-server。
+
+## 界面预览
+
+| 桌面（1920×1080，Dark） | 手机（390×844，Dark） |
+| --- | --- |
+| ![桌面 Dashboard](docs/images/llamamonitor-desktop.png) | ![手机 Bottom Navigation](docs/images/llamamonitor-mobile.png) |

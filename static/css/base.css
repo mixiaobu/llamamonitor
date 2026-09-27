@@ -1,17 +1,17 @@
 /* ============================================================
-   LlamaMonitor — Base（Phase 15）
-   Reset / 字体 / 滚动条 / focus / reduced-motion / 主题过渡。
-   组件样式在 components.css；布局在 layout.css。
-   ============================================================ */
+ LlamaMonitor — Base
+ Reset / 字体 / 滚动条 / focus / reduced-motion / 主题过渡。
+ 组件样式在 components.css；布局在 layout.css。
+ ============================================================ */
 
 * {
   box-sizing: border-box;
 }
 
-/* 16E：手机点按高亮。浏览器原生 tap highlight 用近似圆角矩形（不是元素真实
-   圆角），点按 GPU 勾选 chip / 设置分区 / 分段按钮时蓝色高亮看起来"圆角不对"。
-   关掉原生高亮，改由每个交互元素的 :active 自绘反馈（与元素圆角完全一致，
-   见各组件规则）；没有 :active 规则的元素保持默认高亮不变。 */
+/* 手机点按高亮。浏览器原生 tap highlight 用近似圆角矩形（不是元素真实
+ 圆角），点按 GPU 勾选 chip / 设置分区 / 分段按钮时蓝色高亮看起来"圆角不对"。
+ 关掉原生高亮，改由每个交互元素的:active 自绘反馈（与元素圆角完全一致，
+ 见各组件规则）；没有:active 规则的元素保持默认高亮不变。 */
 .seg button,
 .btn,
 .check-chip,
@@ -26,7 +26,7 @@ body {
   margin: 0;
   padding: 0;
   height: 100%;
-  overflow: hidden; /* 单一滚动区域在 .content（spec §56） */
+  overflow: hidden; /* 单一滚动区域在 .content*/
 }
 
 body {
@@ -35,12 +35,12 @@ body {
   font-family: var(--font-family);
   font-size: var(--font-size-body);
   line-height: var(--line-height);
-  /* 主题切换的轻微颜色过渡（spec §27：100-150ms） */
+  /* 主题切换的轻微颜色过渡（100-150ms） */
   transition: background-color var(--transition-normal), color var(--transition-normal);
   -webkit-font-smoothing: antialiased;
 }
 
-/* 数字统一 tabular-nums（spec §2/§68/§125：所有数字类避免跳动） */
+/* 数字统一 tabular-nums（所有数字类避免跳动） */
 .stat-value,
 td.num,
 .th-num,
@@ -61,7 +61,7 @@ table.table-full th {
   font-variant-numeric: tabular-nums;
 }
 
-/* ---------- 排版层级（Phase 16D spec §5 统一：24/700 · 13/400 · 18/700） ---------- */
+/* ---------- 排版层级（统一：24/700 · 13/400 · 18/700） ---------- */
 .page-title {
   font-size: var(--font-size-title);
   font-weight: var(--font-weight-bold);
@@ -98,9 +98,9 @@ a:hover {
   text-decoration: underline;
 }
 
-/* ---------- Focus（spec §74：accent ring，不用 outline:none 无替代） ----------
-   16D：不再覆写 border-radius（手机点按触发 focus-visible 时按钮圆角被改成
-   4px 直角）；每个元素保留自身圆角，ring 自然贴合。 */
+/* ---------- Focus（accent ring，不用 outline:none 无替代） ----------
+ 不再覆写 border-radius（手机点按触发 focus-visible 时按钮圆角被改成
+ 4px 直角）；每个元素保留自身圆角，ring 自然贴合。 */
 :focus {
   outline: none;
 }
@@ -109,7 +109,7 @@ a:hover {
   outline-offset: 1px;
 }
 
-/* ---------- 滚动条（spec §57：窄、低对比、不隐藏） ---------- */
+/* ---------- 滚动条（窄、低对比、不隐藏） ---------- */
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
@@ -131,7 +131,7 @@ a:hover {
   background: transparent;
 }
 
-/* ---------- Reduced Motion（spec §76/§27） ---------- */
+/* ---------- Reduced Motion（---------- */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

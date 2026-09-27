@@ -1,13 +1,13 @@
 /* ============================================================
-   LlamaMonitor — App bootstrap（Phase 15）
-   应用启动 / 全局状态 / 页面数据接线 / 主题控制器 / 轮询注册。
-   职责（spec §122）：
-   - loadConfig：/api/config（主题、刷新间隔、服务器地址）
-   - 主题控制器：dark/light/system + 系统主题实时跟随（UI-001）
-   - 状态处理：Online/Offline/Stale（spec §39/§41/§129）+ 全局 InfoBar
-   - 各页面数据刷新函数 + LM.poll 任务注册（spec §47 中央调度器）
-   - 每 section 独立失败（spec §42：一个 API 失败不拖垮其他）
-   ============================================================ */
+ LlamaMonitor — App bootstrap
+ 应用启动 / 全局状态 / 页面数据接线 / 主题控制器 / 轮询注册。
+ 职责
+ - loadConfig：/api/config（主题、刷新间隔、服务器地址）
+ - 主题控制器：dark/light/system + 系统主题实时跟随（UI-001）
+ - 状态处理：Online/Offline/Stale +  全局 InfoBar
+ - 各页面数据刷新函数 + LM.poll 任务注册（中央调度器）
+ - 每 section 独立失败（一个 API 失败不拖垮其他）
+ ============================================================ */
 (function () {
   "use strict";
 
@@ -16,7 +16,7 @@
 
   var cfgUi = {
     refreshIntervalSeconds: 5,
-    dailyDefaultDays: 7,   // 与服务端默认一致（16D：默认 7 天）——
+    dailyDefaultDays: 7,   // 与服务端默认一致（默认 7 天）——
     theme: "system",
   };
 
@@ -27,34 +27,34 @@
     config: null,          // /api/status 的 config 块
     dailyData: [],         // /api/daily 行（当前范围）
     dailyRange: 30,        // Usage 页当前范围天数（all 模式不使用）
-    dailyRangeMode: "7d", // Phase 16B：today | 7d | 30d | month | all（16D：默认 7 天）
+    dailyRangeMode: "7d", //today | 7d | 30d | month | all（默认 7 天）
     liveSamples: [],       // /api/live 60 分钟
-    gpuStatus: null,       // /api/gpu/status
+    gpuStatus: null,       
     gpuLive: null,         // /api/gpu/live（当前范围）
     gpuRangeMinutes: 60,
-    gpuVisible: {},        // uuid -> bool
+    gpuVisible: {},        
     gpuPickSig: null,      // UI-002：detected 签名
-    mtp: null,             // /api/mtp
+    mtp: null,             
     mtpPositions: [],
-    quality: null,         // /api/data/quality
-    health: null,          // /api/health
+    quality: null,         
+    health: null,          
     events: [],            // /api/events（History 页监控事件）
     lastUpdateTs: null,    // 最近一次采样的 last_update（epoch s）
     lastStatusRefresh: 0,  // 最近一次 /api/status 轮询完成时刻（epoch ms）— 倒计时基准
     statusBackendOk: true, // 后端（非 llama）是否可达
     ovSummary: null,       // 最近一次 /api/summary（Overview 今日卡）
-    serverUrlText: "",     // Phase 16C §21：当前服务器地址（设置页连接状态复用）
+    serverUrlText: "",     // 当前服务器地址（设置页连接状态复用）
   };
 
-  /* ---- 状态条 1s ticker（Phase 16B spec §7：信息层级调整） ----
-     主信息：在线 → "最后更新 X 秒前"（来自 lastUpdateTs）；
-             离线 → "最后成功采样: X 分钟前"（lastSuccessTs）。
-     次要信息：倒计时 "x 秒后刷新"（text-disabled 色，降级为辅助信息）。
-     后端不可达：主信息提示后端不可达。 */
+  /* ---- 状态条 1s ticker（信息层级调整） ----
+ 主信息：在线 → "最后更新 X 秒前"（来自 lastUpdateTs）；
+ 离线 → "最后成功采样: X 分钟前"（lastSuccessTs）。
+ 次要信息：倒计时 "x 秒后刷新"（text-disabled 色，降级为辅助信息）。
+ 后端不可达：主信息提示后端不可达。 */
   function updateLastUpdateText() {
     var el = document.getElementById("ovLastUpdate");
     if (!el) return;
-    // 16D：常态（在线）不显示"最后更新 X 秒前 / X 秒后刷新"（5s 轮询信息量低）；
+    // 常态（在线）不显示"最后更新 X 秒前 / X 秒后刷新"（5s 轮询信息量低）；
     // 仅离线/后端不可达时显示说明。
     if (!state.statusBackendOk) {
       el.textContent = "后端不可达，正在重试...";
@@ -68,7 +68,7 @@
     } else {
       // AUDIT-1.1.1 UX-1111-001：在线且数据已"陈旧"（≥10s 未到新采样，如刷新周期
       // 调大 / 后台页签恢复 / 一次刷新丢失）时显示"最后更新 X 秒前"，避免用户把
-      // 几分钟前的数字当当前值。5s 正常刷新下 elapsed 通常 <10s，仍保持 16D 的
+      // 几分钟前的数字当当前值。5s 正常刷新下 elapsed 通常 <10s，仍保持 的
       // 常态留空（低信息量不刷屏）。
       var elapsed = state.lastUpdateTs ? (Math.floor(Date.now() / 1000) - state.lastUpdateTs) : null;
       if (elapsed != null && elapsed >= 10) {
@@ -91,7 +91,7 @@
     }).join(" ") + (cls ? " " + cls : "");
   }
 
-  /* ================= 主题控制器（spec §26/§27；UI-001 修复） ================= */
+  /* ================= 主题控制器（；UI-001 修复） ================= */
   var themeMode = cfgUi.theme;      // dark | light | system（配置值）
   var resolvedTheme = "dark";
   var systemMq = null;
@@ -248,7 +248,7 @@
       }
     }
 
-    // Offline InfoBar（spec §39：明确 offline，保留历史）
+    // Offline InfoBar（明确 offline，保留历史）
     if (state.online === false) {
       showOfflineBar(state.lastSuccessTs || data.last_update);
     } else {
@@ -267,7 +267,7 @@
       elUrl.textContent = state.serverUrlText || "--";
     }
 
-    // 配置状态（Config: OK / Default / Error，spec §110 数据库/配置问题明确化）
+    // 配置状态（Config: OK / Default / Error，数据库/配置问题明确化）
     var elCfg = $("ovConfigState");
     if (elCfg) {
       var cc = data.config;
@@ -289,7 +289,7 @@
     setStatValue("ovDecodeTps", on && data.decode_tps != null ? F.formatTps(data.decode_tps) + " tok/s" : F.NA);
     setStatValue("ovContext", on ? F.formatTokenCount(data.context_max) : F.NA);
     setStatValue("ovRequests", on ? F.formatInt(data.requests_processing) + " / " + F.formatInt(data.requests_deferred) : F.NA);
-    // Performance 页指标条 + 运行卡（spec §25/§26）
+    // Performance 页指标条 + 运行卡
     setStatValue("perfPromptTps", on && data.prompt_tps != null ? F.formatTps(data.prompt_tps) + " tok/s" : F.NA);
     setStatValue("perfDecodeTps", on && data.decode_tps != null ? F.formatTps(data.decode_tps) + " tok/s" : F.NA);
     setStatValue("rtContextMax", data.context_max != null ? F.formatTokenCount(data.context_max) : F.NA);
@@ -300,8 +300,8 @@
   var lastConfigUrl = "";
 
   /* ================= Summary（Overview 今日卡 + Usage 范围摘要；BUG-A 修复） =================
-     /api/summary 现由后端计算 today 与 month（同一 local_date 来源），
-     前端不再做浏览器本地月份前缀过滤。 */
+ /api/summary 现由后端计算 today 与 month（同一 local_date 来源），
+ 前端不再做浏览器本地月份前缀过滤。 */
   function renderSummaryCards(summary) {
     state.ovSummary = summary;
     var t = summary.today || {};
@@ -322,10 +322,10 @@
   }
 
   /* Usage 范围摘要：按当前 dailyRangeMode 选择数据源
-     today   -> summary.today
-     month   -> summary.month（BUG-A 修复：后端计算，month_key 一致）
-     all     -> summary.total
-     7d/30d  -> 对当前已加载的 daily 行求和 */
+ today -> summary.today
+ month -> summary.month（BUG-A 修复：后端计算，month_key 一致）
+ all -> summary.total
+ 7d/30d -> 对当前已加载的 daily 行求和 */
   function renderRangeSummary() {
     var labelEl = $("sumRangeLabel");
     if (!labelEl) return;
@@ -378,7 +378,7 @@
       elKv.classList.toggle("dim", kv == null);
     }
     setStatValue("ovKvCache", kvText); // Overview 运行状态卡（0.16.12）
-    // 指标条（Phase 16C §5：Prompt TPS/Decode TPS/处理中请求/等待中请求/忙碌 Slot（平均），
+    // 指标条（Prompt TPS/Decode TPS/处理中请求/等待中请求/忙碌 Slot（平均），
     // 顶部不再重复 MTP 接受率——下方 MTP 卡已有完整 Summary）
     setStatValue("perfProcessing", F.formatInt(d.requests_processing));
     setStatValue("perfQueued", F.formatInt(d.requests_deferred));
@@ -389,7 +389,7 @@
   function renderDataQuality() {
     var q = state.quality, h = state.health;
     if (!q && !h) return;
-    // 16D：数值元素只叠加语义色 tone，保留字号类（mid 22px），
+    // 数值元素只叠加语义色 tone，保留字号类（mid 22px），
     // 此前整段覆写 className 会把字号类吞掉退化成 12px hint
     if (h) {
       var dbEl = $("dqDb");
@@ -426,7 +426,7 @@
       var openText = q.open_gap ? "持续缺口，始于 " + F.formatDateTime(q.open_gap.start) +
         (q.open_gap.reason ? "（" + (GAP_REASON_LABELS[q.open_gap.reason] || q.open_gap.reason) + "）" : "") +
         "，进行中" : "";
-      // 概览数据质量卡：open gap 提示在卡底部（16D 从"最近有效采样"项移出）
+      // 概览数据质量卡：open gap 提示在卡底部（从"最近有效采样"项移出）
       var dqEl = $("dqOpenGap");
       if (dqEl) dqEl.textContent = openText;
       var wrap = $("dqOpenGapWrap");
@@ -438,7 +438,7 @@
         hqEl.style.display = openText ? "" : "none";
       }
       // History 页（同一数据源，独立元素）
-      if ($("hqDb")) $("hqDb").textContent = dbStatusLabel(h && h.database);  // UX-1111-007
+      if ($("hqDb")) $("hqDb").textContent = dbStatusLabel(h && h.database);  
       if ($("hqDbHint")) $("hqDbHint").textContent =
         (h && h.journal_mode ? h.journal_mode.toUpperCase() + " \u00B7 " : "") + (h && h.database_detail || "") +
         (h && h.application === "degraded" ? " \u00B7 保护模式（只读）" : "");
@@ -488,13 +488,13 @@
     var gaps = (state.quality && state.quality.recent_gaps) || [];
     var wrap = $("gapsTableWrap");
     var empty = $("gapsEmpty");
-    // HISTORY-001（Phase 16C §13/§16）：空态条件只看 gaps.length===0。
+    // HISTORY-001：空态条件只看 gaps.length===0。
     // 根因：此前仅设 empty.hidden=true，但 author CSS 的 display:flex
     // 压过 UA 的 [hidden]{display:none}，导致有数据时空态仍显示。
-    // 现统一走 ui.setEmptyState（force-hide/force-show + !important）。
+    // 现统一走 ui.setEmptyState（force-hide/force-show +!important）。
     ui.setEmptyState(empty, gaps.length === 0);
     if (!gaps.length) {
-      // 真空态（spec §45）：✓ 暂无已知监控缺口
+      // 真空态（✓ 暂无已知监控缺口
       tbody.innerHTML = "";
       if (wrap) wrap.style.display = "none";
       if (empty) {
@@ -506,7 +506,7 @@
     if (wrap) wrap.style.display = "";
     // 紧凑单行时间（今天 HH:MM:SS / 跨天 MM-DD HH:MM），完整值进 tooltip
     tbody.innerHTML = gaps.map(function (g) {
-      var clock = F.formatClock || F.formatDateTime; // 16D 兜底：浏览器混装新旧 JS 时不抛错
+      var clock = F.formatClock || F.formatDateTime; // 兜底：浏览器混装新旧 JS 时不抛错
       var start = clock(g.start);
       var startFull = F.formatDateTime(g.start);
       var end = g.end ? clock(g.end) : "进行中";
@@ -514,19 +514,22 @@
       var dur = F.formatDuration(g.duration_seconds == null ? 0 : g.duration_seconds);
       var src = GAP_SOURCE_LABELS[g.source] || g.source || "--";
       var reason = GAP_REASON_LABELS[g.reason] || g.reason || "未知";
-      var loss = g.possible_token_loss ? "<td class='cell-bad'>是</td>" : "<td>否</td>";
+      // 1.1.2：data-label 驱动移动端 Card Rows
+      var loss = g.possible_token_loss
+        ? "<td data-label='可能丢失' class='cell-bad'>是</td>"
+        : "<td data-label='可能丢失'>否</td>";
       // BUG-1111-002：title 值统一过 escAttr（reason 来自后端，可能含引号/中文）
-      return "<tr>" +
-        "<td title='" + escAttr(startFull) + "'>" + start + "</td>" +
-        "<td title='" + escAttr(endFull) + "'>" + end + "</td>" +
-        "<td>" + dur + "</td>" +
-        "<td>" + src + "</td>" +
-        "<td class='cell-wrap' title='" + escAttr(reason) + "'>" + reason + "</td>" +
+      return "<tr data-date='" + (g.start ? String(g.start).slice(0, 10) : "") + "'>" +
+        "<td data-label='开始' title='" + escAttr(startFull) + "'>" + start + "</td>" +
+        "<td data-label='结束' title='" + escAttr(endFull) + "'>" + end + "</td>" +
+        "<td data-label='时长'>" + dur + "</td>" +
+        "<td data-label='来源'>" + src + "</td>" +
+        "<td data-label='原因' class='cell-wrap' title='" + escAttr(reason) + "'>" + reason + "</td>" +
         loss + "</tr>";
     }).join("");
   }
 
-  /* ================= GPU 页（spec §135；UI-002 签名重建） ================= */
+  /* ================= GPU 页（；UI-002 签名重建） ================= */
   function applyGpuStatus(d) {
     state.gpuStatus = d;
     var box = $("gpuCards");
@@ -579,7 +582,7 @@
       head.appendChild(name);
       card.appendChild(head);
 
-      // 主指标（spec §36 + Phase 16C §10/GPU-002：显存行内嵌进度条，
+      // 主指标（显存行内嵌进度条，
       // 进度条视觉上归属于"显存"，不再游离在主指标与温度/功耗之间）
       var vram = (g.memory_used_mb == null || g.memory_total_mb == null) ? F.NA :
         (g.memory_used_mb / 1024).toFixed(1) + " / " + (g.memory_total_mb / 1024).toFixed(1) + " GiB";
@@ -613,7 +616,7 @@
         }
       });
 
-      // 次要指标（spec §38：风扇/时钟/PCIe 小字一行）
+      // 次要指标（风扇/时钟/PCIe 小字一行）
       var pcieNow = (g.pcie_generation == null || g.pcie_width == null) ? F.NA : "Gen" + g.pcie_generation + " x" + g.pcie_width;
       var pcieMax = (g.pcie_gen_max != null && g.pcie_width_max != null) ? " / 最高 Gen" + g.pcie_gen_max + " x" + g.pcie_width_max : "";
       var secondary = [
@@ -637,6 +640,15 @@
       card.appendChild(kv);
 
       // ---- 1.1 高级遥测（新字段缺失 -> 该行 --，不影响旧字段） ----
+      // 1.1.2：高级遥测 / 性能状态 / throttle / ECC 收进 details.gpu-adv。
+      // 桌面 summary 由 CSS 隐藏（等效全展开）；手机默认收起，按需展开。
+      var isMobile = window.matchMedia("(max-width: 760px)").matches;
+      var adv = document.createElement("details");
+      adv.className = "gpu-adv";
+      var advSummary = document.createElement("summary");
+      advSummary.textContent = "高级遥测 / 健康";
+      adv.appendChild(advSummary);
+      var advHas = false;
       var advanced = [];
       if (g.memory_controller_percent != null) {
         advanced.push(["显存控制器利用率", F.formatPercent(g.memory_controller_percent, 0)]);
@@ -658,7 +670,8 @@
         psK.textContent = "性能状态";
         psRow.appendChild(psK);
         psRow.appendChild(ps);
-        card.appendChild(psRow);
+        adv.appendChild(psRow);
+        advHas = true;
       }
       advanced.forEach(function (r) {
         var row = document.createElement("div");
@@ -671,7 +684,8 @@
         v.textContent = r[1];
         row.appendChild(k);
         row.appendChild(v);
-        card.appendChild(row);
+        adv.appendChild(row);
+        advHas = true;
       });
 
       // ---- 1.1 性能限制原因（非故障；0x0 时 []） ----
@@ -688,7 +702,8 @@
         tRow.title = "性能限制（throttle）原因，非故障告警。";
         tRow.appendChild(tK);
         tRow.appendChild(tV);
-        card.appendChild(tRow);
+        adv.appendChild(tRow);
+        advHas = true;
       }
 
       // ---- 1.1 ECC 健康（ecc == null -> 整个区块隐藏，不显示一排 --） ----
@@ -721,7 +736,13 @@
           eccKv.appendChild(v);
         });
         eccBlock.appendChild(eccKv);
-        card.appendChild(eccBlock);
+        adv.appendChild(eccBlock);
+        advHas = true;
+      }
+      // 1.1.2：无高级数据时不渲染空壳 details（summary 单独出现没有意义）
+      if (advHas) {
+        if (!isMobile) adv.open = true; // 桌面默认展开（summary 被 CSS 隐藏）
+        card.appendChild(adv);
       }
 
       box.appendChild(card);
@@ -776,8 +797,8 @@
     });
   }
 
-  /* Overview 页 GPU 摘要（Phase 16B §11：迷你卡 4 指标 + 详情链接；
-     与 GPU 页同一数据源 /api/gpu/status） */
+  /* Overview 页 GPU 摘要（迷你卡 4 指标 + 详情链接；
+ 与 GPU 页同一数据源 /api/gpu/status） */
   function renderGpuOverviewSummary(d) {
     var stateEl = $("ovGpuState");
     var lineEl = $("ovGpuLine");
@@ -867,8 +888,8 @@
       // 未监控的卡默认不在曲线中显示（无实时数据，画出来是误导）；
       // 用户可手动勾选查看其历史。监控中的卡保持"默认显示"。
       if (state.gpuVisible[g.uuid] === undefined) state.gpuVisible[g.uuid] = !unmon;
-      // Phase 16C §12：Fluent Check Chip——保留原生 checkbox 语义/键盘访问，
-      // 视觉为可点击 chip；完整名称+UUID 走 title tooltip。
+      // Fluent Check Chip——保留原生 checkbox 语义/键盘访问，
+      // 视觉为可点击 chip；完整名称 +UUID 走 title tooltip。
       var label = document.createElement("label");
       label.className = "check-chip" + (state.gpuVisible[g.uuid] ? " on" : "") + (unmon ? " unmonitored" : "");
       var cb = document.createElement("input");
@@ -965,11 +986,11 @@
     setStatValue("mtpAccepted", F.formatTokenCount(d.accepted_tokens));
     setStatValue("mtpSeqs", F.formatInt(d.num_drafts));
     setStatValue("ovMtpRate", F.formatPercent(d.accept_rate));
-    // 指标条不再有 MTP（Phase 16C §5）
+    // 指标条不再有 MTP
     charts.renderMtpPosChart("chartMtpPosBox", "chartMtpPos", state.mtpPositions);
   }
 
-  /* ================= Usage 页：图表 + 每日表（Phase 16B §10） ================= */
+  /* ================= Usage 页：图表 + 每日表 ================= */
   function renderDailyTable() {
     var tbody = $("dailyTbody");
     if (!tbody) return;
@@ -980,25 +1001,27 @@
     }
     tbody.innerHTML = rows.map(function (r) {
       var cov = r.monitoring_coverage_percent;
-      var covTd = cov == null ? "<td>" + F.NA + "</td>" :
-        "<td class='" + (cov >= 99.9 ? "cell-ok" : cov >= 95 ? "cell-warn" : "cell-bad") + "'>" + F.formatPercent(cov) + "</td>";
+      // 1.1.2：data-label 驱动移动端 Card Rows（CSS::before 显示列名）
+      var covTd = cov == null ? "<td data-label='采集覆盖率'>" + F.NA + "</td>" :
+        "<td data-label='采集覆盖率' class='" + (cov >= 99.9 ? "cell-ok" : cov >= 95 ? "cell-warn" : "cell-bad") + "'>" + F.formatPercent(cov) + "</td>";
       var gaps = r.gap_count || 0;
       var loss = r.possible_token_loss;
-      var gapsTd = "<td class='" + (gaps === 0 ? "cell-ok" : loss ? "cell-bad" : "cell-warn") + "'>" + gaps + "</td>";
+      var gapsTd = "<td data-label='缺口' class='" + (gaps === 0 ? "cell-ok" : loss ? "cell-bad" : "cell-warn") + "'>" + gaps + "</td>";
       var p = r.prompt_tokens || 0, c = r.cached_tokens || 0;
       var crDenom = p + c;
       var cacheTd = crDenom > 0
-        ? "<td>" + F.formatPercent(c / crDenom * 100) + "</td>" : "<td>" + F.NA + "</td>";
-      return "<tr><td>" + r.date + "</td>" +
-        "<td>" + F.formatTokenCount(r.prompt_tokens) + "</td>" +
-        "<td>" + F.formatTokenCount(r.cached_tokens) + "</td>" +
-        "<td>" + F.formatTokenCount(r.output_tokens) + "</td>" +
-        "<td>" + F.formatTokenCount(r.compute_tokens) + "</td>" +
-        "<td>" + F.formatTokenCount(r.logical_tokens) + "</td>" + cacheTd + covTd + gapsTd + "</tr>";
+        ? "<td data-label='缓存复用率'>" + F.formatPercent(c / crDenom * 100) + "</td>"
+        : "<td data-label='缓存复用率'>" + F.NA + "</td>";
+      return "<tr data-date='" + r.date + "'><td>" + r.date + "</td>" +
+        "<td data-label='输入'>" + F.formatTokenCount(r.prompt_tokens) + "</td>" +
+        "<td data-label='缓存复用'>" + F.formatTokenCount(r.cached_tokens) + "</td>" +
+        "<td data-label='输出'>" + F.formatTokenCount(r.output_tokens) + "</td>" +
+        "<td data-label='实际计算'>" + F.formatTokenCount(r.compute_tokens) + "</td>" +
+        "<td data-label='Token 总量'>" + F.formatTokenCount(r.logical_tokens) + "</td>" + cacheTd + covTd + gapsTd + "</tr>";
     }).join("");
   }
 
-  /* Phase 16B 时间范围模式 -> /api/daily 查询参数 */
+  /* 时间范围模式 -> /api/daily 查询参数 */
   function dailyQuery() {
     switch (state.dailyRangeMode) {
       case "today": return "/api/daily?days=1";
@@ -1053,7 +1076,7 @@
     return api.get("/api/status")
       .then(applyStatus)
       .catch(function (e) {
-        // 后端不可达（区别于 llama 离线）：保留上次数据 + 提示（spec §129）
+        // 后端不可达（区别于 llama 离线）：保留上次数据 + 提示
         console.warn("status failed:", e.message || e);
         state.statusBackendOk = false; // 由 1s ticker 统一渲染"后端不可达"
       });
@@ -1074,7 +1097,7 @@
       });
   }
 
-  /* 监控事件（History 页 spec §50：/api/events，最近 30 条） */
+  /* 监控事件（History 页 /api/events，最近 30 条） */
   var EVENT_TYPE_LABELS = {
     monitor_start: "LlamaMonitor 启动",
     monitor_stop: "LlamaMonitor 停止",
@@ -1121,8 +1144,8 @@
       .catch(function (e) { console.warn("events failed:", e.message || e); });
   }
 
-  /* Phase 16C §19：事件列表默认显示前 N 条，超出部分用"查看更多"展开；
-     取消内部嵌套滚动，由页面本身承担纵向滚动。 */
+  /* 事件列表默认显示前 N 条，超出部分用"查看更多"展开；
+ 取消内部嵌套滚动，由页面本身承担纵向滚动。 */
   var EVENTS_PAGE_SIZE = 15;
   var eventsExpanded = false;
 
@@ -1132,7 +1155,7 @@
     var wrapEl = $("eventsTableWrap");
     if (!tbody) return;
     var events = state.events || [];
-    // HISTORY-002（Phase 16C §14/§15）：events.length>0 时彻底隐藏空态
+    // HISTORY-002：events.length>0 时彻底隐藏空态
     // （走 ui.setEmptyState，修复 [hidden] 被 display:flex 压过的问题）。
     ui.setEmptyState(empty, events.length === 0);
     if (wrapEl) wrapEl.style.display = events.length ? "" : "none";
@@ -1140,22 +1163,23 @@
 
     var shown = eventsExpanded ? events : events.slice(0, EVENTS_PAGE_SIZE);
     tbody.innerHTML = shown.map(function (ev) {
-      var clock = F.formatClock || F.formatDateTime; // 16D 兜底：浏览器混装新旧 JS 时不抛错
+      var clock = F.formatClock || F.formatDateTime; // 兜底：浏览器混装新旧 JS 时不抛错
       var time = clock(ev.timestamp); // 紧凑单行：今天 HH:MM:SS / 跨天 MM-DD HH:MM
       var full = F.formatDateTime(ev.timestamp);
       var sev = ev.severity === "warning" ? " cell-warn" : ev.severity === "error" ? " cell-bad" : "";
       var label = EVENT_TYPE_LABELS[ev.event_type] || ev.event_type;
-      // Phase 16C §17/§18：展示层 humanize；原 details 保留在 tooltip
+      // 展示层 humanize；原 details 保留在 tooltip
       var detail = ui.humanizeEventDetails(ev) || "";
       var rawDetail = "";
       try {
         rawDetail = ev.details && typeof ev.details === "object" ? JSON.stringify(ev.details) : (ev.details || "");
       } catch (e) { rawDetail = String(ev.details || ""); }
       // BUG-1111-002：统一走模块级 escAttr（含 ' 转义），title 与 cell 文本都转义
-      return "<tr>" +
-        "<td title='" + escAttr(full) + "'>" + escAttr(time) + "</td>" +
-        "<td class='ev-type" + sev + "' title='" + escAttr(ev.event_type) + "'>" + escAttr(label) + "</td>" +
-        "<td class='ev-detail' title='" + escAttr(rawDetail || detail) + "'>" + escAttr(detail) + "</td>" +
+      // 1.1.2：data-label 驱动移动端 Card Rows（首列时间作卡头）
+      return "<tr data-date='" + (ev.timestamp ? String(ev.timestamp).slice(0, 10) : "") + "'>" +
+        "<td data-label='时间' title='" + escAttr(full) + "'>" + escAttr(time) + "</td>" +
+        "<td data-label='类型' class='ev-type" + sev + "' title='" + escAttr(ev.event_type) + "'>" + escAttr(label) + "</td>" +
+        "<td data-label='详情' class='ev-detail' title='" + escAttr(rawDetail || detail) + "'>" + escAttr(detail) + "</td>" +
         "</tr>";
     }).join("");
     // "查看更多" / "收起"（仅当事件数超出单页时）—— 表格末行。
@@ -1211,10 +1235,10 @@
   /* ================= 启动 ================= */
 
   async function loadConfig() {
-    /* 16E：时间筛选控件先于 /api/config 创建——该端点是 loopback-only，
-       手机走局域网 IP 访问得 403，此前筛选被放在 await 之后，403 直接进
-       catch，两个 segmented 永远没被创建（手机看不到时间范围筛选）。
-       现在：先用内置默认值渲染；config 成功后用服务器配置 set() 同步选中项。 */
+    /* 时间筛选控件先于 /api/config 创建——该端点是 loopback-only，
+ 手机走局域网 IP 访问得 403，此前筛选被放在 await 之后，403 直接进
+ catch，两个 segmented 永远没被创建（手机看不到时间范围筛选）。
+ 现在：先用内置默认值渲染；config 成功后用服务器配置 set 同步选中项。 */
     try {
       var modeOptions = [
         { value: "today", label: "今天" },
@@ -1242,7 +1266,7 @@
           refreshGpuLive();
         });
       }
-      // 16E：/api/config 是 loopback-only。远程（局域网 IP）客户端不发该请求，
+      // /api/config 是 loopback-only。远程（局域网 IP）客户端不发该请求，
       // 直接用内置默认值——手机 DevTools 网络面板不再出现 403。
       var c = LM.api.isLocal() ? await api.get("/api/config") : null;
       if (c && c.ui) {
@@ -1253,7 +1277,7 @@
       lastConfigUrl = (c && c.llama_server && c.llama_server.url) || "";
       var _su = $("ovServerUrl"); if (lastConfigUrl && _su) _su.textContent = lastConfigUrl.replace(/^https?:\/\//, "");
       setThemeMode(cfgUi.theme);
-      // 服务器配置到达后同步 Usage 默认范围（set() 只更新选中态，不触发 onChange）
+      // 服务器配置到达后同步 Usage 默认范围（set 只更新选中态，不触发 onChange）
       var defDays = cfgUi.dailyDefaultDays || 7;
       var serverDefault = defDays <= 1 ? "today" : defDays <= 7 ? "7d" :
         defDays <= 30 ? "30d" : defDays <= 62 ? "month" : "all";
@@ -1269,13 +1293,16 @@
   }
 
   function init() {
-    // 导航图标（本地 SVG，spec §9）+ 品牌标识（spec §115）
-    document.querySelectorAll(".nav-icon[data-icon]").forEach(function (el) {
+    // 导航图标（本地 SVG， + 品牌标识
+    // 1.1.2：含移动端底栏 .mnav-icon（sheet-icon 在 navigation.js 内惰性处理）
+    document.querySelectorAll(".nav-icon[data-icon], .mnav-icon[data-icon], .sheet-icon[data-icon]").forEach(function (el) {
       el.innerHTML = LM.icons.get(el.getAttribute("data-icon"));
     });
+    var mnavMoreIcon = $("mnavMoreIcon");
+    if (mnavMoreIcon) mnavMoreIcon.innerHTML = LM.icons.get("more");
     var brand = $("brandIcon");
     if (brand) brand.innerHTML = LM.icons.brand();
-    // 指标定义 InfoTooltip（spec §61-63）
+    // 指标定义 InfoTooltip
     document.querySelectorAll(".info-tip-slot").forEach(function (el) {
       var tip = LM.ui.infoTip(el.getAttribute("data-tip"), el.getAttribute("data-align") === "right");
       el.replaceWith(tip);
@@ -1284,8 +1311,8 @@
     document.querySelectorAll(".nav-item").forEach(function (b) {
       b.addEventListener("click", function () { LM.nav.showPage(b.getAttribute("data-page")); });
     });
-    // 概览行动链接（Phase 16B §2 data-goto：16C 审计发现点击无响应——
-    // 16B 重写 HTML 时丢失了处理器，这里用事件委托统一接管）
+    // 概览行动链接（审计发现点击无响应——
+    // 重写 HTML 时丢失了处理器，这里用事件委托统一接管）
     document.querySelectorAll("a.link[data-goto]").forEach(function (a) {
       a.addEventListener("click", function (ev) {
         ev.preventDefault();
@@ -1294,17 +1321,46 @@
       });
     });
     LM.nav.initCompact();
-    // 16E+：远程（局域网 IP）客户端没有可改的配置（/api/config 等 loopback-only），
+    // 1.1.2：移动端底栏 + More Sheet + 长列表自动折叠（≤760px 收起 data-auto-fold）
+    LM.nav.initMobileNav();
+    (function () {
+      var mq = window.matchMedia("(max-width: 760px)");
+      function apply() {
+        var folds = document.querySelectorAll("[data-auto-fold]");
+        for (var i = 0; i < folds.length; i++) {
+          folds[i].open = !mq.matches;
+        }
+        // GPU 高级区随视口同步：桌面 open（summary 被 CSS 隐藏，等效全展开）、
+        // 手机收起。避免视口切换后 details 保持上一形态。
+        var advs = document.querySelectorAll(".gpu-adv");
+        for (var j = 0; j < advs.length; j++) {
+          advs[j].open = !mq.matches;
+        }
+      }
+      apply();
+      if (typeof mq.addEventListener === "function") {
+        mq.addEventListener("change", apply);
+      } else if (typeof mq.addListener === "function") {
+        mq.addListener(apply);
+      }
+    })();
+    // +：远程（局域网 IP）客户端没有可改的配置（/api/config 等 loopback-only），
     // 直接隐藏「设置」导航入口——比"进去看到只读表单"更干净。本机不变。
+    // 1.1.2：移动端 More Sheet 里的设置入口同步隐藏 + 顶部只读提示条显示。
     if (!LM.api.isLocal()) {
       document.querySelectorAll('.nav-item[data-page="settings"]').forEach(function (b) {
         b.style.display = "none";
       });
+      document.querySelectorAll('.sheet-item[data-page="settings"]').forEach(function (b) {
+        b.style.display = "none";
+      });
+      var banner = $("remoteBanner");
+      if (banner) banner.hidden = false;
     }
     // Settings 事件绑定（保存/重置/测试连接/dirty 标记/主题切换/自动启动/危险操作/更新）
     if (LM.settings && LM.settings.init) LM.settings.init();
 
-    // 页面钩子（Phase 16B：进入页面时加载该页数据；隐藏页不跑其专属轮询）
+    // 页面钩子（：进入页面时加载该页数据；隐藏页不跑其专属轮询）
     LM.nav.registerPage("overview", function () {
       refreshStatus(); refreshSummary(); refreshRuntime();
       refreshDataQuality(); refreshGpuStatus();
@@ -1342,7 +1398,7 @@
       LM.settings.loadAbout();
     });
 
-    // 轮询任务注册（Phase 16B spec §119：页面作用域——
+    // 轮询任务注册（页面作用域——
     // 状态类 ~5s（config 间隔）；图表 10-15s；用量/历史 30-60s 且仅在对应页前台时运行）
     var R = Math.max(1, cfgUi.refreshIntervalSeconds) * 1000;
     // 状态类（全局：状态条/离线横幅依赖，任何页可见时都跑）
@@ -1425,8 +1481,8 @@
       intervalMs: 120000, visibleIntervalMs: 60000, visibleOnly: true,
       run: function () { if (LM.nav.currentPage() === "history") return refreshEvents(); },
     });
-    // Updates：30s 全局（驱动横幅）+ 1s 仅在 Updates 分区（下载进度，UI-023 统一进调度器）
-    // 16E：/api/update/* 是 loopback-only——手机（局域网 IP）访问得 403。
+    // Updates：30s 全局（驱动横幅） + 1s 仅在 Updates 分区（下载进度，UI-023 统一进调度器）
+    // /api/update/* 是 loopback-only——手机（局域网 IP）访问得 403。
     // loadUpdateStatus 内部已 catch 并区分 403（静默），这里不变。
     LM.poll.register("updates", { intervalMs: 30000, visibleOnly: false, run: LM.settings.loadUpdateStatus });
     LM.poll.register("updatesProgress", {
@@ -1461,7 +1517,7 @@
     refreshMtpNow: function () { refreshMtp(); },
     refreshDataQualityNow: function () { refreshDataQuality(); },
     refreshEventsNow: function () { refreshEvents(); },
-    // Phase 16C §21：设置页"服务器"卡复用已有 /api/status 轮询状态
+    // 设置页"服务器"卡复用已有 /api/status 轮询状态
     // （不额外高频探测）。返回 {status:'unknown'|'online'|'offline', url}
     serverConnectionState: function () {
       return {
@@ -1471,7 +1527,7 @@
     },
   };
 
-  // DOM ready
+  
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", init);
   } else {

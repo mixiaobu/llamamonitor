@@ -1,14 +1,14 @@
 /* ============================================================
-   LlamaMonitor — Charts（Phase 15, spec §33-§37/§50/§51/§117-119）
-   ECharts 统一管理：
-   - 单一主题对象（dark/light，与 tokens 同步）；
-   - 语义颜色集中管理（spec §34：全应用同一映射）；
-   - 懒初始化（UI-013：页面首次可见时 init）+ 单一 ResizeObserver
-     （UI-007：不再 window resize 双路）；
-   - 空态：0 点时统一 EmptyState 覆盖（UI-011）；
-   - animation 关闭（spec §119：监控面板不需要 5s 一次动画）；
-   - 主题切换后全量重绘（UI-014）。
-   ============================================================ */
+ LlamaMonitor — Charts, 
+ ECharts 统一管理：
+ - 单一主题对象（dark/light，与 tokens 同步）；
+ - 语义颜色集中管理（全应用同一映射）；
+ - 懒初始化（UI-013：页面首次可见时 init） + 单一 ResizeObserver
+ （UI-007：不再 window resize 双路）；
+ - 空态：0 点时统一 EmptyState 覆盖（UI-011）；
+ - animation 关闭（监控面板不需要 5s 一次动画）；
+ - 主题切换后全量重绘（UI-014）。
+ ============================================================ */
 (function () {
   "use strict";
 
@@ -36,8 +36,8 @@
     },
   };
 
-  /* ---------- 语义颜色（spec §34：全应用唯一映射） ----------
-     同一指标在任何页面/任何主题下颜色语义一致（主题内深浅调整）。 */
+  /* ---------- 语义颜色（全应用唯一映射） ----------
+ 同一指标在任何页面/任何主题下颜色语义一致（主题内深浅调整）。 */
   var COLORS = {
     dark: {
       prompt: "#4da3ff",
@@ -68,7 +68,7 @@
   function colors() { return COLORS[currentTheme]; }
 
   /* ---------- 图表注册表 + 懒初始化 + 单一 ResizeObserver ---------- */
-  var instances = {};     // id -> echarts instance
+  var instances = {};     
   var observers = new Set();
   var ro = null;
 
@@ -116,7 +116,7 @@
     });
   }
 
-  /** 已初始化实例数（ECharts instance leak 审计用，spec §140）。 */
+  /** 已初始化实例数（ECharts instance leak 审计用，。 */
   function instanceCount() {
     return Object.keys(instances).length;
   }
@@ -130,7 +130,7 @@
       var overlay = box.querySelector(".chart-empty-overlay");
       if (overlay) {
         overlay.innerHTML = "";
-        // Phase 16C：ui.showEmpty 有 dataset.empty 早退守卫——清空后必须复位，
+        //ui.showEmpty 有 dataset.empty 早退守卫——清空后必须复位，
         // 否则在两个不同空态间切换（如"等待数据"→"暂无吞吐数据"）会留下空白 overlay。
         delete overlay.dataset.empty;
         LM.ui.showEmpty(overlay, { icon: "emptyChart", title: title || "暂无数据", desc: desc || "" });
@@ -140,9 +140,9 @@
     }
   }
 
-  /* ---------- 单点数据可见性（BUG-E spec §127：1 点必须显示点） ----------
-     ECharts 默认 showSymbol=false 时，单点折线不可见。
-     非空值 <=1 时强制显示 symbol。 */
+  /* ---------- 单点数据可见性（BUG-E 1 点必须显示点） ----------
+ ECharts 默认 showSymbol=false 时，单点折线不可见。
+ 非空值 <=1 时强制显示 symbol。 */
   function nonNullCount(values) {
     var n = 0;
     for (var i = 0; i < (values || []).length; i++) if (values[i] != null) n++;
@@ -173,8 +173,8 @@
     return l;
   }
 
-  /* 16D 移动端：时间/日期轴防挤压——窄容器自动缩短标签 + 抽稀，
-     不再全部挤成一团。time 轴用 minInterval（ECharts 自动按间隔抽稀）。 */
+  /* 移动端：时间/日期轴防挤压——窄容器自动缩短标签 + 抽稀，
+ 不再全部挤成一团。time 轴用 minInterval（ECharts 自动按间隔抽稀）。 */
   function _chartWidth(containerId) {
     var dom = typeof document !== "undefined" ? document.getElementById(containerId) : null;
     return dom ? Math.round(dom.getBoundingClientRect().width) : 800;
@@ -198,7 +198,7 @@
     if (w < 640) {
       l.formatter = function (s) {
         s = String(s);
-        return s.length > 8 ? s.slice(5) : s; // MM-DD
+        return s.length > 8 ? s.slice(5) : s; 
       };
       var fit = Math.max(1, Math.floor(w / 40)); // 每个 MM-DD 标签约 36px
       l.interval = Math.max(0, Math.ceil(rowCount / fit) - 1);
@@ -209,10 +209,10 @@
   }
 
   /* ================================================================
-     图表 1：Daily Token Usage（Stacked Bar：Prompt / Cached / Output）
-     spec §35：适度圆角、tooltip 含 Logical Total。
-     rows: /api/daily 行（date, prompt_tokens, cached_tokens, output_tokens, logical_tokens...）
-     ================================================================ */
+ 图表 1：Daily Token Usage（Stacked Bar：Prompt / Cached / Output）
+ 适度圆角、tooltip 含 Logical Total。
+ rows: /api/daily 行（date, prompt_tokens, cached_tokens, output_tokens, logical_tokens...）
+ ================================================================ */
   function renderUsageChart(containerId, id, rows) {
     var c = chart(id);
     if (!c) return;
@@ -234,7 +234,7 @@
               "<span>" + it.marker + it.seriesName + "</span><span style='font-variant-numeric:tabular-nums'>" +
               F.formatTokenCount(it.value) + "</span></div>";
           });
-          // Logical Total（tooltip 完整信息，spec §35/§66）
+          // Logical Total（tooltip 完整信息，
           var day = null;
           for (var i = 0; i < rows.length; i++) if (rows[i].date === date) { day = rows[i]; break; }
           var logicalTotal = day ? (day.logical_tokens != null ? day.logical_tokens :
@@ -250,7 +250,7 @@
         textStyle: { color: p.axis, fontSize: 12 },
         top: 0, right: 0, icon: "rect", itemWidth: 10, itemHeight: 10, itemGap: 14,
       },
-      // 长范围（>31 天，如"本月/全部"）启用 dataZoom（spec §113）
+      // 长范围（>31 天，如"本月/全部"）启用 dataZoom
       dataZoom: rows.length > 31 ? [
         { type: "inside", start: 0, end: 100 },
         { type: "slider", height: 14, bottom: 2, borderColor: "transparent",
@@ -293,17 +293,17 @@
   }
 
   /* ================================================================
-     图表 2：TPS 实时曲线（固定 60 分钟窗口）
-     spec §36：2px 线、默认无 symbol、hover 显示 point。
-     samples: /api/live samples（timestamp, prompt_tps, decode_tps）
-     ================================================================ */
+ 图表 2：TPS 实时曲线（固定 60 分钟窗口）
+ 2px 线、默认无 symbol、hover 显示 point。
+ samples: /api/live samples（timestamp, prompt_tps, decode_tps）
+ ================================================================ */
   function renderTpsChart(containerId, id, samples) {
     var c = chart(id);
     if (!c) return;
     var p = pal(), col = colors();
     var pts = samples || [];
-    // PERF-001（Phase 16C §6）：以"有效 TPS 样本"（prompt/decode 至少一个非 null）
-    // 作为判定依据。此前守卫是 !pts.length（全部样本数）——只要窗口里有
+    // PERF-001：以"有效 TPS 样本"（prompt/decode 至少一个非 null）
+    // 作为判定依据。此前守卫是!pts.length（全部样本数）——只要窗口里有
     // idle 样本（tps=null）就画出一整副空坐标系而空态被 setEmpty(false) 关掉。
     // 真实 0 TPS 样本（tps===0）仍算有效，允许显示 0。
     var actPts = pts.filter(function (s) {
@@ -357,9 +357,9 @@
   }
 
   /* ================================================================
-     图表 3：MTP Acceptance Rate 趋势（按天）
-     rows: /api/daily 行（date, draft_tokens, accepted_tokens, mtp_accept_rate）
-     ================================================================ */
+ 图表 3：MTP Acceptance Rate 趋势（按天）
+ rows: /api/daily 行（date, draft_tokens, accepted_tokens, mtp_accept_rate）
+ ================================================================ */
   function renderMtpChart(containerId, id, rows) {
     var c = chart(id);
     if (!c) return;
@@ -402,10 +402,10 @@
   }
 
   /* ================================================================
-     图表 4：MTP Accepted Tokens by Draft Position（spec §63：
-     只有 accepted 时标题必须叫 Accepted Tokens，不叫 Acceptance Rate）
-     positions: /api/mtp positions（{position, accepted_tokens}）
-     ================================================================ */
+ 图表 4：MTP Accepted Tokens by Draft Position
+ 只有 accepted 时标题必须叫 Accepted Tokens，不叫 Acceptance Rate）
+ positions: /api/mtp positions（{position, accepted_tokens}）
+ ================================================================ */
   function renderMtpPosChart(containerId, id, positions) {
     var c = chart(id);
     if (!c) return;
@@ -450,13 +450,13 @@
   }
 
   /* ================================================================
-     GPU 图表（spec §37：不同量级不共用 Y 轴）
-     - Utilization + VRAM：0-100%（同一张图，VRAM 虚线区分）
-     - Power：W（独立图）
-     - Temperature：°C（独立图）
-     data: /api/gpu/live {gpus:[{uuid,index,name,points:[...]}]}
-     visible: {uuid: bool} 显隐控制
-     ================================================================ */
+ GPU 图表（不同量级不共用 Y 轴）
+ - Utilization + VRAM：0-100%（同一张图，VRAM 虚线区分）
+ - Power：W（独立图）
+ - Temperature：°C（独立图）
+ data: /api/gpu/live {gpus:[{uuid,index,name,points:[...]}]}
+ visible: {uuid: bool} 显隐控制
+ ================================================================ */
   function _gpuTimeAxis(p, containerId) {
     return {
       type: "time",
@@ -477,7 +477,7 @@
     var vals = (gpu.points || []).map(function (pt) {
       return pt[field] == null ? null : Number(pt[field]);
     });
-    // GPU-001（Phase 16C §11）：该 GPU 不支持此传感器（全 null）时
+    // GPU-001：该 GPU 不支持此传感器（全 null）时
     // 不建 series——否则 ECharts 会在 legend 留一条永远没有数据的项。
     if (nonNullCount(vals) === 0) return null;
     var s = {
@@ -499,8 +499,8 @@
     return (data && data.gpus || []).some(function (g) { return (g.points || []).length > 0; });
   }
 
-  /* BUG-D（spec §38）：字段级空态——某传感器全部为 null（不支持）
-     与"有数据"区分，避免把 N/A 画成 0 或留一张看似有数据的空图。 */
+  /* BUG-D（字段级空态——某传感器全部为 null（不支持）
+ 与"有数据"区分，避免把 N/A 画成 0 或留一张看似有数据的空图。 */
   function _hasGpuField(data, field) {
     return (data && data.gpus || []).some(function (g) {
       return (g.points || []).some(function (pt) { return pt[field] != null; });
@@ -603,10 +603,10 @@
   }
 
   /* ================================================================
-     系统页图表（1.1）：CPU 利用率 / 磁盘 I/O / 网络
-     时间轴与 GPU 图一致（time 轴 + HH:MM），空态/单点行为复用同一套。
-     points: /api/system/live {points:[{timestamp, ...}]}
-     ================================================================ */
+ 系统页图表（1.1）：CPU 利用率 / 磁盘 I/O / 网络
+ 时间轴与 GPU 图一致（time 轴 + HH:MM），空态/单点行为复用同一套。
+ points: /api/system/live {points:[{timestamp, ...}]}
+ ================================================================ */
   function _sysTimeAxis(p, containerId) {
     return {
       type: "time",

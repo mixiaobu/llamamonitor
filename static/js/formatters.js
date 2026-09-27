@@ -1,12 +1,12 @@
 /* ============================================================
-   LlamaMonitor — Formatters（Phase 15, spec §64-§66）
-   全应用唯一格式化入口。单位规范：
-     Tokens: K/M/B（卡片）；tooltip 原始值带千分位
-     Memory: MiB / GiB
-     Power: W；Energy: Wh / kWh
-     Temperature: °C；Duration: ms / s / m / h / d
-   所有函数 null/undefined/NaN 安全（返回 "--"，除非说明）。
-   ============================================================ */
+ LlamaMonitor — Formatters, 
+ 全应用唯一格式化入口。单位规范：
+ Tokens: K/M/B（卡片）；tooltip 原始值带千分位
+ Memory: MiB / GiB
+ Power: W；Energy: Wh / kWh
+ Temperature: °C；Duration: ms / s / m / h / d
+ 所有函数 null/undefined/NaN 安全（返回 "--"，除非说明）。
+ ============================================================ */
 (function () {
   "use strict";
 
@@ -17,12 +17,12 @@
   }
 
   /**
-   * Token 紧凑格式：1000 -> 1K，1234 -> 1.23K，1000000 -> 1M，1e9 -> 1B。
-   *
-   * AUDIT-1.1.1 BUG-1111-004：此前恒 2 位小数（"1.00K"/"5.50M"），整数倍数也带
-   * 无意义尾零。改为最多 2 位有效小数并**去除尾零**（1.00K->1K、1.20K->1.2K、
-   * 1.23K->1.23K），更紧凑且与 TPS 等其它数值的一致视觉密度对齐。
-   */
+ * Token 紧凑格式：1000 -> 1K，1234 -> 1.23K，1000000 -> 1M，1e9 -> 1B。
+ *
+ * AUDIT-1.1.1 BUG-1111-004：此前恒 2 位小数（"1.00K"/"5.50M"），整数倍数也带
+ * 无意义尾零。改为最多 2 位有效小数并**去除尾零**（1.00K->1K、1.20K->1.2K、
+ * 1.23K->1.23K），更紧凑且与 TPS 等其它数值的一致视觉密度对齐。
+ */
   function formatTokenCount(v) {
     if (isBad(v)) return NA;
     v = Number(v);
@@ -38,7 +38,7 @@
     return neg + String(Math.round(a));
   }
 
-  /** Token 原始值（tooltip，spec §66：8,324,129） */
+  /** Token 原始值（tooltip，8,324,129） */
   function formatTokenCountFull(v) {
     if (isBad(v)) return NA;
     return Math.round(Number(v)).toLocaleString("en-US");
@@ -154,7 +154,7 @@
   }
 
   /** epoch 秒 -> 紧凑时间（表格/列表用，保证单行）：
-      与今天同天只显示 HH:MM:SS，否则 MM-DD HH:MM。完整值可放 title。 */
+ 与今天同天只显示 HH:MM:SS，否则 MM-DD HH:MM。完整值可放 title。 */
   function formatClock(epoch) {
     if (!epoch) return NA;
     var d = new Date(Number(epoch) * 1000);

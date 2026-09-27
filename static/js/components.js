@@ -1,18 +1,18 @@
 /* ============================================================
-   LlamaMonitor — Components（Phase 15, spec §16/§18/§70/§73-81）
-   统一组件：StatusBadge / InfoBar / Toast（去重 §81）/
-   Modal（focus trap + Escape §78/§79）/ EmptyState（§38）/
-   InfoTooltip（§61-63）/ Segmented（§70/§71）。
-   全部 DOM API 构建（不拼 HTML 字符串，spec 审计 UI-012）。
-   ============================================================ */
+ LlamaMonitor — Components, 
+ 统一组件：StatusBadge / InfoBar / Toast（去重）/
+ Modal（focus trap + Escape）/ EmptyState/
+ InfoTooltip/ Segmented。
+ 全部 DOM API 构建（不拼 HTML 字符串，spec 审计 UI-012）。
+ ============================================================ */
 (function () {
   "use strict";
 
   var $ = function (id) { return document.getElementById(id); };
 
-  /* ================= StatusBadge（spec §16/§17：小圆点 + 统一文案） =================
-     state: online | offline | warning | error | updating | paused
-     文案统一（UI-003）：Online / Offline / Warning / Error / Updating / Paused */
+  /* ================= StatusBadge（小圆点 + 统一文案） =================
+ state: online | offline | warning | error | updating | paused
+ 文案统一（UI-003）：Online / Offline / Warning / Error / Updating / Paused */
   var STATE_TEXT = {
     online: "已连接",
     offline: "连接中断",
@@ -41,10 +41,10 @@
     el.setAttribute("role", "status");
   }
 
-  /* ================= InfoBar（spec §18） =================
-     createInfoBar({type:'info|success|warning|error', title, message,
-                    actions:[{label,onClick}], dismissible}) -> {el, close}
-     调用方把 el 挂到容器；close() 移除（150ms fade）。 */
+  /* ================= InfoBar（=================
+ createInfoBar({type:'info|success|warning|error', title, message,
+ actions:[{label,onClick}], dismissible}) -> {el, close}
+ 调用方把 el 挂到容器；close 移除（150ms fade）。 */
   function createInfoBar(opts) {
     var el = document.createElement("div");
     el.className = "infobar " + (opts.type || "info");
@@ -102,9 +102,9 @@
     return { el: el, close: close };
   }
 
-  /* ================= Toast（spec §80/§81：右下，3-5s，按消息去重） ================= */
+  /* ================= Toast（右下，3-5s，按消息去重） ================= */
   var toastBox = null;
-  var activeToasts = new Map(); // key -> {el, timer}
+  var activeToasts = new Map(); 
 
   function ensureToastBox() {
     if (toastBox) return toastBox;
@@ -169,9 +169,9 @@
     }
   }
 
-  /* ================= Modal（spec §78/§79：focus trap / Escape / 焦点归还） =================
-     modal({title, text, okLabel, danger, needsInput, inputValue, onDone(ok)})
-     全局单例（页面只有一个 modal 槽位 #modalOverlay）。 */
+  /* ================= Modal（focus trap / Escape / 焦点归还） =================
+ modal({title, text, okLabel, danger, needsInput, inputValue, onDone(ok)})
+ 全局单例（页面只有一个 modal 槽位 #modalOverlay）。 */
   var modalState = { open: false, lastFocus: null, handler: null };
 
   function modal(opts) {
@@ -195,7 +195,7 @@
     okBtn.textContent = opts.okLabel || "确定";
     // 只用 classList 切换样式类，保留 .modal-ok 定位类
     // （整体覆盖 className 会在第一次打开后把 .modal-ok 冲掉，
-    //   导致第二次 querySelector(".modal-ok") 返回 null、模态永远打不开）
+    // 导致第二次 querySelector(".modal-ok") 返回 null、模态永远打不开）
     okBtn.classList.remove("primary", "danger");
     okBtn.classList.add(opts.danger ? "danger" : "primary");
     okBtn.disabled = !!need;
@@ -232,7 +232,7 @@
         return;
       }
       if (ev.key === "Tab") {
-        // focus trap：焦点困在 modal 内（spec §79）
+        // focus trap：焦点困在 modal 内
         var focusables = modalEl.querySelectorAll(
           "button:not(:disabled), input:not([hidden]):not(:disabled), [tabindex]:not([tabindex='-1'])"
         );
@@ -250,15 +250,15 @@
     };
     document.addEventListener("keydown", modalState.handler, true);
 
-    // 打开即焦点进入（spec §79）
+    // 打开即焦点进入
     setTimeout(function () {
       (inputEl.hidden ? okBtn : inputEl).focus();
     }, 0);
   }
 
-  /* ================= EmptyState（spec §38/§110） =================
-     el.innerHTML 替换为空态；clearEmpty(el) 恢复。
-     opts: {icon:'emptyChart|emptyDb|emptyGauge', title, desc} */
+  /* ================= EmptyState（=================
+ el.innerHTML 替换为空态；clearEmpty(el) 恢复。
+ opts: {icon:'emptyChart|emptyDb|emptyGauge', title, desc} */
   function showEmpty(el, opts) {
     if (!el) return;
     if (el.dataset.empty === "1") return;
@@ -288,13 +288,13 @@
     el.innerHTML = el.dataset.emptyHtml || "";
   }
 
-  /* ============ setEmptyState（Phase 16C §15：统一空态开关） ============
-     根因修复：author CSS 的 .empty-state{display:flex} 会压过 UA 的
-     [hidden]{display:none}，导致 JS 设 el.hidden=true 后空态仍显示
-     （HISTORY-001/002）。这里用 !important 锁定：
-     isEmpty=true  -> 强制显示空态（.force-show）
-     isEmpty=false -> 强制隐藏（.force-hide）
-     所有列表型空态（缺口/事件/…）一律走此函数，不再各自拼 .hidden。 */
+  /* ============ setEmptyState（统一空态开关） ============
+ 根因修复：author CSS 的 .empty-state{display:flex} 会压过 UA 的
+ [hidden]{display:none}，导致 JS 设 el.hidden=true 后空态仍显示
+ （HISTORY-001/002）。这里用!important 锁定：
+ isEmpty=true -> 强制显示空态（.force-show）
+ isEmpty=false -> 强制隐藏（.force-hide）
+ 所有列表型空态（缺口/事件/…）一律走此函数，不再各自拼 .hidden。 */
   function setEmptyState(el, isEmpty) {
     if (!el) return;
     el.classList.toggle("force-show", !!isEmpty);
@@ -302,10 +302,10 @@
     el.hidden = !isEmpty; // 保留语义（无障碍/序列化）
   }
 
-  /* ============ humanizeEventDetails（Phase 16C §17/§18） ============
-     展示层 Humanize：返回面向用户的短文本。
-     不删除原 details（调用方可保留到 title 作为技术细节）。
-     未知字段走安全 fallback（key: value 列表）。 */
+  /* ============ humanizeEventDetails ============
+ 展示层 Humanize：返回面向用户的短文本。
+ 不删除原 details（调用方可保留到 title 作为技术细节）。
+ 未知字段走安全 fallback（key: value 列表）。 */
   function humanizeEventDetails(ev) {
     var d = ev && ev.details;
     if (d == null) return "";
@@ -386,9 +386,24 @@
     return s + "秒";
   }
 
-  /* ================= InfoTooltip（spec §61-63） =================
-     infoTip(text) -> HTMLElement（? 图标 + 定义文本；hover/focus 显示，
-     CSS .info-tip 控制）。alignRight 用于靠近右边缘的 label。 */
+  /* ================= InfoTooltip（=================
+ infoTip(text) -> HTMLElement（? 图标 + 定义文本；hover/focus 显示，
+ CSS .info-tip 控制）。alignRight 用于靠近右边缘的 label。
+ 1.1.2 触屏：? 按钮可 tap 开/关（.tip-open，CSS 见 mobile.css），
+ 点击按钮外部关闭；桌面 hover 行为不变。 */
+  var _tipOutsideBound = false;
+  function _bindTipOutside() {
+    if (_tipOutsideBound) return;
+    _tipOutsideBound = true;
+    document.addEventListener("click", function (e) {
+      var open = document.querySelectorAll(".info-tip.tip-open");
+      if (!open.length) return;
+      open.forEach(function (w) {
+        if (w.contains(e.target)) return; // 点在按钮上由按钮 handler 处理
+        w.classList.remove("tip-open");
+      });
+    });
+  }
   function infoTip(text, alignRight) {
     var wrap = document.createElement("span");
     wrap.className = "info-tip" + (alignRight ? " tip-align-right" : "");
@@ -398,6 +413,18 @@
     btn.textContent = "?";
     btn.setAttribute("aria-label", "定义");
     btn.setAttribute("aria-describedby", "");
+    // 1.1.2：tap 开/关（桌面 hover 不受影响；click 不 stopPropagation 到
+    // document 之外，但先于 outside handler 执行——见下方顺序说明）
+    btn.addEventListener("click", function (e) {
+      e.stopPropagation(); // 不触发 document outside handler 的立即关闭
+      var wasOpen = wrap.classList.contains("tip-open");
+      _bindTipOutside();
+      // 先关其他打开的 tip（再开自己）
+      document.querySelectorAll(".info-tip.tip-open").forEach(function (w) {
+        if (w !== wrap) w.classList.remove("tip-open");
+      });
+      wrap.classList.toggle("tip-open", !wasOpen);
+    });
     var tip = document.createElement("span");
     tip.className = "tip-text";
     tip.id = "tip-" + Math.random().toString(36).slice(2, 9);
@@ -408,9 +435,9 @@
     return wrap;
   }
 
-  /* ================= Segmented（spec §70/§71：统一分段控件） =================
-     segmented(el, options, initial, onChange)
-     options: [{value, label}]。返回 {set(value), get()}。 */
+  /* ================= Segmented（统一分段控件） =================
+ segmented(el, options, initial, onChange)
+ options: [{value, label}]。返回 {set(value), get}。 */
   function segmented(el, options, initial, onChange) {
     if (!el) return { set: function () {}, get: function () { return initial; } };
     el.className = "seg";
