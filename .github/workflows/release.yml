@@ -55,7 +55,13 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $keyFile = Join-Path $env:RUNNER_TEMP "llamamonitor-update-key.pem"
-          $bytes = [Convert]::FromBase64String($env:LLAMAMONITOR_UPDATE_PRIVATE_KEY_B64)
+          $b64 = $env:LLAMAMONITOR_UPDATE_PRIVATE_KEY_B64
+          if ([string]::IsNullOrWhiteSpace($b64)) {
+            Write-Error "Secret LLAMAMONITOR_UPDATE_PRIVATE_KEY_B64 为空/缺失（GitHub Actions -> Secrets -> Actions 检查该 repo 级 secret 是否存在）"
+            exit 1
+          }
+          # Trim：secret 若带尾部换行（部分粘贴方式会带）直接导致 FromBase64String 抛错
+          $bytes = [Convert]::FromBase64String($b64.Trim())
           [System.IO.File]::WriteAllBytes($keyFile, $bytes)
           Add-Content -Path $env:GITHUB_ENV -Value "LLAMAMONITOR_UPDATE_PRIVATE_KEY_FILE=$keyFile"
           Write-Host "Update signing key decoded to $(Split-Path $keyFile -Leaf) ($($bytes.Length) bytes) at: $keyFile"
