@@ -206,5 +206,164 @@ class DashboardApiTests(unittest.TestCase):
             client.__exit__(None, None, None)
 
 
+class UsageSummaryApiTests(unittest.TestCase):
+    """1.1.4 Round 4：/api/usage-summary、/api/daily 自定义范围 + range 元数据、
+    /api/today-hourly、/api/data/export/daily.csv 自定义范围 + reuse 列。"""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _app(self):
+        db = Database(self.tmp / "us.db")
+        collector = MetricsCollector(make_config(), db)
+        app = build_app(db, collector)
+        client = TestClient(app)
+        client.__enter__()
+        return client, db, collector
+
+    def _insert_daily(self, db, client, date, prompt=0, cached=0, output=0):
+        def _ins():
+            conn = db._connect()
+            with conn:
+                conn.execute(
+                    "INSERT INTO daily_usage(date, prompt_tokens, cached_tokens, output_tokens) "
+                    "VALUES(?,?,?,?) "
+                    "ON CONFLICT(date) DO UPDATE SET "
+                    "prompt_tokens=excluded.prompt_tokens, cached_tokens=excluded.cached_tokens, "
+                    "output_tokens=excluded.output_tokens",
+                    (date, prompt, cached, output))
+        client.portal.call(_ins)
+
+    def test_daily_custom_range_and_meta(self):
+        from db import local_date
+        client, db, collector = self._app()
+        try:
+            today = local_date(collector.clock.now())
+            d0 = "2026-01-01"
+            d1 = "2026-01-02"
+            self._insert_daily(db, client, d0, prompt=10, cached=5, output=3)
+            self._insert_daily(db, client, d1, prompt=20, cached=4, output=6)
+            self._insert_daily(db, client, today, prompt=1, cached=1, output=1)
+            # 自定义范围：只返回 [d0, d1]
+            data = client.get("/api/daily", params={"start_date": d0, "end_date": d1}).json()
+            self.assertEqual([r["date"] for r in data["days"]], [d0, d1])
+            self.assertEqual(data["range"]["mode"], "custom")
+            self.assertEqual(data["range"]["start_date"], d0)
+            self.assertEqual(data["range"]["end_date"], d1)
+            self.assertEqual(data["range"]["today"], today)
+            self.assertIn("server_now_hhmm", data["range"])
+            # 派生字段
+            self.assertEqual(data["days"][0]["logical_tokens"], 18)
+            self.assertEqual(data["days"][0]["compute_tokens"], 13)
+            # 校验 400：只给一个 / 起>止 / 止>今天
+            self.assertEqual(client.get("/api/daily", params={"start_date": d0}).status_code, 400)
+            self.assertEqual(client.get("/api/daily", params={"start_date": d1, "end_date": d0}).status_code, 400)
+            future = "2999-01-01"
+            self.assertEqual(client.get("/api/daily", params={"start_date": d0, "end_date": future}).status_code, 400)
+            self.assertEqual(client.get("/api/daily", params={"start_date": "bad", "end_date": d1}).status_code, 400)
+        finally:
+            client.__exit__(None, None, None)
+
+    def test_usage_summary_aggregates(self):
+        from db import local_date
+        client, db, collector = self._app()
+        try:
+            today = local_date(collector.clock.now())
+            self._insert_daily(db, client, "2026-01-01", prompt=10, cached=5, output=3)
+            self._insert_daily(db, client, "2026-01-02", prompt=20, cached=4, output=6)
+            data = client.get("/api/usage-summary", params={"start_date": "2026-01-01", "end_date": "2026-01-02"}).json()
+            t = data["totals"]
+            self.assertEqual(t["prompt_tokens"], 30)
+            self.assertEqual(t["cached_tokens"], 9)
+            self.assertEqual(t["output_tokens"], 9)
+            self.assertEqual(t["logical_tokens"], 48)
+            self.assertEqual(t["compute_tokens"], 39)
+            # 缓存复用率 = 9 / (30+9) * 100 = 23.08
+            self.assertAlmostEqual(data["cache_reuse_rate_percent"], 23.08, places=1)
+            # 日均 = 48 / 2 = 24
+            self.assertEqual(data["daily_avg_logical"], 24)
+            # 峰值日 = 2026-01-02（logical 30 > 18）
+            self.assertEqual(data["peak_day"]["date"], "2026-01-02")
+            self.assertEqual(data["peak_day"]["logical_tokens"], 30)
+            self.assertEqual(data["valid_days"], 2)
+            # 无 live 样本 -> 覆盖按 24h 估算 -> 100%（无缺口）
+            self.assertAlmostEqual(data["coverage_percent"], 100.0, places=1)
+            self.assertEqual(data["gap_count"], 0)
+        finally:
+            client.__exit__(None, None, None)
+
+    def test_usage_summary_empty_range(self):
+        client, db, collector = self._app()
+        try:
+            data = client.get("/api/usage-summary", params={"start_date": "2020-01-01", "end_date": "2020-01-05"}).json()
+            self.assertEqual(data["totals"]["logical_tokens"], 0)
+            self.assertIsNone(data["daily_avg_logical"])
+            self.assertIsNone(data["peak_day"])
+            self.assertIsNone(data["cache_reuse_rate_percent"])
+            self.assertEqual(data["valid_days"], 0)
+            self.assertEqual(data["calendar_days"], 5)
+        finally:
+            client.__exit__(None, None, None)
+
+    def test_today_hourly_buckets(self):
+        client, db, collector = self._app()
+        try:
+            # 两轮采集：第一轮建 baseline（delta=0），第二轮产生增量 (12,4,6)
+            baseline = parse_metrics(sample(prompt=100, cached=50, output=10))
+
+            async def _f1():
+                return baseline
+            collector._fetch_parsed = _f1
+            client.portal.call(collector.collect_once)
+
+            grown = parse_metrics(sample(prompt=112, cached=54, output=16))
+
+            async def _f2():
+                return grown
+            collector._fetch_parsed = _f2
+            client.portal.call(collector.collect_once)
+            data = client.get("/api/today-hourly").json()
+            self.assertIn("date", data)
+            self.assertIn("hours", data)
+            total_logical = sum(h["logical_tokens"] for h in data["hours"])
+            self.assertEqual(total_logical, 22)  # 12+4+6
+            # 派生：compute = prompt+output
+            for h in data["hours"]:
+                self.assertEqual(h["compute_tokens"], h["prompt_tokens"] + h["output_tokens"])
+        finally:
+            client.__exit__(None, None, None)
+
+    def test_csv_range_and_reuse_column(self):
+        from db import local_date
+        client, db, collector = self._app()
+        try:
+            today = local_date(collector.clock.now())
+            self._insert_daily(db, client, "2026-01-01", prompt=10, cached=5, output=3)
+            self._insert_daily(db, client, "2026-01-02", prompt=20, cached=4, output=6)
+            self._insert_daily(db, client, today, prompt=1, cached=0, output=0)
+            # 自定义范围导出：只含 [01-01, 01-02]
+            r = client.get("/api/data/export/daily.csv",
+                           params={"start_date": "2026-01-01", "end_date": "2026-01-02"})
+            self.assertEqual(r.status_code, 200)
+            body = r.content.decode("utf-8-sig")
+            lines = [l for l in body.splitlines() if l.strip()]
+            header = lines[0]
+            # reuse 列存在
+            self.assertIn("reuse_rate_percent", header)
+            # 数据行 = 2（不含 today 那行）
+            data_lines = lines[1:]
+            dates = [l.split(",")[0] for l in data_lines]
+            self.assertEqual(dates, ["2026-01-01", "2026-01-02"])
+            # 校验 400：只给一个
+            self.assertEqual(client.get("/api/data/export/daily.csv",
+                                        params={"start_date": "2026-01-01"}).status_code, 400)
+        finally:
+            client.__exit__(None, None, None)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -85,6 +85,13 @@ class MobileSkeletonTests(unittest.TestCase):
         self.assertIn("trapFocus", self.nav_js, "sheet 必须有 focus trap")
         self.assertIn("lockBodyScroll", self.nav_js, "sheet 打开必须锁 body 滚动")
 
+    def test_bottom_nav_click_wired(self):
+        # Round-8 修复：底栏 .mnav-item 必须接线到 showPage
+        # （之前只绑了 .nav-item 桌面侧边栏 -> 手机端点底部导航无效果）
+        self.assertIn('.mnav-item', self.nav_js,
+                      "navigation.js 未接线 .mnav-item 点击（手机端底部导航无响应）")
+        self.assertIn('mobile-nav', self.nav_js)
+
     def test_mobile_css_registered_in_html(self):
         self.assertIn('href="/static/css/mobile.css"', self.html,
                       "mobile.css 未挂到 index.html")
@@ -103,18 +110,22 @@ class TableCardRowTests(unittest.TestCase):
         cls.mobile_css = _read("css/mobile.css")
 
     def test_daily_rows_have_data_labels(self):
-        for label in ["data-label='输入'", "data-label='缓存复用'", "data-label='输出'",
+        # 1.1.4 Round 4：用量页术语冻结——输入→Prompt、输出→生成（缓存复用不变）。
+        for label in ["data-label='Prompt'", "data-label='缓存复用'", "data-label='生成'",
                       "data-label='实际计算'", "data-label='Token 总量'",
                       "data-label='缓存复用率'", "data-label='采集覆盖率'", "data-label='缺口'"]:
             self.assertIn(label, self.app_js, "每日明细行缺少 %s" % label)
 
     def test_gap_rows_have_data_labels(self):
-        for label in ["data-label='开始'", "data-label='结束'", "data-label='时长'",
-                      "data-label='来源'", "data-label='原因'", "data-label='可能丢失'"]:
+        # Round-6：采集缺口表列 = 时间 / 持续时间 / 来源 / 原因 / Token 风险
+        for label in ["data-label='时间'", "data-label='持续时间'", "data-label='来源'",
+                      "data-label='原因'", "data-label='Token 风险'"]:
             self.assertIn(label, self.app_js, "缺口行缺少 %s" % label)
 
     def test_event_rows_have_data_labels(self):
-        for label in ["data-label='时间'", "data-label='类型'", "data-label='详情'"]:
+        # Round-6：监控事件表列 = 时间 / 事件 / 来源 / 详情
+        for label in ["data-label='时间'", "data-label='事件'", "data-label='来源'",
+                      "data-label='详情'"]:
             self.assertIn(label, self.app_js, "事件行缺少 %s" % label)
 
     def test_card_row_css_present(self):
@@ -231,7 +242,9 @@ class OverviewSubtitleTests(unittest.TestCase):
 
     def test_subtitle(self):
         html = _read("index.html")
-        self.assertIn("集中查看 llama.cpp 服务、Token、推理性能、GPU、主机与数据采集状态",
+        # Round-6：概览副标题去营销化，规格规范文案为
+        # 「查看 llama.cpp 服务、用量、推理状态、主机资源与监测完整性。」
+        self.assertIn("查看 llama.cpp 服务、用量、推理状态、主机资源与监测完整性。",
                       html)
         self.assertNotIn("10 秒看懂", html, "营销文案未清理")
 

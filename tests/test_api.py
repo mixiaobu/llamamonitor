@@ -17,7 +17,7 @@ from db import Database
 from metrics_parser import parse_metrics
 from server import build_app
 
-from test_persistence import TEXT_A, sample  # 与 unittest discover 的顶层导入方式保持一致
+from test_persistence import TEXT_A, TEXT_B, sample  # 与 unittest discover 的顶层导入方式保持一致
 
 # 含 position 数据的 baseline 样本（pos0=3）
 TEXT_A_POS = TEXT_A + 'llamacpp:spec_decode_num_accepted_tokens_per_pos_total{position="0"} 3\n'
@@ -225,6 +225,113 @@ class ApiTests(unittest.TestCase):
             self.assertEqual(data["draft"], 5)
             self.assertEqual(data["accepted"], 3)
             self.assertNotIn("positions", data)
+        finally:
+            client.__exit__(None, None, None)
+
+    def test_throughput_window_avg(self):
+        """Round 5 §46-§48：/api/throughput 返回窗口加权平均吞吐
+        （Δtoken/Δseconds，不是逐样本 TPS 简单平均）。
+
+        确定性场景：TEXT_A（baseline，delta 全 0）+ TEXT_B 一轮
+        （Δprompt=50 / Δprompt_sec=0.5 -> 100 tok/s；Δoutput=10 / Δpred_sec=1.0
+        -> 10 tok/s）。window_avg 在原始样本上求和（baseline 的 delta=0 不影响结果）。
+        """
+        db, collector, app, client = self._start(TEXT_A)
+        try:
+            self._round(client, collector, TEXT_B)
+            # 参数钳制：minutes 范围 [15,1440]
+            self.assertEqual(client.get("/api/throughput", params={"minutes": 14}).status_code, 422)
+            self.assertEqual(client.get("/api/throughput", params={"minutes": 1441}).status_code, 422)
+
+            data = client.get("/api/throughput", params={"minutes": 60}).json()
+            self.assertEqual(data["minutes"], 60)
+            # 两个样本（baseline + 一轮）
+            self.assertEqual(len(data["samples"]), 2)
+            # 窗口加权平均：ΣΔprompt / ΣΔprompt_sec = 50/0.5 = 100
+            self.assertAlmostEqual(data["window_avg"]["prompt_tps_avg"], 100.0)
+            # ΣΔoutput / ΣΔpred_sec = 10/1.0 = 10
+            self.assertAlmostEqual(data["window_avg"]["decode_tps_avg"], 10.0)
+            # 秒数求和（降采样/前端 tooltip 计数一致性）
+            self.assertAlmostEqual(data["window_avg"]["prompt_seconds"], 0.5)
+            self.assertAlmostEqual(data["window_avg"]["predicted_seconds"], 1.0)
+            # 形状字段齐全（前端 renderThroughputMeta 依赖）
+            for key in ("available_minutes", "window_minutes", "last_activity_ts"):
+                self.assertIn(key, data)
+        finally:
+            client.__exit__(None, None, None)
+
+    def test_throughput_empty_window(self):
+        """Round 5 §48：窗口内无样本时 window_avg 两个平均均为 None（不当 0 tok/s）。"""
+        db, collector, app, client = self._start(TEXT_A_POS)
+        try:
+            # baseline 之后不采集任何一轮 -> live 只有 1 条 baseline 样本
+            # （prompt_seconds=0.0 分母 <=0 -> 两个平均 None）
+            data = client.get("/api/throughput", params={"minutes": 15}).json()
+            self.assertEqual(data["window_avg"]["prompt_tps_avg"], None)
+            self.assertEqual(data["window_avg"]["decode_tps_avg"], None)
+        finally:
+            client.__exit__(None, None, None)
+
+    def test_mtp_range_today(self):
+        """Round 5 §82-§109：/api/mtp/range 今天（默认 days=1）——区间求和驱动
+        MTP Summary + 趋势 + 按位置三块。确定性：draft=5 accepted=3 rate=60。"""
+        db, collector, app, client = self._start(TEXT_A_POS)
+        try:
+            self._round(client, collector, TEXT_MTP)
+            data = client.get("/api/mtp/range").json()  # 默认今天
+            self.assertEqual(data["range"], "today")
+            self.assertEqual(data["summary"]["draft_tokens"], 5)
+            self.assertEqual(data["summary"]["accepted_tokens"], 3)
+            self.assertAlmostEqual(data["summary"]["accept_rate"], 60.0)
+            # verification_steps（draft_sequences）样本无 drafts counter -> 0
+            self.assertEqual(data["summary"]["verification_steps"], 0)
+            # steps<=0 -> 平均长度 None（§87-§89，不当 0）
+            self.assertIsNone(data["summary"]["avg_draft_length"])
+            self.assertIsNone(data["summary"]["avg_accepted_length"])
+            # days：仅今天 1 条，accept_rate=60
+            self.assertEqual(len(data["days"]), 1)
+            self.assertAlmostEqual(data["days"][0]["accept_rate"], 60.0)
+            # positions：pos0 当日增量 5（accepted_tokens 同值键）
+            self.assertEqual(
+                data["positions"],
+                [{"position": "0", "accepted": 5, "accepted_tokens": 5}],
+            )
+        finally:
+            client.__exit__(None, None, None)
+
+    def test_mtp_range_days_null_days(self):
+        """Round 5 §99-§100：/api/mtp/range?days=7 保留**全部 7 个日期位置**，
+        缺失日 accept_rate=null（前端 null 断线/留日期位，不塌缩成 1 点）。"""
+        db, collector, app, client = self._start(TEXT_A_POS)
+        try:
+            self._round(client, collector, TEXT_MTP)
+            data = client.get("/api/mtp/range", params={"days": 7}).json()
+            self.assertEqual(data["range"], "7")
+            self.assertEqual(len(data["days"]), 7)
+            # 只有今天有数据：1 条 accept_rate 非 null，其余 6 条 None
+            non_null = [d for d in data["days"] if d["accept_rate"] is not None]
+            is_null = [d for d in data["days"] if d["accept_rate"] is None]
+            self.assertEqual(len(non_null), 1)
+            self.assertEqual(len(is_null), 6)
+            # 区间 summary 仍是今天的数据（其余天无数据）
+            self.assertEqual(data["summary"]["draft_tokens"], 5)
+            self.assertAlmostEqual(data["summary"]["accept_rate"], 60.0)
+            # positions 区间求和（只有今天有）
+            self.assertEqual(data["positions"], [{"position": "0", "accepted": 5, "accepted_tokens": 5}])
+        finally:
+            client.__exit__(None, None, None)
+
+    def test_mtp_range_all(self):
+        """Round 5：/api/mtp/range?all=true 取全部历史（date <= 今天，升序）。"""
+        db, collector, app, client = self._start(TEXT_A_POS)
+        try:
+            self._round(client, collector, TEXT_MTP)
+            data = client.get("/api/mtp/range", params={"all": "true"}).json()
+            self.assertEqual(data["range"], "all")
+            # 只有今天有 daily_usage 行 -> 全部历史即 1 条
+            self.assertEqual(len(data["days"]), 1)
+            self.assertAlmostEqual(data["days"][0]["accept_rate"], 60.0)
+            self.assertEqual(data["summary"]["accepted_tokens"], 3)
         finally:
             client.__exit__(None, None, None)
 

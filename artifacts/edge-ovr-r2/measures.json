@@ -1,0 +1,3146 @@
+{
+  "320": {
+    "viewport": {
+      "w": 320,
+      "h": 568
+    },
+    "overflowX": 0,
+    "docScrollHeight": 568,
+    "compact": true,
+    "todayHero": {
+      "w": 238,
+      "h": 59,
+      "x": 41,
+      "y": 359,
+      "font": "15px",
+      "cols": 2,
+      "containerType": "normal"
+    },
+    "todayBreakdown": {
+      "w": 238,
+      "h": 127,
+      "x": 41,
+      "y": 451,
+      "font": "15px",
+      "cols": 2,
+      "containerType": "normal"
+    },
+    "ovPerfGrid": {
+      "w": 272,
+      "h": 450,
+      "x": 24,
+      "y": 667,
+      "font": "15px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "hostGrid": {
+      "w": 238,
+      "h": 248,
+      "x": 41,
+      "y": 1207,
+      "font": "15px",
+      "cols": 2,
+      "containerType": "normal"
+    },
+    "gpuMiniGrid": {
+      "w": 272,
+      "h": 448,
+      "x": 24,
+      "y": 1544,
+      "font": "15px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "gpuMiniCards": [
+      {
+        "w": 272,
+        "h": 216,
+        "x": 24,
+        "y": 1544
+      },
+      {
+        "w": 272,
+        "h": 216,
+        "x": 24,
+        "y": 1776
+      }
+    ],
+    "dqGrid": {
+      "w": 238,
+      "h": 240,
+      "x": 41,
+      "y": 2081,
+      "font": "15px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "statusStrip": {
+      "w": 272,
+      "h": 147,
+      "x": 24,
+      "y": 123,
+      "font": "15px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "remoteBanner": {
+      "w": 0,
+      "h": 0,
+      "x": 0,
+      "y": 0,
+      "font": "14px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "sidebar": {
+      "w": 0,
+      "h": 0,
+      "x": 0,
+      "y": 0,
+      "font": "15px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "mobileNav": {
+      "w": 320,
+      "h": 61,
+      "x": 0,
+      "y": 507,
+      "font": "15px",
+      "cols": 5,
+      "containerType": "normal"
+    },
+    "heroNums": [
+      {
+        "y": 359
+      },
+      {
+        "y": 359
+      }
+    ],
+    "tbLabels": [
+      {
+        "y": 451
+      },
+      {
+        "y": 451
+      },
+      {
+        "y": 523
+      }
+    ],
+    "perfCards": [
+      {
+        "y": 667,
+        "w": 272
+      },
+      {
+        "y": 901,
+        "w": 272
+      }
+    ],
+    "hostVals": [
+      {
+        "y": 1232,
+        "w": 113
+      },
+      {
+        "y": 1232,
+        "w": 113
+      },
+      {
+        "y": 1315,
+        "w": 113
+      },
+      {
+        "y": 1315,
+        "w": 113
+      },
+      {
+        "y": 1408,
+        "w": 238
+      }
+    ],
+    "hostEls": {
+      "cpu": "100%",
+      "cpuSub": "",
+      "mem": "30%",
+      "memSub": "76.2 / 255.7 GiB",
+      "diskR": "↓ 0 B/s",
+      "diskW": "↑ 60.4 KB/s",
+      "netR": "↓ 84.5 KB/s",
+      "netW": "↑ 20.5 KB/s",
+      "power": "40 W",
+      "powerSub": "已采集：GPU（CPU Package 不可用）"
+    },
+    "dq": {
+      "cov": "98.3%",
+      "gaps": "6 个",
+      "loss": "2 个可能存在 Token 丢失",
+      "db": "健康",
+      "dbHint": "WAL 已启用"
+    },
+    "server": {
+      "url": "127.0.0.1:9091",
+      "model": "qwen3.8-27b-medium · Q4_K · Medium · 27.32B",
+      "state": "就绪",
+      "lastUpdate": "最后更新：刚刚"
+    },
+    "perf": {
+      "prompt": "--",
+      "decode": "--",
+      "mtp": "49.4%",
+      "ctx": "262.14K",
+      "req": "0 / 0",
+      "kv": "--"
+    },
+    "gpuLine": "",
+    "navLabels": [
+      "概览",
+      "用量",
+      "性能",
+      "显卡",
+      "系统",
+      "历史",
+      "设置",
+      "关于"
+    ],
+    "mnavLabels": [
+      "概览",
+      "用量",
+      "性能",
+      "显卡",
+      "系统"
+    ],
+    "actionLinks": [
+      {
+        "t": "查看用量详情 →",
+        "h": 44,
+        "font": "14px",
+        "right": 304
+      },
+      {
+        "t": "查看性能详情 →",
+        "h": 44,
+        "font": "14px",
+        "right": 304
+      },
+      {
+        "t": "查看系统详情 →",
+        "h": 44,
+        "font": "14px",
+        "right": 304
+      },
+      {
+        "t": "查看 GPU 详情 →",
+        "h": 44,
+        "font": "14px",
+        "right": 304
+      },
+      {
+        "t": "查看监控历史 →",
+        "h": 44,
+        "font": "14px",
+        "right": 304
+      }
+    ],
+    "ellipsisCheck": {
+      "serverUrl": false,
+      "model": false,
+      "hero1": false,
+      "hero2": false,
+      "tb1": false,
+      "tb2": false,
+      "tb3": false
+    },
+    "hero1Rect": {
+      "y": 359
+    },
+    "hero2Rect": {
+      "y": 359
+    }
+  },
+  "360": {
+    "viewport": {
+      "w": 360,
+      "h": 800
+    },
+    "overflowX": 0,
+    "docScrollHeight": 800,
+    "compact": true,
+    "todayHero": {
+      "w": 278,
+      "h": 59,
+      "x": 41,
+      "y": 359,
+      "font": "15px",
+      "cols": 2,
+      "containerType": "normal"
+    },
+    "todayBreakdown": {
+      "w": 278,
+      "h": 127,
+      "x": 41,
+      "y": 451,
+      "font": "15px",
+      "cols": 2,
+      "containerType": "normal"
+    },
+    "ovPerfGrid": {
+      "w": 312,
+      "h": 450,
+      "x": 24,
+      "y": 667,
+      "font": "15px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "hostGrid": {
+      "w": 278,
+      "h": 248,
+      "x": 41,
+      "y": 1207,
+      "font": "15px",
+      "cols": 2,
+      "containerType": "normal"
+    },
+    "gpuMiniGrid": {
+      "w": 312,
+      "h": 413,
+      "x": 24,
+      "y": 1544,
+      "font": "15px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "gpuMiniCards": [
+      {
+        "w": 312,
+        "h": 181,
+        "x": 24,
+        "y": 1544
+      },
+      {
+        "w": 312,
+        "h": 216,
+        "x": 24,
+        "y": 1741
+      }
+    ],
+    "dqGrid": {
+      "w": 278,
+      "h": 240,
+      "x": 41,
+      "y": 2046,
+      "font": "15px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "statusStrip": {
+      "w": 312,
+      "h": 147,
+      "x": 24,
+      "y": 123,
+      "font": "15px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "remoteBanner": {
+      "w": 0,
+      "h": 0,
+      "x": 0,
+      "y": 0,
+      "font": "14px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "sidebar": {
+      "w": 0,
+      "h": 0,
+      "x": 0,
+      "y": 0,
+      "font": "15px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "mobileNav": {
+      "w": 360,
+      "h": 61,
+      "x": 0,
+      "y": 739,
+      "font": "15px",
+      "cols": 5,
+      "containerType": "normal"
+    },
+    "heroNums": [
+      {
+        "y": 359
+      },
+      {
+        "y": 359
+      }
+    ],
+    "tbLabels": [
+      {
+        "y": 451
+      },
+      {
+        "y": 451
+      },
+      {
+        "y": 523
+      }
+    ],
+    "perfCards": [
+      {
+        "y": 667,
+        "w": 312
+      },
+      {
+        "y": 901,
+        "w": 312
+      }
+    ],
+    "hostVals": [
+      {
+        "y": 1232,
+        "w": 133
+      },
+      {
+        "y": 1232,
+        "w": 133
+      },
+      {
+        "y": 1315,
+        "w": 133
+      },
+      {
+        "y": 1315,
+        "w": 133
+      },
+      {
+        "y": 1408,
+        "w": 278
+      }
+    ],
+    "hostEls": {
+      "cpu": "4%",
+      "cpuSub": "",
+      "mem": "30%",
+      "memSub": "76.2 / 255.7 GiB",
+      "diskR": "↓ 0 B/s",
+      "diskW": "↑ 365 KB/s",
+      "netR": "↓ 92.2 KB/s",
+      "netW": "↑ 7.3 KB/s",
+      "power": "40 W",
+      "powerSub": "已采集：GPU（CPU Package 不可用）"
+    },
+    "dq": {
+      "cov": "98.3%",
+      "gaps": "6 个",
+      "loss": "2 个可能存在 Token 丢失",
+      "db": "健康",
+      "dbHint": "WAL 已启用"
+    },
+    "server": {
+      "url": "127.0.0.1:9091",
+      "model": "qwen3.8-27b-medium · Q4_K · Medium · 27.32B",
+      "state": "就绪",
+      "lastUpdate": "最后更新：刚刚"
+    },
+    "perf": {
+      "prompt": "--",
+      "decode": "--",
+      "mtp": "49.4%",
+      "ctx": "262.14K",
+      "req": "0 / 0",
+      "kv": "--"
+    },
+    "gpuLine": "",
+    "navLabels": [
+      "概览",
+      "用量",
+      "性能",
+      "显卡",
+      "系统",
+      "历史",
+      "设置",
+      "关于"
+    ],
+    "mnavLabels": [
+      "概览",
+      "用量",
+      "性能",
+      "显卡",
+      "系统"
+    ],
+    "actionLinks": [
+      {
+        "t": "查看用量详情 →",
+        "h": 44,
+        "font": "14px",
+        "right": 344
+      },
+      {
+        "t": "查看性能详情 →",
+        "h": 44,
+        "font": "14px",
+        "right": 344
+      },
+      {
+        "t": "查看系统详情 →",
+        "h": 44,
+        "font": "14px",
+        "right": 344
+      },
+      {
+        "t": "查看 GPU 详情 →",
+        "h": 44,
+        "font": "14px",
+        "right": 344
+      },
+      {
+        "t": "查看监控历史 →",
+        "h": 44,
+        "font": "14px",
+        "right": 344
+      }
+    ],
+    "ellipsisCheck": {
+      "serverUrl": false,
+      "model": false,
+      "hero1": false,
+      "hero2": false,
+      "tb1": false,
+      "tb2": false,
+      "tb3": false
+    },
+    "hero1Rect": {
+      "y": 359
+    },
+    "hero2Rect": {
+      "y": 359
+    }
+  },
+  "390": {
+    "viewport": {
+      "w": 390,
+      "h": 844
+    },
+    "overflowX": 0,
+    "docScrollHeight": 844,
+    "compact": true,
+    "todayHero": {
+      "w": 308,
+      "h": 59,
+      "x": 41,
+      "y": 340,
+      "font": "15px",
+      "cols": 2,
+      "containerType": "normal"
+    },
+    "todayBreakdown": {
+      "w": 308,
+      "h": 56,
+      "x": 41,
+      "y": 432,
+      "font": "15px",
+      "cols": 3,
+      "containerType": "normal"
+    },
+    "ovPerfGrid": {
+      "w": 342,
+      "h": 450,
+      "x": 24,
+      "y": 577,
+      "font": "15px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "hostGrid": {
+      "w": 308,
+      "h": 248,
+      "x": 41,
+      "y": 1116,
+      "font": "15px",
+      "cols": 2,
+      "containerType": "normal"
+    },
+    "gpuMiniGrid": {
+      "w": 342,
+      "h": 413,
+      "x": 24,
+      "y": 1453,
+      "font": "15px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "gpuMiniCards": [
+      {
+        "w": 342,
+        "h": 181,
+        "x": 24,
+        "y": 1453
+      },
+      {
+        "w": 342,
+        "h": 216,
+        "x": 24,
+        "y": 1650
+      }
+    ],
+    "dqGrid": {
+      "w": 308,
+      "h": 155,
+      "x": 41,
+      "y": 1955,
+      "font": "15px",
+      "cols": 2,
+      "containerType": "normal"
+    },
+    "statusStrip": {
+      "w": 342,
+      "h": 129,
+      "x": 24,
+      "y": 123,
+      "font": "15px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "remoteBanner": {
+      "w": 0,
+      "h": 0,
+      "x": 0,
+      "y": 0,
+      "font": "14px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "sidebar": {
+      "w": 0,
+      "h": 0,
+      "x": 0,
+      "y": 0,
+      "font": "15px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "mobileNav": {
+      "w": 390,
+      "h": 61,
+      "x": 0,
+      "y": 783,
+      "font": "15px",
+      "cols": 5,
+      "containerType": "normal"
+    },
+    "heroNums": [
+      {
+        "y": 340
+      },
+      {
+        "y": 340
+      }
+    ],
+    "tbLabels": [
+      {
+        "y": 432
+      },
+      {
+        "y": 432
+      },
+      {
+        "y": 432
+      }
+    ],
+    "perfCards": [
+      {
+        "y": 577,
+        "w": 342
+      },
+      {
+        "y": 810,
+        "w": 342
+      }
+    ],
+    "hostVals": [
+      {
+        "y": 1141,
+        "w": 148
+      },
+      {
+        "y": 1141,
+        "w": 148
+      },
+      {
+        "y": 1225,
+        "w": 148
+      },
+      {
+        "y": 1225,
+        "w": 148
+      },
+      {
+        "y": 1318,
+        "w": 308
+      }
+    ],
+    "hostEls": {
+      "cpu": "100%",
+      "cpuSub": "",
+      "mem": "30%",
+      "memSub": "76.3 / 255.7 GiB",
+      "diskR": "↓ 0 B/s",
+      "diskW": "↑ 192 KB/s",
+      "netR": "↓ 44.2 KB/s",
+      "netW": "↑ 11.9 KB/s",
+      "power": "40 W",
+      "powerSub": "已采集：GPU（CPU Package 不可用）"
+    },
+    "dq": {
+      "cov": "98.3%",
+      "gaps": "6 个",
+      "loss": "2 个可能存在 Token 丢失",
+      "db": "健康",
+      "dbHint": "WAL 已启用"
+    },
+    "server": {
+      "url": "127.0.0.1:9091",
+      "model": "qwen3.8-27b-medium · Q4_K · Medium · 27.32B",
+      "state": "就绪",
+      "lastUpdate": "最后更新：刚刚"
+    },
+    "perf": {
+      "prompt": "--",
+      "decode": "--",
+      "mtp": "49.4%",
+      "ctx": "262.14K",
+      "req": "0 / 0",
+      "kv": "--"
+    },
+    "gpuLine": "",
+    "navLabels": [
+      "概览",
+      "用量",
+      "性能",
+      "显卡",
+      "系统",
+      "历史",
+      "设置",
+      "关于"
+    ],
+    "mnavLabels": [
+      "概览",
+      "用量",
+      "性能",
+      "显卡",
+      "系统"
+    ],
+    "actionLinks": [
+      {
+        "t": "查看用量详情 →",
+        "h": 44,
+        "font": "14px",
+        "right": 374
+      },
+      {
+        "t": "查看性能详情 →",
+        "h": 44,
+        "font": "14px",
+        "right": 374
+      },
+      {
+        "t": "查看系统详情 →",
+        "h": 44,
+        "font": "14px",
+        "right": 374
+      },
+      {
+        "t": "查看 GPU 详情 →",
+        "h": 44,
+        "font": "14px",
+        "right": 374
+      },
+      {
+        "t": "查看监控历史 →",
+        "h": 44,
+        "font": "14px",
+        "right": 374
+      }
+    ],
+    "ellipsisCheck": {
+      "serverUrl": false,
+      "model": false,
+      "hero1": false,
+      "hero2": false,
+      "tb1": false,
+      "tb2": false,
+      "tb3": false
+    },
+    "hero1Rect": {
+      "y": 340
+    },
+    "hero2Rect": {
+      "y": 340
+    }
+  },
+  "430": {
+    "viewport": {
+      "w": 430,
+      "h": 932
+    },
+    "overflowX": 0,
+    "docScrollHeight": 932,
+    "compact": true,
+    "todayHero": {
+      "w": 348,
+      "h": 59,
+      "x": 41,
+      "y": 340,
+      "font": "15px",
+      "cols": 2,
+      "containerType": "normal"
+    },
+    "todayBreakdown": {
+      "w": 348,
+      "h": 56,
+      "x": 41,
+      "y": 432,
+      "font": "15px",
+      "cols": 3,
+      "containerType": "normal"
+    },
+    "ovPerfGrid": {
+      "w": 382,
+      "h": 450,
+      "x": 24,
+      "y": 577,
+      "font": "15px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "hostGrid": {
+      "w": 348,
+      "h": 248,
+      "x": 41,
+      "y": 1116,
+      "font": "15px",
+      "cols": 2,
+      "containerType": "normal"
+    },
+    "gpuMiniGrid": {
+      "w": 382,
+      "h": 378,
+      "x": 24,
+      "y": 1453,
+      "font": "15px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "gpuMiniCards": [
+      {
+        "w": 382,
+        "h": 181,
+        "x": 24,
+        "y": 1453
+      },
+      {
+        "w": 382,
+        "h": 181,
+        "x": 24,
+        "y": 1650
+      }
+    ],
+    "dqGrid": {
+      "w": 348,
+      "h": 155,
+      "x": 41,
+      "y": 1920,
+      "font": "15px",
+      "cols": 2,
+      "containerType": "normal"
+    },
+    "statusStrip": {
+      "w": 382,
+      "h": 129,
+      "x": 24,
+      "y": 123,
+      "font": "15px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "remoteBanner": {
+      "w": 0,
+      "h": 0,
+      "x": 0,
+      "y": 0,
+      "font": "14px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "sidebar": {
+      "w": 0,
+      "h": 0,
+      "x": 0,
+      "y": 0,
+      "font": "15px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "mobileNav": {
+      "w": 430,
+      "h": 61,
+      "x": 0,
+      "y": 871,
+      "font": "15px",
+      "cols": 5,
+      "containerType": "normal"
+    },
+    "heroNums": [
+      {
+        "y": 340
+      },
+      {
+        "y": 340
+      }
+    ],
+    "tbLabels": [
+      {
+        "y": 432
+      },
+      {
+        "y": 432
+      },
+      {
+        "y": 432
+      }
+    ],
+    "perfCards": [
+      {
+        "y": 577,
+        "w": 382
+      },
+      {
+        "y": 810,
+        "w": 382
+      }
+    ],
+    "hostVals": [
+      {
+        "y": 1141,
+        "w": 168
+      },
+      {
+        "y": 1141,
+        "w": 168
+      },
+      {
+        "y": 1225,
+        "w": 168
+      },
+      {
+        "y": 1225,
+        "w": 168
+      },
+      {
+        "y": 1318,
+        "w": 348
+      }
+    ],
+    "hostEls": {
+      "cpu": "10%",
+      "cpuSub": "",
+      "mem": "30%",
+      "memSub": "76.2 / 255.7 GiB",
+      "diskR": "↓ 0 B/s",
+      "diskW": "↑ 494 KB/s",
+      "netR": "↓ 52.3 KB/s",
+      "netW": "↑ 9.0 KB/s",
+      "power": "40 W",
+      "powerSub": "已采集：GPU（CPU Package 不可用）"
+    },
+    "dq": {
+      "cov": "98.3%",
+      "gaps": "6 个",
+      "loss": "2 个可能存在 Token 丢失",
+      "db": "健康",
+      "dbHint": "WAL 已启用"
+    },
+    "server": {
+      "url": "127.0.0.1:9091",
+      "model": "qwen3.8-27b-medium · Q4_K · Medium · 27.32B",
+      "state": "就绪",
+      "lastUpdate": "最后更新：刚刚"
+    },
+    "perf": {
+      "prompt": "--",
+      "decode": "--",
+      "mtp": "49.4%",
+      "ctx": "262.14K",
+      "req": "0 / 0",
+      "kv": "--"
+    },
+    "gpuLine": "",
+    "navLabels": [
+      "概览",
+      "用量",
+      "性能",
+      "显卡",
+      "系统",
+      "历史",
+      "设置",
+      "关于"
+    ],
+    "mnavLabels": [
+      "概览",
+      "用量",
+      "性能",
+      "显卡",
+      "系统"
+    ],
+    "actionLinks": [
+      {
+        "t": "查看用量详情 →",
+        "h": 44,
+        "font": "14px",
+        "right": 414
+      },
+      {
+        "t": "查看性能详情 →",
+        "h": 44,
+        "font": "14px",
+        "right": 414
+      },
+      {
+        "t": "查看系统详情 →",
+        "h": 44,
+        "font": "14px",
+        "right": 414
+      },
+      {
+        "t": "查看 GPU 详情 →",
+        "h": 44,
+        "font": "14px",
+        "right": 414
+      },
+      {
+        "t": "查看监控历史 →",
+        "h": 44,
+        "font": "14px",
+        "right": 414
+      }
+    ],
+    "ellipsisCheck": {
+      "serverUrl": false,
+      "model": false,
+      "hero1": false,
+      "hero2": false,
+      "tb1": false,
+      "tb2": false,
+      "tb3": false
+    },
+    "hero1Rect": {
+      "y": 340
+    },
+    "hero2Rect": {
+      "y": 340
+    }
+  },
+  "760": {
+    "viewport": {
+      "w": 760,
+      "h": 900
+    },
+    "overflowX": 0,
+    "docScrollHeight": 900,
+    "compact": true,
+    "todayHero": {
+      "w": 678,
+      "h": 59,
+      "x": 41,
+      "y": 320,
+      "font": "15px",
+      "cols": 2,
+      "containerType": "normal"
+    },
+    "todayBreakdown": {
+      "w": 678,
+      "h": 56,
+      "x": 41,
+      "y": 412,
+      "font": "15px",
+      "cols": 3,
+      "containerType": "normal"
+    },
+    "ovPerfGrid": {
+      "w": 712,
+      "h": 450,
+      "x": 24,
+      "y": 557,
+      "font": "15px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "hostGrid": {
+      "w": 678,
+      "h": 248,
+      "x": 41,
+      "y": 1096,
+      "font": "15px",
+      "cols": 2,
+      "containerType": "normal"
+    },
+    "gpuMiniGrid": {
+      "w": 712,
+      "h": 378,
+      "x": 24,
+      "y": 1433,
+      "font": "15px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "gpuMiniCards": [
+      {
+        "w": 712,
+        "h": 181,
+        "x": 24,
+        "y": 1433
+      },
+      {
+        "w": 712,
+        "h": 181,
+        "x": 24,
+        "y": 1630
+      }
+    ],
+    "dqGrid": {
+      "w": 678,
+      "h": 155,
+      "x": 41,
+      "y": 1900,
+      "font": "15px",
+      "cols": 2,
+      "containerType": "normal"
+    },
+    "statusStrip": {
+      "w": 712,
+      "h": 129,
+      "x": 24,
+      "y": 102,
+      "font": "15px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "remoteBanner": {
+      "w": 0,
+      "h": 0,
+      "x": 0,
+      "y": 0,
+      "font": "14px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "sidebar": {
+      "w": 0,
+      "h": 0,
+      "x": 0,
+      "y": 0,
+      "font": "15px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "mobileNav": {
+      "w": 760,
+      "h": 61,
+      "x": 0,
+      "y": 839,
+      "font": "15px",
+      "cols": 5,
+      "containerType": "normal"
+    },
+    "heroNums": [
+      {
+        "y": 320
+      },
+      {
+        "y": 320
+      }
+    ],
+    "tbLabels": [
+      {
+        "y": 412
+      },
+      {
+        "y": 412
+      },
+      {
+        "y": 412
+      }
+    ],
+    "perfCards": [
+      {
+        "y": 557,
+        "w": 712
+      },
+      {
+        "y": 790,
+        "w": 712
+      }
+    ],
+    "hostVals": [
+      {
+        "y": 1121,
+        "w": 333
+      },
+      {
+        "y": 1121,
+        "w": 333
+      },
+      {
+        "y": 1204,
+        "w": 333
+      },
+      {
+        "y": 1204,
+        "w": 333
+      },
+      {
+        "y": 1297,
+        "w": 678
+      }
+    ],
+    "hostEls": {
+      "cpu": "100%",
+      "cpuSub": "",
+      "mem": "30%",
+      "memSub": "76.1 / 255.7 GiB",
+      "diskR": "↓ 0 B/s",
+      "diskW": "↑ 254 KB/s",
+      "netR": "↓ 44.2 KB/s",
+      "netW": "↑ 10.6 KB/s",
+      "power": "40 W",
+      "powerSub": "已采集：GPU（CPU Package 不可用）"
+    },
+    "dq": {
+      "cov": "98.3%",
+      "gaps": "6 个",
+      "loss": "2 个可能存在 Token 丢失",
+      "db": "健康",
+      "dbHint": "WAL 已启用"
+    },
+    "server": {
+      "url": "127.0.0.1:9091",
+      "model": "qwen3.8-27b-medium · Q4_K · Medium · 27.32B",
+      "state": "就绪",
+      "lastUpdate": "最后更新：5 秒前"
+    },
+    "perf": {
+      "prompt": "--",
+      "decode": "--",
+      "mtp": "49.4%",
+      "ctx": "262.14K",
+      "req": "0 / 0",
+      "kv": "--"
+    },
+    "gpuLine": "",
+    "navLabels": [
+      "概览",
+      "用量",
+      "性能",
+      "显卡",
+      "系统",
+      "历史",
+      "设置",
+      "关于"
+    ],
+    "mnavLabels": [
+      "概览",
+      "用量",
+      "性能",
+      "显卡",
+      "系统"
+    ],
+    "actionLinks": [
+      {
+        "t": "查看用量详情 →",
+        "h": 44,
+        "font": "14px",
+        "right": 744
+      },
+      {
+        "t": "查看性能详情 →",
+        "h": 44,
+        "font": "14px",
+        "right": 744
+      },
+      {
+        "t": "查看系统详情 →",
+        "h": 44,
+        "font": "14px",
+        "right": 744
+      },
+      {
+        "t": "查看 GPU 详情 →",
+        "h": 44,
+        "font": "14px",
+        "right": 744
+      },
+      {
+        "t": "查看监控历史 →",
+        "h": 44,
+        "font": "14px",
+        "right": 744
+      }
+    ],
+    "ellipsisCheck": {
+      "serverUrl": false,
+      "model": false,
+      "hero1": false,
+      "hero2": false,
+      "tb1": false,
+      "tb2": false,
+      "tb3": false
+    },
+    "hero1Rect": {
+      "y": 320
+    },
+    "hero2Rect": {
+      "y": 320
+    }
+  },
+  "761": {
+    "viewport": {
+      "w": 761,
+      "h": 900
+    },
+    "overflowX": 0,
+    "docScrollHeight": 900,
+    "compact": true,
+    "todayHero": {
+      "w": 601,
+      "h": 66,
+      "x": 105,
+      "y": 281,
+      "font": "14px",
+      "cols": 2,
+      "containerType": "normal"
+    },
+    "todayBreakdown": {
+      "w": 601,
+      "h": 51,
+      "x": 105,
+      "y": 380,
+      "font": "14px",
+      "cols": 5,
+      "containerType": "normal"
+    },
+    "ovPerfGrid": {
+      "w": 643,
+      "h": 416,
+      "x": 84,
+      "y": 513,
+      "font": "14px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "hostGrid": {
+      "w": 601,
+      "h": 168,
+      "x": 105,
+      "y": 1010,
+      "font": "14px",
+      "cols": 3,
+      "containerType": "normal"
+    },
+    "gpuMiniGrid": {
+      "w": 643,
+      "h": 358,
+      "x": 84,
+      "y": 1259,
+      "font": "14px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "gpuMiniCards": [
+      {
+        "w": 340,
+        "h": 171,
+        "x": 84,
+        "y": 1259
+      },
+      {
+        "w": 340,
+        "h": 171,
+        "x": 84,
+        "y": 1446
+      }
+    ],
+    "dqGrid": {
+      "w": 601,
+      "h": 64,
+      "x": 105,
+      "y": 1698,
+      "font": "14px",
+      "cols": 3,
+      "containerType": "normal"
+    },
+    "statusStrip": {
+      "w": 643,
+      "h": 99,
+      "x": 84,
+      "y": 101,
+      "font": "14px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "remoteBanner": {
+      "w": 0,
+      "h": 0,
+      "x": 0,
+      "y": 0,
+      "font": "13px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "sidebar": {
+      "w": 60,
+      "h": 900,
+      "x": 0,
+      "y": 0,
+      "font": "14px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "mobileNav": {
+      "w": 0,
+      "h": 0,
+      "x": 0,
+      "y": 0,
+      "font": "14px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "heroNums": [
+      {
+        "y": 281
+      },
+      {
+        "y": 281
+      }
+    ],
+    "tbLabels": [
+      {
+        "y": 380
+      },
+      {
+        "y": 380
+      },
+      {
+        "y": 380
+      }
+    ],
+    "perfCards": [
+      {
+        "y": 513,
+        "w": 643
+      },
+      {
+        "y": 729,
+        "w": 643
+      }
+    ],
+    "hostVals": [
+      {
+        "y": 1030,
+        "w": 187
+      },
+      {
+        "y": 1030,
+        "w": 187
+      },
+      {
+        "y": 1030,
+        "w": 187
+      },
+      {
+        "y": 1118,
+        "w": 187
+      },
+      {
+        "y": 1118,
+        "w": 187
+      }
+    ],
+    "hostEls": {
+      "cpu": "100%",
+      "cpuSub": "",
+      "mem": "30%",
+      "memSub": "76.1 / 255.7 GiB",
+      "diskR": "↓ 7.7 KB/s",
+      "diskW": "↑ 206 KB/s",
+      "netR": "↓ 38.3 KB/s",
+      "netW": "↑ 4.8 KB/s",
+      "power": "40 W",
+      "powerSub": "已采集：GPU（CPU Package 不可用）"
+    },
+    "dq": {
+      "cov": "98.3%",
+      "gaps": "6 个",
+      "loss": "2 个可能存在 Token 丢失",
+      "db": "健康",
+      "dbHint": "WAL 已启用"
+    },
+    "server": {
+      "url": "127.0.0.1:9091",
+      "model": "qwen3.8-27b-medium · Q4_K · Medium · 27.32B",
+      "state": "就绪",
+      "lastUpdate": "最后更新：刚刚"
+    },
+    "perf": {
+      "prompt": "--",
+      "decode": "--",
+      "mtp": "49.4%",
+      "ctx": "262.14K",
+      "req": "0 / 0",
+      "kv": "--"
+    },
+    "gpuLine": "",
+    "navLabels": [
+      "概览",
+      "用量",
+      "性能",
+      "显卡",
+      "系统",
+      "历史",
+      "设置",
+      "关于"
+    ],
+    "mnavLabels": [
+      "概览",
+      "用量",
+      "性能",
+      "显卡",
+      "系统"
+    ],
+    "actionLinks": [
+      {
+        "t": "查看用量详情 →",
+        "h": 36,
+        "font": "13px",
+        "right": 735
+      },
+      {
+        "t": "查看性能详情 →",
+        "h": 36,
+        "font": "13px",
+        "right": 735
+      },
+      {
+        "t": "查看系统详情 →",
+        "h": 36,
+        "font": "13px",
+        "right": 735
+      },
+      {
+        "t": "查看 GPU 详情 →",
+        "h": 36,
+        "font": "13px",
+        "right": 735
+      },
+      {
+        "t": "查看监控历史 →",
+        "h": 36,
+        "font": "13px",
+        "right": 735
+      }
+    ],
+    "ellipsisCheck": {
+      "serverUrl": false,
+      "model": false,
+      "hero1": false,
+      "hero2": false,
+      "tb1": false,
+      "tb2": false,
+      "tb3": false
+    },
+    "hero1Rect": {
+      "y": 281
+    },
+    "hero2Rect": {
+      "y": 281
+    }
+  },
+  "900": {
+    "viewport": {
+      "w": 900,
+      "h": 900
+    },
+    "overflowX": 0,
+    "docScrollHeight": 900,
+    "compact": true,
+    "todayHero": {
+      "w": 740,
+      "h": 66,
+      "x": 105,
+      "y": 281,
+      "font": "14px",
+      "cols": 2,
+      "containerType": "normal"
+    },
+    "todayBreakdown": {
+      "w": 740,
+      "h": 51,
+      "x": 105,
+      "y": 380,
+      "font": "14px",
+      "cols": 6,
+      "containerType": "normal"
+    },
+    "ovPerfGrid": {
+      "w": 782,
+      "h": 200,
+      "x": 84,
+      "y": 513,
+      "font": "14px",
+      "cols": 2,
+      "containerType": "normal"
+    },
+    "hostGrid": {
+      "w": 740,
+      "h": 160,
+      "x": 105,
+      "y": 794,
+      "font": "14px",
+      "cols": 3,
+      "containerType": "normal"
+    },
+    "gpuMiniGrid": {
+      "w": 782,
+      "h": 171,
+      "x": 84,
+      "y": 1035,
+      "font": "14px",
+      "cols": 2,
+      "containerType": "normal"
+    },
+    "gpuMiniCards": [
+      {
+        "w": 340,
+        "h": 171,
+        "x": 84,
+        "y": 1035
+      },
+      {
+        "w": 340,
+        "h": 171,
+        "x": 440,
+        "y": 1035
+      }
+    ],
+    "dqGrid": {
+      "w": 740,
+      "h": 64,
+      "x": 105,
+      "y": 1286,
+      "font": "14px",
+      "cols": 3,
+      "containerType": "normal"
+    },
+    "statusStrip": {
+      "w": 782,
+      "h": 99,
+      "x": 84,
+      "y": 101,
+      "font": "14px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "remoteBanner": {
+      "w": 0,
+      "h": 0,
+      "x": 0,
+      "y": 0,
+      "font": "13px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "sidebar": {
+      "w": 60,
+      "h": 900,
+      "x": 0,
+      "y": 0,
+      "font": "14px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "mobileNav": {
+      "w": 0,
+      "h": 0,
+      "x": 0,
+      "y": 0,
+      "font": "14px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "heroNums": [
+      {
+        "y": 281
+      },
+      {
+        "y": 281
+      }
+    ],
+    "tbLabels": [
+      {
+        "y": 380
+      },
+      {
+        "y": 380
+      },
+      {
+        "y": 380
+      }
+    ],
+    "perfCards": [
+      {
+        "y": 513,
+        "w": 383
+      },
+      {
+        "y": 513,
+        "w": 383
+      }
+    ],
+    "hostVals": [
+      {
+        "y": 814,
+        "w": 233
+      },
+      {
+        "y": 814,
+        "w": 233
+      },
+      {
+        "y": 814,
+        "w": 233
+      },
+      {
+        "y": 902,
+        "w": 233
+      },
+      {
+        "y": 902,
+        "w": 233
+      }
+    ],
+    "hostEls": {
+      "cpu": "100%",
+      "cpuSub": "",
+      "mem": "30%",
+      "memSub": "76.1 / 255.7 GiB",
+      "diskR": "↓ 77.3 KB/s",
+      "diskW": "↑ 410 KB/s",
+      "netR": "↓ 40.4 KB/s",
+      "netW": "↑ 8.9 KB/s",
+      "power": "40 W",
+      "powerSub": "已采集：GPU（CPU Package 不可用）"
+    },
+    "dq": {
+      "cov": "98.3%",
+      "gaps": "6 个",
+      "loss": "2 个可能存在 Token 丢失",
+      "db": "健康",
+      "dbHint": "WAL 已启用"
+    },
+    "server": {
+      "url": "127.0.0.1:9091",
+      "model": "qwen3.8-27b-medium · Q4_K · Medium · 27.32B",
+      "state": "就绪",
+      "lastUpdate": "最后更新：刚刚"
+    },
+    "perf": {
+      "prompt": "--",
+      "decode": "--",
+      "mtp": "49.4%",
+      "ctx": "262.14K",
+      "req": "0 / 0",
+      "kv": "--"
+    },
+    "gpuLine": "",
+    "navLabels": [
+      "概览",
+      "用量",
+      "性能",
+      "显卡",
+      "系统",
+      "历史",
+      "设置",
+      "关于"
+    ],
+    "mnavLabels": [
+      "概览",
+      "用量",
+      "性能",
+      "显卡",
+      "系统"
+    ],
+    "actionLinks": [
+      {
+        "t": "查看用量详情 →",
+        "h": 36,
+        "font": "13px",
+        "right": 874
+      },
+      {
+        "t": "查看性能详情 →",
+        "h": 36,
+        "font": "13px",
+        "right": 874
+      },
+      {
+        "t": "查看系统详情 →",
+        "h": 36,
+        "font": "13px",
+        "right": 874
+      },
+      {
+        "t": "查看 GPU 详情 →",
+        "h": 36,
+        "font": "13px",
+        "right": 874
+      },
+      {
+        "t": "查看监控历史 →",
+        "h": 36,
+        "font": "13px",
+        "right": 874
+      }
+    ],
+    "ellipsisCheck": {
+      "serverUrl": false,
+      "model": false,
+      "hero1": false,
+      "hero2": false,
+      "tb1": false,
+      "tb2": false,
+      "tb3": false
+    },
+    "hero1Rect": {
+      "y": 281
+    },
+    "hero2Rect": {
+      "y": 281
+    }
+  },
+  "1065": {
+    "viewport": {
+      "w": 1065,
+      "h": 1394
+    },
+    "overflowX": 0,
+    "docScrollHeight": 1394,
+    "compact": true,
+    "todayHero": {
+      "w": 905,
+      "h": 66,
+      "x": 105,
+      "y": 281,
+      "font": "14px",
+      "cols": 2,
+      "containerType": "normal"
+    },
+    "todayBreakdown": {
+      "w": 905,
+      "h": 51,
+      "x": 105,
+      "y": 380,
+      "font": "14px",
+      "cols": 8,
+      "containerType": "normal"
+    },
+    "ovPerfGrid": {
+      "w": 947,
+      "h": 200,
+      "x": 84,
+      "y": 513,
+      "font": "14px",
+      "cols": 2,
+      "containerType": "normal"
+    },
+    "hostGrid": {
+      "w": 905,
+      "h": 160,
+      "x": 105,
+      "y": 794,
+      "font": "14px",
+      "cols": 3,
+      "containerType": "normal"
+    },
+    "gpuMiniGrid": {
+      "w": 947,
+      "h": 171,
+      "x": 84,
+      "y": 1035,
+      "font": "14px",
+      "cols": 2,
+      "containerType": "normal"
+    },
+    "gpuMiniCards": [
+      {
+        "w": 340,
+        "h": 171,
+        "x": 84,
+        "y": 1035
+      },
+      {
+        "w": 340,
+        "h": 171,
+        "x": 440,
+        "y": 1035
+      }
+    ],
+    "dqGrid": {
+      "w": 905,
+      "h": 64,
+      "x": 105,
+      "y": 1286,
+      "font": "14px",
+      "cols": 4,
+      "containerType": "normal"
+    },
+    "statusStrip": {
+      "w": 947,
+      "h": 99,
+      "x": 84,
+      "y": 101,
+      "font": "14px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "remoteBanner": {
+      "w": 0,
+      "h": 0,
+      "x": 0,
+      "y": 0,
+      "font": "13px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "sidebar": {
+      "w": 60,
+      "h": 1394,
+      "x": 0,
+      "y": 0,
+      "font": "14px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "mobileNav": {
+      "w": 0,
+      "h": 0,
+      "x": 0,
+      "y": 0,
+      "font": "14px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "heroNums": [
+      {
+        "y": 281
+      },
+      {
+        "y": 281
+      }
+    ],
+    "tbLabels": [
+      {
+        "y": 380
+      },
+      {
+        "y": 380
+      },
+      {
+        "y": 380
+      }
+    ],
+    "perfCards": [
+      {
+        "y": 513,
+        "w": 466
+      },
+      {
+        "y": 513,
+        "w": 466
+      }
+    ],
+    "hostVals": [
+      {
+        "y": 814,
+        "w": 288
+      },
+      {
+        "y": 814,
+        "w": 288
+      },
+      {
+        "y": 814,
+        "w": 288
+      },
+      {
+        "y": 902,
+        "w": 288
+      },
+      {
+        "y": 902,
+        "w": 288
+      }
+    ],
+    "hostEls": {
+      "cpu": "6%",
+      "cpuSub": "",
+      "mem": "30%",
+      "memSub": "76.1 / 255.7 GiB",
+      "diskR": "↓ 11.6 KB/s",
+      "diskW": "↑ 219 KB/s",
+      "netR": "↓ 54.1 KB/s",
+      "netW": "↑ 9.2 KB/s",
+      "power": "40 W",
+      "powerSub": "已采集：GPU（CPU Package 不可用）"
+    },
+    "dq": {
+      "cov": "98.3%",
+      "gaps": "6 个",
+      "loss": "2 个可能存在 Token 丢失",
+      "db": "健康",
+      "dbHint": "WAL 已启用"
+    },
+    "server": {
+      "url": "127.0.0.1:9091",
+      "model": "qwen3.8-27b-medium · Q4_K · Medium · 27.32B",
+      "state": "就绪",
+      "lastUpdate": "最后更新：刚刚"
+    },
+    "perf": {
+      "prompt": "--",
+      "decode": "--",
+      "mtp": "49.4%",
+      "ctx": "262.14K",
+      "req": "0 / 0",
+      "kv": "--"
+    },
+    "gpuLine": "",
+    "navLabels": [
+      "概览",
+      "用量",
+      "性能",
+      "显卡",
+      "系统",
+      "历史",
+      "设置",
+      "关于"
+    ],
+    "mnavLabels": [
+      "概览",
+      "用量",
+      "性能",
+      "显卡",
+      "系统"
+    ],
+    "actionLinks": [
+      {
+        "t": "查看用量详情 →",
+        "h": 36,
+        "font": "13px",
+        "right": 1039
+      },
+      {
+        "t": "查看性能详情 →",
+        "h": 36,
+        "font": "13px",
+        "right": 1039
+      },
+      {
+        "t": "查看系统详情 →",
+        "h": 36,
+        "font": "13px",
+        "right": 1039
+      },
+      {
+        "t": "查看 GPU 详情 →",
+        "h": 36,
+        "font": "13px",
+        "right": 1039
+      },
+      {
+        "t": "查看监控历史 →",
+        "h": 36,
+        "font": "13px",
+        "right": 1039
+      }
+    ],
+    "ellipsisCheck": {
+      "serverUrl": false,
+      "model": false,
+      "hero1": false,
+      "hero2": false,
+      "tb1": false,
+      "tb2": false,
+      "tb3": false
+    },
+    "hero1Rect": {
+      "y": 281
+    },
+    "hero2Rect": {
+      "y": 281
+    }
+  },
+  "1366": {
+    "viewport": {
+      "w": 1366,
+      "h": 768
+    },
+    "overflowX": 0,
+    "docScrollHeight": 768,
+    "compact": false,
+    "todayHero": {
+      "w": 1054,
+      "h": 66,
+      "x": 257,
+      "y": 281,
+      "font": "14px",
+      "cols": 2,
+      "containerType": "normal"
+    },
+    "todayBreakdown": {
+      "w": 1054,
+      "h": 51,
+      "x": 257,
+      "y": 380,
+      "font": "14px",
+      "cols": 9,
+      "containerType": "normal"
+    },
+    "ovPerfGrid": {
+      "w": 1096,
+      "h": 200,
+      "x": 236,
+      "y": 513,
+      "font": "14px",
+      "cols": 2,
+      "containerType": "normal"
+    },
+    "hostGrid": {
+      "w": 1054,
+      "h": 80,
+      "x": 257,
+      "y": 794,
+      "font": "14px",
+      "cols": 5,
+      "containerType": "normal"
+    },
+    "gpuMiniGrid": {
+      "w": 1096,
+      "h": 171,
+      "x": 236,
+      "y": 955,
+      "font": "14px",
+      "cols": 3,
+      "containerType": "normal"
+    },
+    "gpuMiniCards": [
+      {
+        "w": 340,
+        "h": 171,
+        "x": 236,
+        "y": 955
+      },
+      {
+        "w": 340,
+        "h": 171,
+        "x": 592,
+        "y": 955
+      }
+    ],
+    "dqGrid": {
+      "w": 1054,
+      "h": 64,
+      "x": 257,
+      "y": 1207,
+      "font": "14px",
+      "cols": 5,
+      "containerType": "normal"
+    },
+    "statusStrip": {
+      "w": 1096,
+      "h": 99,
+      "x": 236,
+      "y": 101,
+      "font": "14px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "remoteBanner": {
+      "w": 0,
+      "h": 0,
+      "x": 0,
+      "y": 0,
+      "font": "13px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "sidebar": {
+      "w": 212,
+      "h": 768,
+      "x": 0,
+      "y": 0,
+      "font": "14px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "mobileNav": {
+      "w": 0,
+      "h": 0,
+      "x": 0,
+      "y": 0,
+      "font": "14px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "heroNums": [
+      {
+        "y": 281
+      },
+      {
+        "y": 281
+      }
+    ],
+    "tbLabels": [
+      {
+        "y": 380
+      },
+      {
+        "y": 380
+      },
+      {
+        "y": 380
+      }
+    ],
+    "perfCards": [
+      {
+        "y": 513,
+        "w": 540
+      },
+      {
+        "y": 513,
+        "w": 540
+      }
+    ],
+    "hostVals": [
+      {
+        "y": 814,
+        "w": 195
+      },
+      {
+        "y": 814,
+        "w": 195
+      },
+      {
+        "y": 814,
+        "w": 195
+      },
+      {
+        "y": 814,
+        "w": 195
+      },
+      {
+        "y": 814,
+        "w": 195
+      }
+    ],
+    "hostEls": {
+      "cpu": "5%",
+      "cpuSub": "",
+      "mem": "30%",
+      "memSub": "76.1 / 255.7 GiB",
+      "diskR": "↓ 0 B/s",
+      "diskW": "↑ 153 KB/s",
+      "netR": "↓ 32.4 KB/s",
+      "netW": "↑ 8.4 KB/s",
+      "power": "40 W",
+      "powerSub": "已采集：GPU（CPU Package 不可用）"
+    },
+    "dq": {
+      "cov": "98.3%",
+      "gaps": "6 个",
+      "loss": "2 个可能存在 Token 丢失",
+      "db": "健康",
+      "dbHint": "WAL 已启用"
+    },
+    "server": {
+      "url": "127.0.0.1:9091",
+      "model": "qwen3.8-27b-medium · Q4_K · Medium · 27.32B",
+      "state": "就绪",
+      "lastUpdate": "最后更新：刚刚"
+    },
+    "perf": {
+      "prompt": "--",
+      "decode": "--",
+      "mtp": "49.4%",
+      "ctx": "262.14K",
+      "req": "0 / 0",
+      "kv": "--"
+    },
+    "gpuLine": "",
+    "navLabels": [
+      "概览",
+      "用量",
+      "性能",
+      "显卡",
+      "系统",
+      "历史",
+      "设置",
+      "关于"
+    ],
+    "mnavLabels": [
+      "概览",
+      "用量",
+      "性能",
+      "显卡",
+      "系统"
+    ],
+    "actionLinks": [
+      {
+        "t": "查看用量详情 →",
+        "h": 36,
+        "font": "13px",
+        "right": 1340
+      },
+      {
+        "t": "查看性能详情 →",
+        "h": 36,
+        "font": "13px",
+        "right": 1340
+      },
+      {
+        "t": "查看系统详情 →",
+        "h": 36,
+        "font": "13px",
+        "right": 1340
+      },
+      {
+        "t": "查看 GPU 详情 →",
+        "h": 36,
+        "font": "13px",
+        "right": 1340
+      },
+      {
+        "t": "查看监控历史 →",
+        "h": 36,
+        "font": "13px",
+        "right": 1340
+      }
+    ],
+    "ellipsisCheck": {
+      "serverUrl": false,
+      "model": false,
+      "hero1": false,
+      "hero2": false,
+      "tb1": false,
+      "tb2": false,
+      "tb3": false
+    },
+    "hero1Rect": {
+      "y": 281
+    },
+    "hero2Rect": {
+      "y": 281
+    }
+  },
+  "1600": {
+    "viewport": {
+      "w": 1600,
+      "h": 900
+    },
+    "overflowX": 0,
+    "docScrollHeight": 900,
+    "compact": false,
+    "todayHero": {
+      "w": 1272,
+      "h": 66,
+      "x": 265,
+      "y": 281,
+      "font": "14px",
+      "cols": 2,
+      "containerType": "normal"
+    },
+    "todayBreakdown": {
+      "w": 1272,
+      "h": 51,
+      "x": 265,
+      "y": 380,
+      "font": "14px",
+      "cols": 11,
+      "containerType": "normal"
+    },
+    "ovPerfGrid": {
+      "w": 1314,
+      "h": 200,
+      "x": 244,
+      "y": 513,
+      "font": "14px",
+      "cols": 3,
+      "containerType": "normal"
+    },
+    "hostGrid": {
+      "w": 1272,
+      "h": 72,
+      "x": 265,
+      "y": 794,
+      "font": "14px",
+      "cols": 5,
+      "containerType": "normal"
+    },
+    "gpuMiniGrid": {
+      "w": 1314,
+      "h": 171,
+      "x": 244,
+      "y": 947,
+      "font": "14px",
+      "cols": 3,
+      "containerType": "normal"
+    },
+    "gpuMiniCards": [
+      {
+        "w": 340,
+        "h": 171,
+        "x": 244,
+        "y": 947
+      },
+      {
+        "w": 340,
+        "h": 171,
+        "x": 600,
+        "y": 947
+      }
+    ],
+    "dqGrid": {
+      "w": 1272,
+      "h": 64,
+      "x": 265,
+      "y": 1198,
+      "font": "14px",
+      "cols": 6,
+      "containerType": "normal"
+    },
+    "statusStrip": {
+      "w": 1314,
+      "h": 99,
+      "x": 244,
+      "y": 101,
+      "font": "14px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "remoteBanner": {
+      "w": 0,
+      "h": 0,
+      "x": 0,
+      "y": 0,
+      "font": "13px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "sidebar": {
+      "w": 212,
+      "h": 900,
+      "x": 0,
+      "y": 0,
+      "font": "14px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "mobileNav": {
+      "w": 0,
+      "h": 0,
+      "x": 0,
+      "y": 0,
+      "font": "14px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "heroNums": [
+      {
+        "y": 281
+      },
+      {
+        "y": 281
+      }
+    ],
+    "tbLabels": [
+      {
+        "y": 380
+      },
+      {
+        "y": 380
+      },
+      {
+        "y": 380
+      }
+    ],
+    "perfCards": [
+      {
+        "y": 513,
+        "w": 649
+      },
+      {
+        "y": 513,
+        "w": 649
+      }
+    ],
+    "hostVals": [
+      {
+        "y": 814,
+        "w": 238
+      },
+      {
+        "y": 814,
+        "w": 238
+      },
+      {
+        "y": 814,
+        "w": 238
+      },
+      {
+        "y": 814,
+        "w": 238
+      },
+      {
+        "y": 814,
+        "w": 238
+      }
+    ],
+    "hostEls": {
+      "cpu": "7%",
+      "cpuSub": "",
+      "mem": "30%",
+      "memSub": "76.1 / 255.7 GiB",
+      "diskR": "↓ 0 B/s",
+      "diskW": "↑ 162 KB/s",
+      "netR": "↓ 83.5 KB/s",
+      "netW": "↑ 24.3 KB/s",
+      "power": "40 W",
+      "powerSub": "已采集：GPU（CPU Package 不可用）"
+    },
+    "dq": {
+      "cov": "98.3%",
+      "gaps": "6 个",
+      "loss": "2 个可能存在 Token 丢失",
+      "db": "健康",
+      "dbHint": "WAL 已启用"
+    },
+    "server": {
+      "url": "127.0.0.1:9091",
+      "model": "qwen3.8-27b-medium · Q4_K · Medium · 27.32B",
+      "state": "就绪",
+      "lastUpdate": "最后更新：刚刚"
+    },
+    "perf": {
+      "prompt": "--",
+      "decode": "--",
+      "mtp": "49.4%",
+      "ctx": "262.14K",
+      "req": "0 / 0",
+      "kv": "--"
+    },
+    "gpuLine": "",
+    "navLabels": [
+      "概览",
+      "用量",
+      "性能",
+      "显卡",
+      "系统",
+      "历史",
+      "设置",
+      "关于"
+    ],
+    "mnavLabels": [
+      "概览",
+      "用量",
+      "性能",
+      "显卡",
+      "系统"
+    ],
+    "actionLinks": [
+      {
+        "t": "查看用量详情 →",
+        "h": 36,
+        "font": "13px",
+        "right": 1566
+      },
+      {
+        "t": "查看性能详情 →",
+        "h": 36,
+        "font": "13px",
+        "right": 1566
+      },
+      {
+        "t": "查看系统详情 →",
+        "h": 36,
+        "font": "13px",
+        "right": 1566
+      },
+      {
+        "t": "查看 GPU 详情 →",
+        "h": 36,
+        "font": "13px",
+        "right": 1566
+      },
+      {
+        "t": "查看监控历史 →",
+        "h": 36,
+        "font": "13px",
+        "right": 1566
+      }
+    ],
+    "ellipsisCheck": {
+      "serverUrl": false,
+      "model": false,
+      "hero1": false,
+      "hero2": false,
+      "tb1": false,
+      "tb2": false,
+      "tb3": false
+    },
+    "hero1Rect": {
+      "y": 281
+    },
+    "hero2Rect": {
+      "y": 281
+    }
+  },
+  "1920": {
+    "viewport": {
+      "w": 1920,
+      "h": 1080
+    },
+    "overflowX": 0,
+    "docScrollHeight": 1080,
+    "compact": false,
+    "todayHero": {
+      "w": 1454,
+      "h": 66,
+      "x": 334,
+      "y": 281,
+      "font": "14px",
+      "cols": 2,
+      "containerType": "normal"
+    },
+    "todayBreakdown": {
+      "w": 1454,
+      "h": 51,
+      "x": 334,
+      "y": 380,
+      "font": "14px",
+      "cols": 13,
+      "containerType": "normal"
+    },
+    "ovPerfGrid": {
+      "w": 1496,
+      "h": 200,
+      "x": 313,
+      "y": 513,
+      "font": "14px",
+      "cols": 4,
+      "containerType": "normal"
+    },
+    "hostGrid": {
+      "w": 1454,
+      "h": 72,
+      "x": 334,
+      "y": 794,
+      "font": "14px",
+      "cols": 5,
+      "containerType": "normal"
+    },
+    "gpuMiniGrid": {
+      "w": 1496,
+      "h": 171,
+      "x": 313,
+      "y": 947,
+      "font": "14px",
+      "cols": 4,
+      "containerType": "normal"
+    },
+    "gpuMiniCards": [
+      {
+        "w": 340,
+        "h": 171,
+        "x": 313,
+        "y": 947
+      },
+      {
+        "w": 340,
+        "h": 171,
+        "x": 669,
+        "y": 947
+      }
+    ],
+    "dqGrid": {
+      "w": 1454,
+      "h": 64,
+      "x": 334,
+      "y": 1198,
+      "font": "14px",
+      "cols": 7,
+      "containerType": "normal"
+    },
+    "statusStrip": {
+      "w": 1496,
+      "h": 99,
+      "x": 313,
+      "y": 101,
+      "font": "14px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "remoteBanner": {
+      "w": 0,
+      "h": 0,
+      "x": 0,
+      "y": 0,
+      "font": "13px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "sidebar": {
+      "w": 212,
+      "h": 1080,
+      "x": 0,
+      "y": 0,
+      "font": "14px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "mobileNav": {
+      "w": 0,
+      "h": 0,
+      "x": 0,
+      "y": 0,
+      "font": "14px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "heroNums": [
+      {
+        "y": 281
+      },
+      {
+        "y": 281
+      }
+    ],
+    "tbLabels": [
+      {
+        "y": 380
+      },
+      {
+        "y": 380
+      },
+      {
+        "y": 380
+      }
+    ],
+    "perfCards": [
+      {
+        "y": 513,
+        "w": 740
+      },
+      {
+        "y": 513,
+        "w": 740
+      }
+    ],
+    "hostVals": [
+      {
+        "y": 814,
+        "w": 275
+      },
+      {
+        "y": 814,
+        "w": 275
+      },
+      {
+        "y": 814,
+        "w": 275
+      },
+      {
+        "y": 814,
+        "w": 275
+      },
+      {
+        "y": 814,
+        "w": 275
+      }
+    ],
+    "hostEls": {
+      "cpu": "100%",
+      "cpuSub": "",
+      "mem": "30%",
+      "memSub": "76.1 / 255.7 GiB",
+      "diskR": "↓ 157 KB/s",
+      "diskW": "↑ 1.6 MB/s",
+      "netR": "↓ 90.7 KB/s",
+      "netW": "↑ 37.4 KB/s",
+      "power": "40 W",
+      "powerSub": "已采集：GPU（CPU Package 不可用）"
+    },
+    "dq": {
+      "cov": "98.3%",
+      "gaps": "6 个",
+      "loss": "2 个可能存在 Token 丢失",
+      "db": "健康",
+      "dbHint": "WAL 已启用"
+    },
+    "server": {
+      "url": "127.0.0.1:9091",
+      "model": "qwen3.8-27b-medium · Q4_K · Medium · 27.32B",
+      "state": "就绪",
+      "lastUpdate": "最后更新：刚刚"
+    },
+    "perf": {
+      "prompt": "--",
+      "decode": "--",
+      "mtp": "49.4%",
+      "ctx": "262.14K",
+      "req": "0 / 0",
+      "kv": "--"
+    },
+    "gpuLine": "",
+    "navLabels": [
+      "概览",
+      "用量",
+      "性能",
+      "显卡",
+      "系统",
+      "历史",
+      "设置",
+      "关于"
+    ],
+    "mnavLabels": [
+      "概览",
+      "用量",
+      "性能",
+      "显卡",
+      "系统"
+    ],
+    "actionLinks": [
+      {
+        "t": "查看用量详情 →",
+        "h": 36,
+        "font": "13px",
+        "right": 1817
+      },
+      {
+        "t": "查看性能详情 →",
+        "h": 36,
+        "font": "13px",
+        "right": 1817
+      },
+      {
+        "t": "查看系统详情 →",
+        "h": 36,
+        "font": "13px",
+        "right": 1817
+      },
+      {
+        "t": "查看 GPU 详情 →",
+        "h": 36,
+        "font": "13px",
+        "right": 1817
+      },
+      {
+        "t": "查看监控历史 →",
+        "h": 36,
+        "font": "13px",
+        "right": 1817
+      }
+    ],
+    "ellipsisCheck": {
+      "serverUrl": false,
+      "model": false,
+      "hero1": false,
+      "hero2": false,
+      "tb1": false,
+      "tb2": false,
+      "tb3": false
+    },
+    "hero1Rect": {
+      "y": 281
+    },
+    "hero2Rect": {
+      "y": 281
+    }
+  },
+  "2560": {
+    "viewport": {
+      "w": 2560,
+      "h": 1440
+    },
+    "overflowX": 0,
+    "docScrollHeight": 1440,
+    "compact": false,
+    "todayHero": {
+      "w": 1814,
+      "h": 66,
+      "x": 479,
+      "y": 281,
+      "font": "14px",
+      "cols": 2,
+      "containerType": "normal"
+    },
+    "todayBreakdown": {
+      "w": 1814,
+      "h": 51,
+      "x": 479,
+      "y": 380,
+      "font": "14px",
+      "cols": 16,
+      "containerType": "normal"
+    },
+    "ovPerfGrid": {
+      "w": 1856,
+      "h": 200,
+      "x": 458,
+      "y": 513,
+      "font": "14px",
+      "cols": 4,
+      "containerType": "normal"
+    },
+    "hostGrid": {
+      "w": 1814,
+      "h": 72,
+      "x": 479,
+      "y": 794,
+      "font": "14px",
+      "cols": 5,
+      "containerType": "normal"
+    },
+    "gpuMiniGrid": {
+      "w": 1856,
+      "h": 171,
+      "x": 458,
+      "y": 947,
+      "font": "14px",
+      "cols": 5,
+      "containerType": "normal"
+    },
+    "gpuMiniCards": [
+      {
+        "w": 340,
+        "h": 171,
+        "x": 458,
+        "y": 947
+      },
+      {
+        "w": 340,
+        "h": 171,
+        "x": 814,
+        "y": 947
+      }
+    ],
+    "dqGrid": {
+      "w": 1814,
+      "h": 64,
+      "x": 479,
+      "y": 1198,
+      "font": "14px",
+      "cols": 9,
+      "containerType": "normal"
+    },
+    "statusStrip": {
+      "w": 1856,
+      "h": 99,
+      "x": 458,
+      "y": 101,
+      "font": "14px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "remoteBanner": {
+      "w": 0,
+      "h": 0,
+      "x": 0,
+      "y": 0,
+      "font": "13px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "sidebar": {
+      "w": 212,
+      "h": 1440,
+      "x": 0,
+      "y": 0,
+      "font": "14px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "mobileNav": {
+      "w": 0,
+      "h": 0,
+      "x": 0,
+      "y": 0,
+      "font": "14px",
+      "cols": 1,
+      "containerType": "normal"
+    },
+    "heroNums": [
+      {
+        "y": 281
+      },
+      {
+        "y": 281
+      }
+    ],
+    "tbLabels": [
+      {
+        "y": 380
+      },
+      {
+        "y": 380
+      },
+      {
+        "y": 380
+      }
+    ],
+    "perfCards": [
+      {
+        "y": 513,
+        "w": 920
+      },
+      {
+        "y": 513,
+        "w": 920
+      }
+    ],
+    "hostVals": [
+      {
+        "y": 814,
+        "w": 347
+      },
+      {
+        "y": 814,
+        "w": 347
+      },
+      {
+        "y": 814,
+        "w": 347
+      },
+      {
+        "y": 814,
+        "w": 347
+      },
+      {
+        "y": 814,
+        "w": 347
+      }
+    ],
+    "hostEls": {
+      "cpu": "100%",
+      "cpuSub": "",
+      "mem": "30%",
+      "memSub": "76.1 / 255.7 GiB",
+      "diskR": "↓ 7.7 KB/s",
+      "diskW": "↑ 333 KB/s",
+      "netR": "↓ 93.4 KB/s",
+      "netW": "↑ 24.8 KB/s",
+      "power": "40 W",
+      "powerSub": "已采集：GPU（CPU Package 不可用）"
+    },
+    "dq": {
+      "cov": "98.3%",
+      "gaps": "6 个",
+      "loss": "2 个可能存在 Token 丢失",
+      "db": "健康",
+      "dbHint": "WAL 已启用"
+    },
+    "server": {
+      "url": "127.0.0.1:9091",
+      "model": "qwen3.8-27b-medium · Q4_K · Medium · 27.32B",
+      "state": "就绪",
+      "lastUpdate": "最后更新：刚刚"
+    },
+    "perf": {
+      "prompt": "--",
+      "decode": "--",
+      "mtp": "49.4%",
+      "ctx": "262.14K",
+      "req": "0 / 0",
+      "kv": "--"
+    },
+    "gpuLine": "",
+    "navLabels": [
+      "概览",
+      "用量",
+      "性能",
+      "显卡",
+      "系统",
+      "历史",
+      "设置",
+      "关于"
+    ],
+    "mnavLabels": [
+      "概览",
+      "用量",
+      "性能",
+      "显卡",
+      "系统"
+    ],
+    "actionLinks": [
+      {
+        "t": "查看用量详情 →",
+        "h": 36,
+        "font": "13px",
+        "right": 2322
+      },
+      {
+        "t": "查看性能详情 →",
+        "h": 36,
+        "font": "13px",
+        "right": 2322
+      },
+      {
+        "t": "查看系统详情 →",
+        "h": 36,
+        "font": "13px",
+        "right": 2322
+      },
+      {
+        "t": "查看 GPU 详情 →",
+        "h": 36,
+        "font": "13px",
+        "right": 2322
+      },
+      {
+        "t": "查看监控历史 →",
+        "h": 36,
+        "font": "13px",
+        "right": 2322
+      }
+    ],
+    "ellipsisCheck": {
+      "serverUrl": false,
+      "model": false,
+      "hero1": false,
+      "hero2": false,
+      "tb1": false,
+      "tb2": false,
+      "tb3": false
+    },
+    "hero1Rect": {
+      "y": 281
+    },
+    "hero2Rect": {
+      "y": 281
+    }
+  }
+}

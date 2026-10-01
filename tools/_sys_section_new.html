@@ -1,0 +1,271 @@
+      <section class="page" id="page-system">
+        <div class="page-header">
+          <div class="ph-head">
+            <h1 class="page-title">系统</h1>
+            <p class="page-subtitle">
+              监测 CPU、内存、存储、网络、功耗与硬件传感器。
+              <span id="systemPageState" class="status-badge paused" style="margin-left:var(--spacing-sm)"><span class="dot"></span><span class="status-text">--</span></span>
+            </p>
+          </div>
+          <div class="ph-actions"><div class="seg" id="systemRange" role="group" aria-label="系统历史范围"></div></div>
+        </div>
+
+        <!-- A. 系统概览（6 项；§22-§33；CPU 频率移除，移到 CPU 区） -->
+        <div class="section">
+          <div class="section-header">
+            <span class="sh-title">系统概览</span>
+          </div>
+          <div class="section-body">
+            <div class="card">
+              <div class="stat-grid sys-overview-grid">
+                <div class="stat">
+                  <div class="stat-label">CPU 利用率</div>
+                  <div class="stat-value mid" id="sysCpuUsage">--</div>
+                  <div class="stat-sub dim" id="sysCpuUsageSub"></div>
+                </div>
+                <div class="stat">
+                  <div class="stat-label">内存使用率</div>
+                  <div class="stat-value mid" id="sysMemUsage">--</div>
+                  <div class="stat-sub dim" id="sysMemDetail"></div>
+                </div>
+                <div class="stat">
+                  <div class="stat-label">磁盘 I/O <span class="info-tip-slot" data-tip="↓ 读取 / ↑ 写入。物理磁盘 I/O 速率（counter delta / 时间）。"></span></div>
+                  <div class="stat-value mid host-dual"><span class="hv" id="sysDiskR">↓ --</span><span class="hv" id="sysDiskW">↑ --</span></div>
+                </div>
+                <div class="stat">
+                  <div class="stat-label">网络吞吐 <span class="info-tip-slot" data-tip="↓ 接收 / ↑ 发送。当前监测接口的速率；接口可在「网络」区切换。"></span></div>
+                  <div class="stat-value mid host-dual"><span class="hv" id="sysNetR">↓ --</span><span class="hv" id="sysNetW">↑ --</span></div>
+                </div>
+                <div class="stat">
+                  <div class="stat-label">监测组件功耗 <span class="info-tip-slot" data-tip="当前可读取功耗传感器的组件之和（CPU Package + GPU），不代表整机输入功耗。"></span></div>
+                  <div class="stat-value mid" id="sysCompPower">--</div>
+                  <div class="stat-sub dim" id="sysCompPowerSub"></div>
+                </div>
+                <div class="stat">
+                  <div class="stat-label">系统运行时间</div>
+                  <div class="stat-value mid" id="sysUptime">--</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- C. CPU -->
+        <div class="section">
+          <div class="section-header">
+            <span class="sh-title">CPU</span>
+            <span class="sh-actions"><span class="sh-sub" id="sysCpuSummary"></span></span>
+          </div>
+          <div class="section-body">
+            <div class="card" style="margin-bottom:var(--spacing-md)">
+              <div class="stat-grid sys-cpu-summary">
+                <div class="stat">
+                  <div class="stat-label">当前利用率</div>
+                  <div class="stat-value small" id="sysCpuPct">--</div>
+                </div>
+                <div class="stat">
+                  <div class="stat-label">当前频率 <span class="info-tip-slot" data-tip="实时采样频率（psutil.cpu_freq.current）。与「基准频率」不同——基准是型号标称值。"></span></div>
+                  <div class="stat-value small" id="sysCpuFreq">--</div>
+                  <div class="stat-sub dim" id="sysCpuFreqBase"></div>
+                </div>
+                <div class="stat">
+                  <div class="stat-label">Package 温度 <span class="info-tip-slot" data-tip="来自高级硬件传感器（LibreHardwareMonitor）；不可用时隐藏该项。"></span></div>
+                  <div class="stat-value small" id="sysCpuTemp">--</div>
+                </div>
+                <div class="stat">
+                  <div class="stat-label">Package 功耗 <span class="info-tip-slot" data-tip="CPU Package 功耗（高级传感器）；不可用时隐藏该项。"></span></div>
+                  <div class="stat-value small" id="sysCpuPower">--</div>
+                </div>
+              </div>
+            </div>
+            <div class="card chart-box" id="chartSysCpuBox">
+              <div class="card-title">CPU 利用率 <span class="card-sub" id="sysCpuChartSummary"></span></div>
+              <div class="chart" id="chartSysCpu" data-chart="chartSysCpu"></div>
+              <div class="chart-empty-overlay"></div>
+            </div>
+            <div class="card" style="margin-top:var(--spacing-md)">
+              <details class="core-heat long-fold" id="coreHeatFold" data-auto-fold data-mobile-fold>
+                <summary>逻辑处理器利用率<span class="core-heat-sub" id="coreHeatSub"></span></summary>
+                <div class="core-heat-body" id="sysCoreHeat" style="margin-top:var(--spacing-sm)"></div>
+              </details>
+            </div>
+          </div>
+        </div>
+
+        <!-- D. 内存 -->
+        <div class="section">
+          <div class="section-header">
+            <span class="sh-title">内存</span>
+            <span class="sh-actions"><span class="sh-sub" id="sysMemSummary"></span></span>
+          </div>
+          <div class="section-body">
+            <div class="card" style="margin-bottom:var(--spacing-md)">
+              <div class="stat-grid sys-mem-summary">
+                <div class="stat">
+                  <div class="stat-label">使用率</div>
+                  <div class="stat-value mid" id="sysMemPct">--</div>
+                </div>
+                <div class="stat">
+                  <div class="stat-label">已用</div>
+                  <div class="stat-value mid" id="sysMemUsed">--</div>
+                </div>
+                <div class="stat">
+                  <div class="stat-label">可用 <span class="info-tip-slot" data-tip="Windows Available（可用，含可快速释放的缓存），比 Free 更能代表用户可用量。"></span></div>
+                  <div class="stat-value mid" id="sysMemAvail">--</div>
+                </div>
+                <div class="stat">
+                  <div class="stat-label">总计</div>
+                  <div class="stat-value mid" id="sysMemTotal">--</div>
+                </div>
+              </div>
+            </div>
+            <div class="card chart-box" id="chartSysMemBox">
+              <div class="card-title">内存使用趋势 <span class="card-sub" id="sysMemChartSummary"></span></div>
+              <div class="chart" id="chartSysMem" data-chart="chartSysMem"></div>
+              <div class="chart-empty-overlay"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- E. 存储 -->
+        <div class="section">
+          <div class="section-header">
+            <span class="sh-title">存储</span>
+          </div>
+          <div class="section-body">
+            <div class="card chart-box" id="chartSysDiskBox">
+              <div class="card-title">磁盘 I/O</div>
+              <div class="chart" id="chartSysDisk" data-chart="chartSysDisk"></div>
+              <div class="chart-empty-overlay"></div>
+            </div>
+            <div class="card" style="margin-top:var(--spacing-md)">
+              <div class="card-title">卷容量</div>
+              <div class="disk-list" id="sysDiskList" style="margin-top:var(--spacing-sm)"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- F. 网络 -->
+        <div class="section">
+          <div class="section-header">
+            <span class="sh-title">网络</span>
+            <span class="sh-actions">
+              <span class="sh-sub" id="sysNetSub">接口：<span id="sysNetIfaceName">--</span></span>
+              <select id="sysNetIface" class="select small" aria-label="网络接口选择" title="选择监测的网络接口（默认=拥有默认路由的主接口）">
+                <option value="auto">自动</option>
+              </select>
+            </span>
+          </div>
+          <div class="section-body">
+            <div class="card" style="margin-bottom:var(--spacing-md)">
+              <div class="stat-grid sys-net-summary">
+                <div class="stat">
+                  <div class="stat-label">接收</div>
+                  <div class="stat-value mid" id="sysNetRx">--</div>
+                </div>
+                <div class="stat">
+                  <div class="stat-label">发送</div>
+                  <div class="stat-value mid" id="sysNetTx">--</div>
+                </div>
+                <div class="stat">
+                  <div class="stat-label">接口</div>
+                  <div class="stat-value mid" id="sysNetIfaceCard">--</div>
+                  <div class="stat-sub dim" id="sysNetIfaceKind"></div>
+                </div>
+                <div class="stat">
+                  <div class="stat-label">链路速度</div>
+                  <div class="stat-value mid" id="sysNetSpeed">--</div>
+                </div>
+              </div>
+            </div>
+            <div class="card chart-box" id="chartSysNetBox">
+              <div class="card-title">网络流量 <span class="card-sub" id="sysNetChartNote"></span></div>
+              <div class="chart" id="chartSysNet" data-chart="chartSysNet"></div>
+              <div class="chart-empty-overlay"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- G. 功耗与能耗 -->
+        <div class="section">
+          <div class="section-header">
+            <span class="sh-title">功耗与能耗</span>
+            <span class="sh-actions"><span class="sh-sub">组件功耗合计 = 所有可读取组件之和，非整机输入功耗。</span></span>
+          </div>
+          <div class="section-body">
+            <div class="card" style="margin-bottom:var(--spacing-md)">
+              <div class="stat-grid sys-power-grid">
+                <div class="stat">
+                  <div class="stat-label">监测组件功耗 <span class="info-tip-slot" data-tip="当前可读取（非缺失）组件功耗之和；缺失组件不参与求和。总值不代表整机输入功耗。"></span></div>
+                  <div class="stat-value mid" id="sysPowerComp">--</div>
+                  <div class="stat-sub dim" id="sysPowerCompSub"></div>
+                </div>
+                <div class="stat">
+                  <div class="stat-label">CPU Package <span class="info-tip-slot" data-tip="多路 CPU 时为各 Package 合计。"></span></div>
+                  <div class="stat-value mid" id="sysPowerCpu">--</div>
+                </div>
+                <div class="stat">
+                  <div class="stat-label">GPU 合计</div>
+                  <div class="stat-value mid" id="sysPowerGpu">--</div>
+                </div>
+                <div class="stat">
+                  <div class="stat-label">整机输入功耗 <span class="info-tip-slot" data-tip="需外部功率计、UPS、智能插座或可提供整机功耗的 BMC；无测量源时显示「未配置」，不做估算。"></span></div>
+                  <div class="stat-value mid" id="sysWallPower">未配置</div>
+                  <div class="stat-sub dim" id="sysWallPowerSub">需外部功率计 / UPS / 智能插座 / BMC</div>
+                </div>
+                <div class="stat">
+                  <div class="stat-label">今日监测组件能耗（估算） <span class="info-tip-slot" data-tip="对可读取组件的功耗采样做梯形积分估算；不代表整机交流输入能耗。缺失段不积分（不按 0W 计）。"></span></div>
+                  <div class="stat-value mid" id="sysEnergyToday">--</div>
+                </div>
+              </div>
+            </div>
+            <div class="card chart-box" id="chartSysPowerBox">
+              <div class="card-title">监测组件功耗趋势</div>
+              <div class="chart" id="chartSysPower" data-chart="chartSysPower"></div>
+              <div class="chart-empty-overlay"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- H. 硬件传感器 -->
+        <div class="section">
+          <div class="section-header">
+            <span class="sh-title">硬件传感器 <span class="sh-sub" id="sensorProviderHint" title="传感器数据来源">· 数据来源：LibreHardwareMonitor</span></span>
+            <span class="sh-actions">
+              <span id="sensorState" class="status-badge paused"><span class="dot"></span><span class="status-text">--</span></span>
+            </span>
+          </div>
+          <div class="section-body">
+            <div class="card">
+              <div id="sysSensors"></div>
+              <details class="long-fold" id="sensorFold" data-auto-fold>
+                <summary>查看全部传感器</summary>
+                <div class="sensor-list" id="sysSensorList" style="margin-top:var(--spacing-sm)"></div>
+              </details>
+            </div>
+          </div>
+        </div>
+
+        <!-- I. 硬件信息 -->
+        <div class="section">
+          <div class="section-header">
+            <span class="sh-title">硬件信息</span>
+            <span class="sh-actions"><button class="btn small subtle" id="btnRefreshInventory">刷新硬件信息</button></span>
+          </div>
+          <div class="section-body">
+            <div class="card">
+              <div class="kv-grid" id="hwGrid">
+                <div class="kv-item"><span class="k">操作系统</span><span class="v" id="hwOs">--</span><span class="v-sub" id="hwOsBuild"></span></div>
+                <div class="kv-item"><span class="k">架构</span><span class="v" id="hwArch">--</span></div>
+                <div class="kv-item"><span class="k">主机名</span><span class="v" id="hwHost">--</span></div>
+                <div class="kv-item"><span class="k">CPU</span><span class="v" id="hwCpu">--</span><span class="v-sub" id="hwCpuFreq"></span></div>
+                <div class="kv-item"><span class="k">CPU 插槽</span><span class="v" id="hwSockets">--</span></div>
+                <div class="kv-item"><span class="k">核心 / 线程</span><span class="v" id="hwCores">--</span></div>
+                <div class="kv-item"><span class="k">已安装内存</span><span class="v" id="hwRam">--</span></div>
+                <div class="kv-item"><span class="k">主板</span><span class="v" id="hwMotherboard">--</span></div>
+                <div class="kv-item"><span class="k">BIOS</span><span class="v" id="hwBios">--</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>

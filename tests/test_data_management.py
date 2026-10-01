@@ -203,6 +203,8 @@ class DataManagementTests(unittest.TestCase):
                 "mtp_accept_rate", "prompt_seconds", "predicted_seconds",
                 # Phase 11：数据质量字段
                 "monitoring_coverage_percent", "gap_count", "possible_token_loss",
+                # 1.1.2：缓存复用率（= 缓存复用 / (Prompt + 缓存复用) * 100）
+                "reuse_rate_percent",
             ])
             self.assertEqual(len(rows), 2)  # 表头 + 当天 1 行
             row = rows[1]
@@ -222,6 +224,8 @@ class DataManagementTests(unittest.TestCase):
             self.assertEqual(float(row[11]), 100.0)
             self.assertEqual(row[12], "0")
             self.assertEqual(row[13], "no")
+            # 1.1.2 缓存复用率列：30/(50+30)*100 = 37.5
+            self.assertAlmostEqual(float(row[14]), 37.5)
         finally:
             client.__exit__(None, None, None)
 

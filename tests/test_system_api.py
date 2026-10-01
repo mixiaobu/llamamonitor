@@ -3,7 +3,7 @@
 
 覆盖（spec 绑定约束）：
 1. /api/system/status：null = 不可用（前端 --），**绝不** None->0；
-   wall_power_w 恒为 null；monitored_components_w = CPU Package + GPU（缺失则 null）。
+   wall_power_w 恒为 null；monitored_components_w = 所有**非 null** 组件功耗之和（缺失组件不参与求和；全缺失 -> null；1.1.4 精修 §28/§29）。
 2. /api/system/live?minutes：1..1440（越界 -> 422）；采样点透传 null。
 3. /api/system/daily?days：avg = sum/count（count=0 -> null，不拿 0 冒充）。
 4. /api/system/inventory：静态库存 + manual 刷新。
@@ -103,10 +103,11 @@ class SystemApiTests(unittest.TestCase):
         self.assertIsNone(data["cpu"]["temperature_c"])
         self.assertIsNone(data["disk"]["read_bps"])
         self.assertIsNone(data["network"]["rx_bps"])
-        # power：CPU package 有值、GPU 缺失 -> 组件合计 null
+        # power：CPU package 有值、GPU 缺失 -> 组件合计 = 非 null 组件之和 = 90
+        # （1.1.4 精修 §28：缺失组件不参与求和，不把真实值变 null）
         self.assertEqual(data["power"]["cpu_package_w"], 90.0)
         self.assertIsNone(data["power"]["gpu_total_w"])
-        self.assertIsNone(data["power"]["monitored_components_w"])
+        self.assertEqual(data["power"]["monitored_components_w"], 90.0)
         # wall_power_w 恒 null
         self.assertIsNone(data["power"]["wall_power_w"])
         # memory 有值
@@ -118,6 +119,84 @@ class SystemApiTests(unittest.TestCase):
         data = self._client.get("/api/system/status").json()
         self.assertEqual(data["power"]["monitored_components_w"], 240.0)
         self.assertEqual(data["power"]["gpu_total_w"], 150.0)
+
+    def test_status_round3_new_fields(self):
+        """Round-3：cpu.base_frequency_mhz / memory.available_bytes / network.interface+adapters /
+        power.components_present+cpu_package_available+gpu_available 字段存在且语义正确。"""
+        # base freq：latest 样本字段（server 读 latest.cpu_base_frequency_mhz）
+        self._system.latest.cpu_base_frequency_mhz = 2700.0
+        # network：默认接口 + per-adapter 速率
+        self._system.latest.network_interface = "WLAN"
+        self._system._net_adapters = {"WLAN": {"rx_bps": 1000.0, "tx_bps": 100.0},
+                                      "WireGuard 000005": {"rx_bps": None, "tx_bps": None}}
+        self._system._DEFAULT_IF_NAME = "WLAN"
+        self._system.network_interfaces = lambda: [
+            {"name": "WLAN", "kind": "Wi-Fi", "is_default": True, "is_virtual": False,
+             "speed_mbps": 1200, "errin": 0, "errout": 0, "dropin": 0, "dropout": 0},
+            {"name": "WireGuard 000005", "kind": "虚拟/VPN", "is_default": False, "is_virtual": True,
+             "speed_mbps": None, "errin": 0, "errout": 0, "dropin": 3, "dropout": 0},
+        ]
+        data = self._client.get("/api/system/status").json()
+        # base freq
+        self.assertEqual(data["cpu"]["base_frequency_mhz"], 2700.0)
+        # memory.available_bytes = total - used = 32G - 8G = 24G
+        self.assertEqual(data["memory"]["available_bytes"], 24 * 1024 ** 3)
+        # network
+        self.assertEqual(data["network"]["interface"], "WLAN")
+        self.assertIn("adapters", data["network"])
+        self.assertEqual(data["network"]["adapters"]["WLAN"]["rx_bps"], 1000.0)
+        self.assertEqual(data["network"]["adapters"]["WireGuard 000005"]["is_virtual"], True)
+        self.assertEqual(data["network"]["adapters"]["WireGuard 000005"]["dropin"], 3)
+        # power partial-sum presence flags
+        self.assertEqual(data["power"]["components_present"], 1)  # 只有 CPU package 可读
+        self.assertTrue(data["power"]["cpu_package_available"])
+        self.assertFalse(data["power"]["gpu_available"])
+
+    def test_network_interfaces_endpoint(self):
+        self._system._DEFAULT_IF_NAME = "WLAN"
+        self._system.network_interfaces = lambda: [
+            {"name": "WLAN", "kind": "Wi-Fi", "is_default": True, "is_virtual": False,
+             "speed_mbps": 1200, "errin": 0, "errout": 0, "dropin": 0, "dropout": 0},
+            {"name": "WireGuard 000005", "kind": "虚拟/VPN", "is_default": False, "is_virtual": True,
+             "speed_mbps": None, "errin": 0, "errout": 0, "dropin": 0, "dropout": 0},
+        ]
+        data = self._client.get("/api/system/network-interfaces").json()
+        self.assertTrue(data["available"])
+        self.assertEqual(data["default_interface"], "WLAN")
+        names = [i["name"] for i in data["interfaces"]]
+        self.assertIn("WLAN", names)
+        self.assertIn("WireGuard 000005", names)
+        wlan = next(i for i in data["interfaces"] if i["name"] == "WLAN")
+        self.assertTrue(wlan["is_default"])
+        self.assertFalse(wlan["is_virtual"])
+        wg = next(i for i in data["interfaces"] if i["name"] == "WireGuard 000005")
+        self.assertTrue(wg["is_virtual"])
+
+    def test_live_summary_and_memory_bytes(self):
+        """Round-3：/api/system/live 返回 summary（当前/平均/峰值）+ points 含 memory bytes。"""
+        row = self._system.latest.to_row()
+        row["timestamp"] = time.time()
+        self._save_sample(row, {"cpu_energy_wh": 0.01})
+        data = self._client.get("/api/system/live", params={"minutes": 60}).json()
+        self.assertIn("summary", data)
+        # cpu summary：仅一条样本 42.0 -> current=avg=max=42.0
+        self.assertEqual(data["summary"]["cpu"]["current"], 42.0)
+        self.assertEqual(data["summary"]["cpu"]["max"], 42.0)
+        self.assertEqual(data["summary"]["memory"]["current"], 25.0)
+        # points 含 memory bytes（内存趋势 tooltip 用）
+        pt = data["points"][-1]
+        self.assertIn("memory_used_bytes", pt)
+        self.assertEqual(pt["memory_used_bytes"], 8 * 1024 ** 3)
+        self.assertIn("memory_total_bytes", pt)
+
+    def test_live_max_points_bounds(self):
+        # max_points 越界 -> 422；合法值 200
+        self.assertEqual(self._client.get("/api/system/live",
+                         params={"minutes": 60, "max_points": 10}).status_code, 422)
+        self.assertEqual(self._client.get("/api/system/live",
+                         params={"minutes": 60, "max_points": 3001}).status_code, 422)
+        self.assertEqual(self._client.get("/api/system/live",
+                         params={"minutes": 60, "max_points": 200}).status_code, 200)
 
     def test_live_returns_points_and_null_passthrough(self):
         # 写入一条**真实 now** 附近的采样（live 查询窗口以真实 time.time() 为基准；

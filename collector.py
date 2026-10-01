@@ -776,6 +776,10 @@ class MetricsCollector:
             # Phase 9：KV Cache 使用率 / 忙碌槽位（服务器无该指标时 NULL）
             "kv_cache_usage_ratio": get_metric_value(parsed, "llamacpp:kv_cache_usage_ratio"),
             "busy_slots": get_metric_value(parsed, "llamacpp:n_busy_slots_per_decode"),
+            # Round 5：本轮 prompt/predicted 秒数 delta（窗口加权平均吞吐用；
+            # 分母 <=0 / 缺失时为 None，与 prompt_tps/decode_tps 同口径）
+            "prompt_seconds": deltas["prompt_seconds"],
+            "predicted_seconds": deltas["predicted_seconds"],
         }
 
         # daily 累加增量（缺失字段按 0 计）

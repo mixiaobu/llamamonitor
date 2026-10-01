@@ -1,0 +1,949 @@
+C:\Users\mixiaobu\Desktop\ai\LlamaMonitor\.venv-final\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+..........llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+....未处理异常 /api/_test_bang: RuntimeError('boom-500-contract')
+Traceback (most recent call last):
+  File "C:\Users\mixiaobu\Desktop\ai\LlamaMonitor\.venv-final\Lib\site-packages\starlette\middleware\errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "C:\Users\mixiaobu\Desktop\ai\LlamaMonitor\.venv-final\Lib\site-packages\starlette\middleware\base.py", line 197, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\mixiaobu\Desktop\ai\LlamaMonitor\server.py", line 842, in _static_no_cache
+    response = await call_next(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\mixiaobu\Desktop\ai\LlamaMonitor\.venv-final\Lib\site-packages\starlette\middleware\base.py", line 173, in call_next
+    raise app_exc from app_exc.__cause__ or app_exc.__context__
+  File "C:\Users\mixiaobu\Desktop\ai\LlamaMonitor\.venv-final\Lib\site-packages\starlette\middleware\base.py", line 149, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\mixiaobu\Desktop\ai\LlamaMonitor\.venv-final\Lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "C:\Users\mixiaobu\Desktop\ai\LlamaMonitor\.venv-final\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "C:\Users\mixiaobu\Desktop\ai\LlamaMonitor\.venv-final\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\mixiaobu\Desktop\ai\LlamaMonitor\.venv-final\Lib\site-packages\fastapi\middleware\asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Users\mixiaobu\Desktop\ai\LlamaMonitor\.venv-final\Lib\site-packages\starlette\routing.py", line 676, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "C:\Users\mixiaobu\Desktop\ai\LlamaMonitor\.venv-final\Lib\site-packages\fastapi\routing.py", line 2734, in app
+    await route.handle(scope, receive, send)
+  File "C:\Users\mixiaobu\Desktop\ai\LlamaMonitor\.venv-final\Lib\site-packages\fastapi\routing.py", line 1281, in handle
+    await super().handle(scope, receive, send)
+  File "C:\Users\mixiaobu\Desktop\ai\LlamaMonitor\.venv-final\Lib\site-packages\starlette\routing.py", line 282, in handle
+    await self.app(scope, receive, send)
+  File "C:\Users\mixiaobu\Desktop\ai\LlamaMonitor\.venv-final\Lib\site-packages\fastapi\routing.py", line 158, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "C:\Users\mixiaobu\Desktop\ai\LlamaMonitor\.venv-final\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "C:\Users\mixiaobu\Desktop\ai\LlamaMonitor\.venv-final\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\mixiaobu\Desktop\ai\LlamaMonitor\.venv-final\Lib\site-packages\fastapi\routing.py", line 144, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "C:\Users\mixiaobu\Desktop\ai\LlamaMonitor\.venv-final\Lib\site-packages\fastapi\routing.py", line 706, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "C:\Users\mixiaobu\Desktop\ai\LlamaMonitor\.venv-final\Lib\site-packages\fastapi\routing.py", line 352, in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\mixiaobu\Desktop\ai\LlamaMonitor\tests\test_api.py", line 128, in _bang
+    raise RuntimeError("boom-500-contract")
+RuntimeError: boom-500-contract
+..............备份 auto_monitor_20261001_013155_1.db 验证（quick_check）失败，已删除新备份、保留旧备份
+.............................采集循环单轮异常（已恢复，继续下一轮）: ValueError('stdout closed')
+Traceback (most recent call last):
+  File "C:\Users\mixiaobu\Desktop\ai\LlamaMonitor\collector.py", line 837, in run
+    out(json.dumps(out_json, ensure_ascii=False, indent=2) + "\n")
+    ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\mixiaobu\Desktop\ai\LlamaMonitor\tests\test_collector_poller_loop.py", line 75, in _boom_out
+    raise ValueError("stdout closed")  # 第一轮 out 抛异常
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ValueError: stdout closed
+......配置文件 C:\Users\mixiaobu\AppData\Local\Temp\tmpdm35nw96\config.json 不是合法 JSON（第 3 行第 1 列）：以全部默认配置启动，原文件保留
+.Invalid config value collector.poll_interval_seconds=-20, fallback to 5.0
+.Invalid config value web.port='abc', fallback to 8765
+.Invalid config value ui.theme='blue', fallback to 'system'
+.配置文件 C:\Users\mixiaobu\AppData\Local\Temp\tmpzfkgddwe\config.json 根节点不是 JSON 对象：以全部默认配置启动，原文件保留
+......Invalid config value system.poll_interval_seconds=0.1, fallback to 2.0
+Invalid config value system.history_retention_hours=99999, fallback to 48.0
+..Unknown config key: future_feature
+Unknown config key: web.future
+...Invalid --url 'not-a-url', keeping http://127.0.0.1:9
+Invalid --interval 0.5 (range 1~3600), keeping 3600.0
+.....2026-10-01 01:32:19,756 INFO llamamonitor: hello-phase7
+C:\Users\mixiaobu\Desktop\ai\LlamaMonitor\config.py:819: ResourceWarning: unclosed file <_io.TextIOWrapper name='C:\\Users\\mixiaobu\\AppData\\Local\\Temp\\tmp65o00geo\\LlamaMonitor\\logs\\monitor.log' mode='a' encoding='utf-8'>
+  root.handlers = [h for h in root.handlers if not getattr(h, "_llamamonitor", False)]
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+.C:\Users\mixiaobu\Desktop\ai\LlamaMonitor\config.py:819: ResourceWarning: unclosed file <_io.TextIOWrapper name='C:\\Users\\mixiaobu\\AppData\\Local\\Temp\\tmprpj_l0fr\\LlamaMonitor\\logs\\monitor.log' mode='a' encoding='utf-8'>
+  root.handlers = [h for h in root.handlers if not getattr(h, "_llamamonitor", False)]
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+.C:\Users\mixiaobu\Desktop\ai\LlamaMonitor\config.py:819: ResourceWarning: unclosed file <_io.TextIOWrapper name='C:\\Users\\mixiaobu\\AppData\\Local\\Temp\\tmpld8qz8td\\LlamaMonitor\\logs\\monitor.log' mode='a' encoding='utf-8'>
+  root.handlers = [h for h in root.handlers if not getattr(h, "_llamamonitor", False)]
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+...................写入事件 database_integrity_error 失败（不影响采集）: DatabaseError('database disk image is malformed')
+写入事件 monitor_stop 失败（不影响采集）: DatabaseError('database disk image is malformed')
+...检测到系统暂停/睡眠（monotonic 间隔 30s > 阈值 15s），已记缺口
+.llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+..................2026-10-01 01:33:06,498 INFO llamamonitor: [LlamaMonitor] 启动: background=True frozen=False metrics=http://127.0.0.1:61084/metrics interval=3600.0s
+2026-10-01 01:33:07,480 INFO llamamonitor: [LlamaMonitor] 正在启动 FastAPI（首次采集中）... metrics=http://127.0.0.1:61084/metrics interval=3600.0s
+2026-10-01 01:33:07,485 INFO uvicorn.error: Started server process [59888]
+2026-10-01 01:33:07,488 INFO uvicorn.error: Waiting for application startup.
+2026-10-01 01:33:07,626 INFO llamamonitor.db: Schema migration 1 -> 2 完成
+2026-10-01 01:33:07,708 INFO llamamonitor.db: Schema migration 2 -> 3 完成
+2026-10-01 01:33:07,743 INFO llamamonitor.db: Schema migration 3 -> 4 完成
+2026-10-01 01:33:07,898 INFO llamamonitor.db: Schema migration 4 -> 5 完成
+2026-10-01 01:33:07,939 INFO llamamonitor.db: Schema migration 5 -> 6 完成
+2026-10-01 01:33:07,949 INFO llamamonitor.db: Database journal mode: wal
+2026-10-01 01:33:07,952 INFO llamamonitor.server: 数据库 quick_check 通过（schema vwal）
+2026-10-01 01:33:18,852 INFO llamamonitor.hwsensors: 启动时清理孤儿 HardwareSensorBridge 进程 pid=70480
+C:\Users\mixiaobu\AppData\Local\Programs\Python\Python313\Lib\subprocess.py:1023: RuntimeWarning: line buffering (buffering=1) isn't supported in binary mode, the default buffer size will be used
+  self.stdin = io.open(p2cwrite, 'wb', bufsize)
+C:\Users\mixiaobu\AppData\Local\Programs\Python\Python313\Lib\subprocess.py:1029: RuntimeWarning: line buffering (buffering=1) isn't supported in binary mode, the default buffer size will be used
+  self.stdout = io.open(c2pread, 'rb', bufsize)
+C:\Users\mixiaobu\AppData\Local\Programs\Python\Python313\Lib\subprocess.py:1034: RuntimeWarning: line buffering (buffering=1) isn't supported in binary mode, the default buffer size will be used
+  self.stderr = io.open(errread, 'rb', bufsize)
+2026-10-01 01:33:19,476 INFO uvicorn.error: Application startup complete.
+2026-10-01 01:33:19,483 INFO uvicorn.error: Uvicorn running on http://127.0.0.1:61088 (Press CTRL+C to quit)
+2026-10-01 01:33:19,496 INFO llamamonitor: [LlamaMonitor] API 就绪。
+2026-10-01 01:33:20,116 INFO llamamonitor: [LlamaMonitor] 开始优雅关闭（tray/API exit）
+2026-10-01 01:33:20,137 INFO uvicorn.error: Shutting down
+2026-10-01 01:33:20,245 INFO uvicorn.error: Waiting for application shutdown.
+C:\Users\mixiaobu\Desktop\ai\LlamaMonitor\server.py:819: ResourceWarning: unclosed file <_io.BufferedReader name=7>
+  sensors.stop()  # 优雅终止 Bridge（关 stdin -> 宽限 -> Terminate）
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+C:\Users\mixiaobu\Desktop\ai\LlamaMonitor\server.py:819: ResourceWarning: unclosed file <_io.BufferedReader name=8>
+  sensors.stop()  # 优雅终止 Bridge（关 stdin -> 宽限 -> Terminate）
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+2026-10-01 01:33:22,329 INFO uvicorn.error: Application shutdown complete.
+2026-10-01 01:33:22,329 INFO uvicorn.error: Finished server process [59888]
+2026-10-01 01:33:22,489 INFO llamamonitor: [LlamaMonitor] 已停止：Collector 已取消、SQLite 已关闭、托盘已停止、单实例已释放（2.4s）。
+2026-10-01 01:33:22,597 INFO uvicorn.error: Shutting down
+2026-10-01 01:33:22,705 INFO uvicorn.error: Waiting for application shutdown.
+2026-10-01 01:33:22,706 INFO uvicorn.error: Application shutdown complete.
+2026-10-01 01:33:22,707 INFO uvicorn.error: Finished server process [59888]
+C:\Users\mixiaobu\Desktop\ai\LlamaMonitor\config.py:819: ResourceWarning: unclosed file <_io.TextIOWrapper name='C:\\Users\\mixiaobu\\AppData\\Local\\Temp\\tmp2vzi2wym\\lad\\LlamaMonitor\\logs\\monitor.log' mode='a' encoding='utf-8'>
+  root.handlers = [h for h in root.handlers if not getattr(h, "_llamamonitor", False)]
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+.2026-10-01 01:33:23,319 INFO llamamonitor: [LlamaMonitor] 启动: background=False frozen=False metrics=http://127.0.0.1:65013/metrics interval=3600.0s
+2026-10-01 01:33:24,269 INFO llamamonitor: [LlamaMonitor] 正在启动 FastAPI（首次采集中）... metrics=http://127.0.0.1:65013/metrics interval=3600.0s
+2026-10-01 01:33:24,274 INFO uvicorn.error: Started server process [59888]
+2026-10-01 01:33:24,276 INFO uvicorn.error: Waiting for application startup.
+2026-10-01 01:33:24,417 INFO llamamonitor.db: Schema migration 1 -> 2 完成
+2026-10-01 01:33:24,499 INFO llamamonitor.db: Schema migration 2 -> 3 完成
+2026-10-01 01:33:24,530 INFO llamamonitor.db: Schema migration 3 -> 4 完成
+2026-10-01 01:33:24,696 INFO llamamonitor.db: Schema migration 4 -> 5 完成
+2026-10-01 01:33:24,736 INFO llamamonitor.db: Schema migration 5 -> 6 完成
+2026-10-01 01:33:24,746 INFO llamamonitor.db: Database journal mode: wal
+2026-10-01 01:33:24,749 INFO llamamonitor.server: 数据库 quick_check 通过（schema vwal）
+2026-10-01 01:33:35,332 INFO llamamonitor.hwsensors: 启动时清理孤儿 HardwareSensorBridge 进程 pid=26096
+C:\Users\mixiaobu\AppData\Local\Programs\Python\Python313\Lib\subprocess.py:1023: RuntimeWarning: line buffering (buffering=1) isn't supported in binary mode, the default buffer size will be used
+  self.stdin = io.open(p2cwrite, 'wb', bufsize)
+C:\Users\mixiaobu\AppData\Local\Programs\Python\Python313\Lib\subprocess.py:1029: RuntimeWarning: line buffering (buffering=1) isn't supported in binary mode, the default buffer size will be used
+  self.stdout = io.open(c2pread, 'rb', bufsize)
+C:\Users\mixiaobu\AppData\Local\Programs\Python\Python313\Lib\subprocess.py:1034: RuntimeWarning: line buffering (buffering=1) isn't supported in binary mode, the default buffer size will be used
+  self.stderr = io.open(errread, 'rb', bufsize)
+2026-10-01 01:33:36,001 INFO uvicorn.error: Application startup complete.
+2026-10-01 01:33:36,006 INFO uvicorn.error: Uvicorn running on http://127.0.0.1:59508 (Press CTRL+C to quit)
+2026-10-01 01:33:36,229 INFO llamamonitor: [LlamaMonitor] API 就绪。
+2026-10-01 01:33:36,833 INFO llamamonitor: [LlamaMonitor] 窗口已关闭 -> 隐藏到托盘（监控继续；Tray->Exit 才真正退出）
+2026-10-01 01:33:36,834 INFO llamamonitor: [LlamaMonitor] 开始优雅关闭（tray/API exit）
+2026-10-01 01:33:36,874 INFO uvicorn.error: Shutting down
+2026-10-01 01:33:36,984 INFO uvicorn.error: Waiting for application shutdown.
+C:\Users\mixiaobu\Desktop\ai\LlamaMonitor\server.py:819: ResourceWarning: unclosed file <_io.BufferedReader name=7>
+  sensors.stop()  # 优雅终止 Bridge（关 stdin -> 宽限 -> Terminate）
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+C:\Users\mixiaobu\Desktop\ai\LlamaMonitor\server.py:819: ResourceWarning: unclosed file <_io.BufferedReader name=8>
+  sensors.stop()  # 优雅终止 Bridge（关 stdin -> 宽限 -> Terminate）
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+2026-10-01 01:33:38,175 INFO uvicorn.error: Application shutdown complete.
+2026-10-01 01:33:38,176 INFO uvicorn.error: Finished server process [59888]
+2026-10-01 01:33:38,228 INFO llamamonitor: [LlamaMonitor] 已停止：Collector 已取消、SQLite 已关闭、托盘已停止、单实例已释放（1.4s）。
+2026-10-01 01:33:38,290 INFO uvicorn.error: Shutting down
+2026-10-01 01:33:38,400 INFO uvicorn.error: Waiting for application shutdown.
+2026-10-01 01:33:38,401 INFO uvicorn.error: Application shutdown complete.
+2026-10-01 01:33:38,402 INFO uvicorn.error: Finished server process [59888]
+C:\Users\mixiaobu\Desktop\ai\LlamaMonitor\config.py:819: ResourceWarning: unclosed file <_io.TextIOWrapper name='C:\\Users\\mixiaobu\\AppData\\Local\\Temp\\tmprj_nkhdh\\lad\\LlamaMonitor\\logs\\monitor.log' mode='a' encoding='utf-8'>
+  root.handlers = [h for h in root.handlers if not getattr(h, "_llamamonitor", False)]
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+.2026-10-01 01:33:39,077 INFO llamamonitor: [LlamaMonitor] 启动: background=False frozen=False metrics=http://127.0.0.1:9/metrics interval=3600.0s
+2026-10-01 01:33:40,318 WARNING llamamonitor: [LlamaMonitor] http://127.0.0.1:60572 已有 LlamaMonitor 在运行（mutex 未拦截），用默认浏览器打开。
+2026-10-01 01:33:40,547 INFO uvicorn.error: Shutting down
+2026-10-01 01:33:40,655 INFO uvicorn.error: Waiting for application shutdown.
+2026-10-01 01:33:40,667 INFO uvicorn.error: Application shutdown complete.
+2026-10-01 01:33:40,668 INFO uvicorn.error: Finished server process [59888]
+C:\Users\mixiaobu\Desktop\ai\LlamaMonitor\config.py:819: ResourceWarning: unclosed file <_io.TextIOWrapper name='C:\\Users\\mixiaobu\\AppData\\Local\\Temp\\tmpr1gu908u\\lad\\LlamaMonitor\\logs\\monitor.log' mode='a' encoding='utf-8'>
+  root.handlers = [h for h in root.handlers if not getattr(h, "_llamamonitor", False)]
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+.2026-10-01 01:33:41,286 INFO llamamonitor: [LlamaMonitor] 启动: background=False frozen=False metrics=http://127.0.0.1:60224/metrics interval=3600.0s
+2026-10-01 01:33:42,243 INFO llamamonitor: [LlamaMonitor] 正在启动 FastAPI（首次采集中）... metrics=http://127.0.0.1:60224/metrics interval=3600.0s
+2026-10-01 01:33:42,248 INFO uvicorn.error: Started server process [59888]
+2026-10-01 01:33:42,249 INFO uvicorn.error: Waiting for application startup.
+2026-10-01 01:33:42,397 INFO llamamonitor.db: Schema migration 1 -> 2 完成
+2026-10-01 01:33:42,478 INFO llamamonitor.db: Schema migration 2 -> 3 完成
+2026-10-01 01:33:42,508 INFO llamamonitor.db: Schema migration 3 -> 4 完成
+2026-10-01 01:33:42,660 INFO llamamonitor.db: Schema migration 4 -> 5 完成
+2026-10-01 01:33:42,703 INFO llamamonitor.db: Schema migration 5 -> 6 完成
+2026-10-01 01:33:42,713 INFO llamamonitor.db: Database journal mode: wal
+2026-10-01 01:33:42,717 INFO llamamonitor.server: 数据库 quick_check 通过（schema vwal）
+2026-10-01 01:33:53,215 INFO llamamonitor.hwsensors: 启动时清理孤儿 HardwareSensorBridge 进程 pid=64764
+C:\Users\mixiaobu\AppData\Local\Programs\Python\Python313\Lib\subprocess.py:1023: RuntimeWarning: line buffering (buffering=1) isn't supported in binary mode, the default buffer size will be used
+  self.stdin = io.open(p2cwrite, 'wb', bufsize)
+C:\Users\mixiaobu\AppData\Local\Programs\Python\Python313\Lib\subprocess.py:1029: RuntimeWarning: line buffering (buffering=1) isn't supported in binary mode, the default buffer size will be used
+  self.stdout = io.open(c2pread, 'rb', bufsize)
+C:\Users\mixiaobu\AppData\Local\Programs\Python\Python313\Lib\subprocess.py:1034: RuntimeWarning: line buffering (buffering=1) isn't supported in binary mode, the default buffer size will be used
+  self.stderr = io.open(errread, 'rb', bufsize)
+2026-10-01 01:33:53,967 INFO uvicorn.error: Application startup complete.
+2026-10-01 01:33:53,979 INFO uvicorn.error: Uvicorn running on http://127.0.0.1:60228 (Press CTRL+C to quit)
+2026-10-01 01:33:54,321 INFO llamamonitor: [LlamaMonitor] API 就绪。
+2026-10-01 01:33:54,923 WARNING llamamonitor: [LlamaMonitor] pywebview 不可用: RuntimeError('WebView2 runtime missing')
+2026-10-01 01:33:54,924 INFO llamamonitor: [LlamaMonitor] 回退：系统默认浏览器已打开，Tray->Exit 退出。
+2026-10-01 01:33:54,924 INFO llamamonitor: [LlamaMonitor] 开始优雅关闭（tray/API exit）
+2026-10-01 01:33:54,948 INFO uvicorn.error: Shutting down
+2026-10-01 01:33:55,058 INFO uvicorn.error: Waiting for application shutdown.
+C:\Users\mixiaobu\Desktop\ai\LlamaMonitor\server.py:819: ResourceWarning: unclosed file <_io.BufferedReader name=5>
+  sensors.stop()  # 优雅终止 Bridge（关 stdin -> 宽限 -> Terminate）
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+C:\Users\mixiaobu\Desktop\ai\LlamaMonitor\server.py:819: ResourceWarning: unclosed file <_io.BufferedReader name=7>
+  sensors.stop()  # 优雅终止 Bridge（关 stdin -> 宽限 -> Terminate）
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+2026-10-01 01:33:56,013 INFO uvicorn.error: Application shutdown complete.
+2026-10-01 01:33:56,014 INFO uvicorn.error: Finished server process [59888]
+2026-10-01 01:33:56,206 INFO llamamonitor: [LlamaMonitor] 已停止：Collector 已取消、SQLite 已关闭、托盘已停止、单实例已释放（1.3s）。
+2026-10-01 01:33:56,269 INFO uvicorn.error: Shutting down
+2026-10-01 01:33:56,377 INFO uvicorn.error: Waiting for application shutdown.
+2026-10-01 01:33:56,378 INFO uvicorn.error: Application shutdown complete.
+2026-10-01 01:33:56,379 INFO uvicorn.error: Finished server process [59888]
+C:\Users\mixiaobu\Desktop\ai\LlamaMonitor\config.py:819: ResourceWarning: unclosed file <_io.TextIOWrapper name='C:\\Users\\mixiaobu\\AppData\\Local\\Temp\\tmpx76v08wq\\lad\\LlamaMonitor\\logs\\monitor.log' mode='a' encoding='utf-8'>
+  root.handlers = [h for h in root.handlers if not getattr(h, "_llamamonitor", False)]
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+...2026-10-01 01:33:57,882 INFO llamamonitor: [LlamaMonitor] 启动: background=False frozen=False metrics=http://127.0.0.1:65308/metrics interval=3600.0s
+2026-10-01 01:33:58,819 INFO llamamonitor: [LlamaMonitor] 正在启动 FastAPI（首次采集中）... metrics=http://127.0.0.1:65308/metrics interval=3600.0s
+2026-10-01 01:33:58,825 INFO uvicorn.error: Started server process [59888]
+2026-10-01 01:33:58,827 INFO uvicorn.error: Waiting for application startup.
+2026-10-01 01:33:58,968 INFO llamamonitor.db: Schema migration 1 -> 2 完成
+2026-10-01 01:33:59,049 INFO llamamonitor.db: Schema migration 2 -> 3 完成
+2026-10-01 01:33:59,079 INFO llamamonitor.db: Schema migration 3 -> 4 完成
+2026-10-01 01:33:59,229 INFO llamamonitor.db: Schema migration 4 -> 5 完成
+2026-10-01 01:33:59,269 INFO llamamonitor.db: Schema migration 5 -> 6 完成
+2026-10-01 01:33:59,278 INFO llamamonitor.db: Database journal mode: wal
+2026-10-01 01:33:59,283 INFO llamamonitor.server: 数据库 quick_check 通过（schema vwal）
+2026-10-01 01:34:09,675 INFO llamamonitor.hwsensors: 启动时清理孤儿 HardwareSensorBridge 进程 pid=39608
+C:\Users\mixiaobu\AppData\Local\Programs\Python\Python313\Lib\subprocess.py:1023: RuntimeWarning: line buffering (buffering=1) isn't supported in binary mode, the default buffer size will be used
+  self.stdin = io.open(p2cwrite, 'wb', bufsize)
+C:\Users\mixiaobu\AppData\Local\Programs\Python\Python313\Lib\subprocess.py:1029: RuntimeWarning: line buffering (buffering=1) isn't supported in binary mode, the default buffer size will be used
+  self.stdout = io.open(c2pread, 'rb', bufsize)
+C:\Users\mixiaobu\AppData\Local\Programs\Python\Python313\Lib\subprocess.py:1034: RuntimeWarning: line buffering (buffering=1) isn't supported in binary mode, the default buffer size will be used
+  self.stderr = io.open(errread, 'rb', bufsize)
+2026-10-01 01:34:10,444 INFO uvicorn.error: Application startup complete.
+2026-10-01 01:34:10,448 INFO uvicorn.error: Uvicorn running on http://127.0.0.1:60638 (Press CTRL+C to quit)
+2026-10-01 01:34:10,930 INFO llamamonitor: [LlamaMonitor] API 就绪。
+2026-10-01 01:34:11,557 INFO llamamonitor: [LlamaMonitor] 开始优雅关闭（tray/API exit）
+2026-10-01 01:34:11,641 INFO uvicorn.error: Shutting down
+2026-10-01 01:34:11,756 INFO uvicorn.error: Waiting for application shutdown.
+2026-10-01 01:34:13,457 WARNING llamamonitor.hwsensors: 高级硬件传感器 provider 不可用（基础系统监控继续）
+C:\Users\mixiaobu\Desktop\ai\LlamaMonitor\server.py:819: ResourceWarning: unclosed file <_io.BufferedReader name=7>
+  sensors.stop()  # 优雅终止 Bridge（关 stdin -> 宽限 -> Terminate）
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+C:\Users\mixiaobu\Desktop\ai\LlamaMonitor\server.py:819: ResourceWarning: unclosed file <_io.BufferedReader name=8>
+  sensors.stop()  # 优雅终止 Bridge（关 stdin -> 宽限 -> Terminate）
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+2026-10-01 01:34:13,472 INFO uvicorn.error: Application shutdown complete.
+2026-10-01 01:34:13,472 INFO uvicorn.error: Finished server process [59888]
+2026-10-01 01:34:13,628 INFO llamamonitor: [LlamaMonitor] 已停止：Collector 已取消、SQLite 已关闭、托盘已停止、单实例已释放（2.1s）。
+2026-10-01 01:34:13,736 INFO uvicorn.error: Shutting down
+2026-10-01 01:34:13,846 INFO uvicorn.error: Waiting for application shutdown.
+2026-10-01 01:34:13,847 INFO uvicorn.error: Application shutdown complete.
+2026-10-01 01:34:13,848 INFO uvicorn.error: Finished server process [59888]
+C:\Users\mixiaobu\Desktop\ai\LlamaMonitor\config.py:819: ResourceWarning: unclosed file <_io.TextIOWrapper name='C:\\Users\\mixiaobu\\AppData\\Local\\Temp\\tmpavgguemx\\lad\\LlamaMonitor\\logs\\monitor.log' mode='a' encoding='utf-8'>
+  root.handlers = [h for h in root.handlers if not getattr(h, "_llamamonitor", False)]
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+.................检测到 Counter 重置: llamacpp:spec_decode_num_accepted_tokens_per_pos_total (position=0)
+检测到 Counter 重置: llamacpp:spec_decode_num_accepted_tokens_per_pos_total (position=1)
+.........GPU 数据库写入失败，本轮跳过落盘: OperationalError('boom')
+......................................................高级硬件传感器 provider 不可用（基础系统监控继续）
+............UI 命令 'show' 执行失败
+Traceback (most recent call last):
+  File "C:\Users\mixiaobu\Desktop\ai\LlamaMonitor\app_lifecycle.py", line 112, in _loop
+    handler()
+    ~~~~~~~^^
+  File "C:\Users\mixiaobu\Desktop\ai\LlamaMonitor\tests\test_lifecycle.py", line 114, in boom
+    raise RuntimeError("intentional")
+RuntimeError: intentional
+..未知的 UI 命令: 'nonsense'
+......................................Schema migration 1 -> 2 失败（已回滚，下次启动重试）: RuntimeError('simulated crash mid-migration')
+.............................Database user_version=999 高于本程序支持的 6（由更新版本创建）：进入只读 incompatible 模式（不迁移、不写入）
+写入事件 monitor_start 失败（不影响采集）: OperationalError('attempt to write a readonly database')
+写入事件 monitor_stop 失败（不影响采集）: OperationalError('attempt to write a readonly database')
+.Database user_version=999 高于本程序支持的 6（由更新版本创建）：进入只读 incompatible 模式（不迁移、不写入）
+.pre-migration backup 失败: FileExistsError(17, '当文件已存在时，无法创建该文件。')
+pre-migration backup 失败：放弃 schema migration v2->v6，进入只读保护状态（数据库保持 v2 原样）
+.pre-migration backup 失败: FileExistsError(17, '当文件已存在时，无法创建该文件。')
+pre-migration backup 失败：放弃 schema migration v2->v6，进入只读保护状态（数据库保持 v2 原样）
+.........检测到 Counter 重置: llamacpp:prompt_tokens_total (150 -> 30)
+检测到 Counter 重置: llamacpp:prompt_tokens_cached_total (80 -> 50)
+检测到 Counter 重置: llamacpp:prompt_seconds_total (2 -> 0)
+检测到 Counter 重置: llamacpp:n_decode_total (4 -> 2)
+检测到 Counter 重置: llamacpp:spec_decode_num_draft_tokens_total (10 -> 5)
+检测到 Counter 重置: llamacpp:spec_decode_num_accepted_tokens_total (6 -> 3)
+.检测到 Counter 重置: llamacpp:prompt_tokens_cached_total (80 -> 50)
+检测到 Counter 重置: llamacpp:prompt_seconds_total (2 -> 1)
+检测到 Counter 重置: llamacpp:tokens_predicted_seconds_total (3 -> 2)
+检测到 Counter 重置: llamacpp:n_decode_total (4 -> 2)
+检测到 Counter 重置: llamacpp:spec_decode_num_draft_tokens_total (10 -> 5)
+检测到 Counter 重置: llamacpp:spec_decode_num_accepted_tokens_total (6 -> 3)
+........检测到 Counter 重置: llamacpp:prompt_tokens_total (150 -> 80)
+检测到 Counter 重置: llamacpp:prompt_tokens_cached_total (80 -> 50)
+检测到 Counter 重置: llamacpp:prompt_seconds_total (2 -> 1)
+检测到 Counter 重置: llamacpp:tokens_predicted_seconds_total (3 -> 2)
+检测到 Counter 重置: llamacpp:n_decode_total (4 -> 2)
+检测到 Counter 重置: llamacpp:spec_decode_num_draft_tokens_total (10 -> 5)
+检测到 Counter 重置: llamacpp:spec_decode_num_accepted_tokens_total (6 -> 3)
+......................./metrics 响应超过 16 MB 上限，按离线处理: http://127.0.0.1:9/metrics
+.数据库写入失败（重试后仍失败），本轮跳过落盘、保持旧 baseline: OperationalError('attempt to write a readonly database')
+数据库进入持续只读状态：health 更新为 unavailable（/api/health 同步反映）
+.检测到 Counter 重置: llamacpp:prompt_tokens_total (100 -> 5)
+..检测到 Counter 重置: llamacpp:prompt_tokens_total (1050 -> 30)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (520 -> 10)
+检测到 Counter 重置: llamacpp:n_decode_total (520 -> 10)
+..数据库写入失败（重试后仍失败），本轮跳过落盘、保持旧 baseline: OperationalError('database is locked')
+.....monitor 重启缺口 40s（2026-09-10 -> 现在）
+.检测到 Counter 重置: llamacpp:prompt_tokens_total (1000 -> 30)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (500 -> 30)
+检测到 Counter 重置: llamacpp:n_decode_total (500 -> 30)
+monitor 重启缺口 40s（2026-09-10 -> 现在）
+.sample_invalid：metrics 可读但核心 Counter（prompt/output）缺失或不可解析，本轮不落盘
+..llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+.llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 45s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (100 -> 30)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (100 -> 30)
+检测到 Counter 重置: llamacpp:n_decode_total (100 -> 30)
+.llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+.llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+..C:\Users\mixiaobu\AppData\Local\Programs\Python\Python313\Lib\unittest\case.py:606: ResourceWarning: unclosed <socket.socket fd=1788, family=2, type=1, proto=0, laddr=('127.0.0.1', 55993)>
+  if method() is not None:
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+..检测到系统暂停/睡眠（monotonic 间隔 65s > 阈值 15s），已记缺口
+..........llama.cpp 状态变化: 就绪 -> 不可用（unavailable）
+......C:\Users\mixiaobu\AppData\Local\Programs\Python\Python313\Lib\asyncio\base_events.py:764: ResourceWarning: unclosed event loop <ProactorEventLoop running=False closed=False debug=False>
+  _warn(f"unclosed event loop {self!r}", ResourceWarning, source=self)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+....配置更新被拒绝: Invalid config value web.port='abc', fallback to 8765
+.配置更新被拒绝: Invalid config value web.port=99999, fallback to 8765
+....Test connection failed: HTTP 404 from http://127.0.0.1:9091/nope
+.Test connection failed: connection refused: http://127.0.0.1:9/metrics
+..Test connection failed: timeout after 2s: http://127.0.0.1:9091/metrics
+........llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 780s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (13626 -> 1440)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (4542 -> 480)
+检测到 Counter 重置: llamacpp:n_decode_total (4542 -> 480)
+检测到 Counter 重置: llamacpp:prompt_tokens_total (1440 -> 42)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (480 -> 14)
+检测到 Counter 重置: llamacpp:n_decode_total (480 -> 14)
+monitor 重启缺口 360s（2026-09-30 -> 现在）
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+检测到 Counter 重置: llamacpp:prompt_tokens_total (14802 -> 24)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (4934 -> 8)
+检测到 Counter 重置: llamacpp:n_decode_total (4934 -> 8)
+monitor 重启缺口 360s（2026-09-30 -> 现在）
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 660s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (7224 -> 720)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (2408 -> 240)
+检测到 Counter 重置: llamacpp:n_decode_total (2408 -> 240)
+检测到 Counter 重置: llamacpp:prompt_tokens_total (5580 -> 99)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (1860 -> 33)
+检测到 Counter 重置: llamacpp:n_decode_total (1860 -> 33)
+monitor 重启缺口 300s（2026-09-30 -> 现在）
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 780s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (4959 -> 1980)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (1653 -> 660)
+检测到 Counter 重置: llamacpp:n_decode_total (1653 -> 660)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+检测到 Counter 重置: llamacpp:prompt_tokens_total (8640 -> 135)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (2880 -> 45)
+检测到 Counter 重置: llamacpp:n_decode_total (2880 -> 45)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 300s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (11475 -> 180)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (3825 -> 60)
+检测到 Counter 重置: llamacpp:n_decode_total (3825 -> 60)
+monitor 重启缺口 240s（2026-09-30 -> 现在）
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 720s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (3780 -> 900)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (1260 -> 300)
+检测到 Counter 重置: llamacpp:n_decode_total (1260 -> 300)
+monitor 重启缺口 240s（2026-09-30 -> 现在）
+检测到 Counter 重置: llamacpp:prompt_tokens_total (3600 -> 9)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (1200 -> 3)
+检测到 Counter 重置: llamacpp:n_decode_total (1200 -> 3)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+检测到 Counter 重置: llamacpp:prompt_tokens_total (6129 -> 129)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (2043 -> 43)
+检测到 Counter 重置: llamacpp:n_decode_total (2043 -> 43)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+检测到 Counter 重置: llamacpp:prompt_tokens_total (7509 -> 126)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (2503 -> 42)
+检测到 Counter 重置: llamacpp:n_decode_total (2503 -> 42)
+monitor 重启缺口 300s（2026-09-30 -> 现在）
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+检测到 Counter 重置: llamacpp:prompt_tokens_total (15246 -> 120)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (5082 -> 40)
+检测到 Counter 重置: llamacpp:n_decode_total (5082 -> 40)
+monitor 重启缺口 480s（2026-09-30 -> 现在）
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+检测到 Counter 重置: llamacpp:prompt_tokens_total (9120 -> 111)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (3040 -> 37)
+检测到 Counter 重置: llamacpp:n_decode_total (3040 -> 37)
+monitor 重启缺口 240s（2026-09-30 -> 现在）
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 360s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (8211 -> 360)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (2737 -> 120)
+检测到 Counter 重置: llamacpp:n_decode_total (2737 -> 120)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 780s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (8280 -> 1260)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (2760 -> 420)
+检测到 Counter 重置: llamacpp:n_decode_total (2760 -> 420)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 360s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (9900 -> 180)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (3300 -> 60)
+检测到 Counter 重置: llamacpp:n_decode_total (3300 -> 60)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 420s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (7200 -> 720)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (2400 -> 240)
+检测到 Counter 重置: llamacpp:n_decode_total (2400 -> 240)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+检测到 Counter 重置: llamacpp:prompt_tokens_total (4860 -> 54)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (1620 -> 18)
+检测到 Counter 重置: llamacpp:n_decode_total (1620 -> 18)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+检测到 Counter 重置: llamacpp:prompt_tokens_total (16254 -> 72)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (5418 -> 24)
+检测到 Counter 重置: llamacpp:n_decode_total (5418 -> 24)
+monitor 重启缺口 420s（2026-09-30 -> 现在）
+monitor 重启缺口 720s（2026-09-30 -> 现在）
+检测到 Counter 重置: llamacpp:prompt_tokens_total (8532 -> 138)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (2844 -> 46)
+检测到 Counter 重置: llamacpp:n_decode_total (2844 -> 46)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 660s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (4998 -> 1440)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (1666 -> 480)
+检测到 Counter 重置: llamacpp:n_decode_total (1666 -> 480)
+检测到 Counter 重置: llamacpp:prompt_tokens_total (2700 -> 102)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (900 -> 34)
+检测到 Counter 重置: llamacpp:n_decode_total (900 -> 34)
+monitor 重启缺口 360s（2026-09-30 -> 现在）
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+monitor 重启缺口 300s（2026-09-30 -> 现在）
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 540s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (15042 -> 1080)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (5014 -> 360)
+检测到 Counter 重置: llamacpp:n_decode_total (5014 -> 360)
+检测到 Counter 重置: llamacpp:prompt_tokens_total (4140 -> 30)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (1380 -> 10)
+检测到 Counter 重置: llamacpp:n_decode_total (1380 -> 10)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+monitor 重启缺口 360s（2026-09-30 -> 现在）
+检测到 Counter 重置: llamacpp:prompt_tokens_total (6870 -> 54)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (2290 -> 18)
+检测到 Counter 重置: llamacpp:n_decode_total (2290 -> 18)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 540s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (1314 -> 720)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (438 -> 240)
+检测到 Counter 重置: llamacpp:n_decode_total (438 -> 240)
+检测到 Counter 重置: llamacpp:prompt_tokens_total (1980 -> 165)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (660 -> 55)
+检测到 Counter 重置: llamacpp:n_decode_total (660 -> 55)
+monitor 重启缺口 300s（2026-09-30 -> 现在）
+检测到 Counter 重置: llamacpp:prompt_tokens_total (3765 -> 24)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (1255 -> 8)
+检测到 Counter 重置: llamacpp:n_decode_total (1255 -> 8)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+monitor 重启缺口 420s（2026-09-30 -> 现在）
+monitor 重启缺口 300s（2026-09-30 -> 现在）
+检测到 Counter 重置: llamacpp:prompt_tokens_total (23964 -> 45)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (7988 -> 15)
+检测到 Counter 重置: llamacpp:n_decode_total (7988 -> 15)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 660s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (3105 -> 540)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (1035 -> 180)
+检测到 Counter 重置: llamacpp:n_decode_total (1035 -> 180)
+.检测到 Counter 重置: llamacpp:prompt_tokens_total (1620 -> 138)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (540 -> 46)
+检测到 Counter 重置: llamacpp:n_decode_total (540 -> 46)
+monitor 重启缺口 240s（2026-09-30 -> 现在）
+monitor 重启缺口 360s（2026-09-30 -> 现在）
+monitor 重启缺口 360s（2026-09-30 -> 现在）
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 300s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (10758 -> 180)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (3586 -> 60)
+检测到 Counter 重置: llamacpp:n_decode_total (3586 -> 60)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 780s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (2340 -> 1980)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (780 -> 660)
+检测到 Counter 重置: llamacpp:n_decode_total (780 -> 660)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+monitor 重启缺口 360s（2026-09-30 -> 现在）
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+monitor 重启缺口 240s（2026-09-30 -> 现在）
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+检测到 Counter 重置: llamacpp:prompt_tokens_total (16740 -> 171)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (5580 -> 57)
+检测到 Counter 重置: llamacpp:n_decode_total (5580 -> 57)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 480s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (3231 -> 1080)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (1077 -> 360)
+检测到 Counter 重置: llamacpp:n_decode_total (1077 -> 360)
+monitor 重启缺口 240s（2026-09-30 -> 现在）
+monitor 重启缺口 420s（2026-09-30 -> 现在）
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 600s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (7380 -> 1260)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (2460 -> 420)
+检测到 Counter 重置: llamacpp:n_decode_total (2460 -> 420)
+检测到 Counter 重置: llamacpp:prompt_tokens_total (1260 -> 96)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (420 -> 32)
+检测到 Counter 重置: llamacpp:n_decode_total (420 -> 32)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 360s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (1176 -> 180)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (392 -> 60)
+检测到 Counter 重置: llamacpp:n_decode_total (392 -> 60)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+monitor 重启缺口 240s（2026-09-30 -> 现在）
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 480s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (4500 -> 720)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (1500 -> 240)
+检测到 Counter 重置: llamacpp:n_decode_total (1500 -> 240)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 600s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (1980 -> 360)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (660 -> 120)
+检测到 Counter 重置: llamacpp:n_decode_total (660 -> 120)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 480s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (5220 -> 180)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (1740 -> 60)
+检测到 Counter 重置: llamacpp:n_decode_total (1740 -> 60)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+检测到 Counter 重置: llamacpp:prompt_tokens_total (4500 -> 72)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (1500 -> 24)
+检测到 Counter 重置: llamacpp:n_decode_total (1500 -> 24)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 720s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (5652 -> 900)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (1884 -> 300)
+检测到 Counter 重置: llamacpp:n_decode_total (1884 -> 300)
+monitor 重启缺口 420s（2026-09-30 -> 现在）
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+检测到 Counter 重置: llamacpp:prompt_tokens_total (5580 -> 108)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (1860 -> 36)
+检测到 Counter 重置: llamacpp:n_decode_total (1860 -> 36)
+检测到 Counter 重置: llamacpp:prompt_tokens_total (3348 -> 66)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (1116 -> 22)
+检测到 Counter 重置: llamacpp:n_decode_total (1116 -> 22)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 360s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (1686 -> 540)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (562 -> 180)
+检测到 Counter 重置: llamacpp:n_decode_total (562 -> 180)
+检测到 Counter 重置: llamacpp:prompt_tokens_total (4860 -> 105)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (1620 -> 35)
+检测到 Counter 重置: llamacpp:n_decode_total (1620 -> 35)
+检测到 Counter 重置: llamacpp:prompt_tokens_total (2085 -> 108)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (695 -> 36)
+检测到 Counter 重置: llamacpp:n_decode_total (695 -> 36)
+monitor 重启缺口 420s（2026-09-30 -> 现在）
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+检测到 Counter 重置: llamacpp:prompt_tokens_total (8208 -> 48)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (2736 -> 16)
+检测到 Counter 重置: llamacpp:n_decode_total (2736 -> 16)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 480s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (2388 -> 540)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (796 -> 180)
+检测到 Counter 重置: llamacpp:n_decode_total (796 -> 180)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 300s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (1800 -> 360)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (600 -> 120)
+检测到 Counter 重置: llamacpp:n_decode_total (600 -> 120)
+检测到 Counter 重置: llamacpp:prompt_tokens_total (2160 -> 126)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (720 -> 42)
+检测到 Counter 重置: llamacpp:n_decode_total (720 -> 42)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+检测到 Counter 重置: llamacpp:prompt_tokens_total (2106 -> 78)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (702 -> 26)
+检测到 Counter 重置: llamacpp:n_decode_total (702 -> 26)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 300s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (3858 -> 180)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (1286 -> 60)
+检测到 Counter 重置: llamacpp:n_decode_total (1286 -> 60)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 300s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (7560 -> 360)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (2520 -> 120)
+检测到 Counter 重置: llamacpp:n_decode_total (2520 -> 120)
+检测到 Counter 重置: llamacpp:prompt_tokens_total (2520 -> 15)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (840 -> 5)
+检测到 Counter 重置: llamacpp:n_decode_total (840 -> 5)
+检测到 Counter 重置: llamacpp:prompt_tokens_total (1635 -> 165)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (545 -> 55)
+检测到 Counter 重置: llamacpp:n_decode_total (545 -> 55)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+monitor 重启缺口 240s（2026-09-30 -> 现在）
+monitor 重启缺口 360s（2026-09-30 -> 现在）
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 480s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (11685 -> 180)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (3895 -> 60)
+检测到 Counter 重置: llamacpp:n_decode_total (3895 -> 60)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+检测到 Counter 重置: llamacpp:prompt_tokens_total (17640 -> 108)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (5880 -> 36)
+检测到 Counter 重置: llamacpp:n_decode_total (5880 -> 36)
+monitor 重启缺口 300s（2026-09-30 -> 现在）
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 540s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (9288 -> 180)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (3096 -> 60)
+检测到 Counter 重置: llamacpp:n_decode_total (3096 -> 60)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+检测到 Counter 重置: llamacpp:prompt_tokens_total (6480 -> 21)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (2160 -> 7)
+检测到 Counter 重置: llamacpp:n_decode_total (2160 -> 7)
+检测到 Counter 重置: llamacpp:prompt_tokens_total (1281 -> 168)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (427 -> 56)
+检测到 Counter 重置: llamacpp:n_decode_total (427 -> 56)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+检测到 Counter 重置: llamacpp:prompt_tokens_total (6828 -> 174)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (2276 -> 58)
+检测到 Counter 重置: llamacpp:n_decode_total (2276 -> 58)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 540s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (3234 -> 1260)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (1078 -> 420)
+检测到 Counter 重置: llamacpp:n_decode_total (1078 -> 420)
+检测到 Counter 重置: llamacpp:prompt_tokens_total (3420 -> 45)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (1140 -> 15)
+检测到 Counter 重置: llamacpp:n_decode_total (1140 -> 15)
+monitor 重启缺口 420s（2026-09-30 -> 现在）
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+monitor 重启缺口 420s（2026-09-30 -> 现在）
+检测到 Counter 重置: llamacpp:prompt_tokens_total (13005 -> 177)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (4335 -> 59)
+检测到 Counter 重置: llamacpp:n_decode_total (4335 -> 59)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+monitor 重启缺口 420s（2026-09-30 -> 现在）
+monitor 重启缺口 300s（2026-09-30 -> 现在）
+monitor 重启缺口 300s（2026-09-30 -> 现在）
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 660s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (16197 -> 1440)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (5399 -> 480)
+检测到 Counter 重置: llamacpp:n_decode_total (5399 -> 480)
+检测到 Counter 重置: llamacpp:prompt_tokens_total (2340 -> 153)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (780 -> 51)
+检测到 Counter 重置: llamacpp:n_decode_total (780 -> 51)
+检测到 Counter 重置: llamacpp:prompt_tokens_total (7533 -> 162)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (2511 -> 54)
+检测到 Counter 重置: llamacpp:n_decode_total (2511 -> 54)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 300s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (3222 -> 540)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (1074 -> 180)
+检测到 Counter 重置: llamacpp:n_decode_total (1074 -> 180)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 300s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (1800 -> 360)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (600 -> 120)
+检测到 Counter 重置: llamacpp:n_decode_total (600 -> 120)
+monitor 重启缺口 360s（2026-09-30 -> 现在）
+检测到 Counter 重置: llamacpp:prompt_tokens_total (7920 -> 27)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (2640 -> 9)
+检测到 Counter 重置: llamacpp:n_decode_total (2640 -> 9)
+检测到 Counter 重置: llamacpp:prompt_tokens_total (747 -> 159)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (249 -> 53)
+检测到 Counter 重置: llamacpp:n_decode_total (249 -> 53)
+检测到 Counter 重置: llamacpp:prompt_tokens_total (1419 -> 60)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (473 -> 20)
+检测到 Counter 重置: llamacpp:n_decode_total (473 -> 20)
+monitor 重启缺口 300s（2026-09-30 -> 现在）
+monitor 重启缺口 240s（2026-09-30 -> 现在）
+检测到 Counter 重置: llamacpp:prompt_tokens_total (7620 -> 153)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (2540 -> 51)
+检测到 Counter 重置: llamacpp:n_decode_total (2540 -> 51)
+检测到 Counter 重置: llamacpp:prompt_tokens_total (1620 -> 138)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (540 -> 46)
+检测到 Counter 重置: llamacpp:n_decode_total (540 -> 46)
+monitor 重启缺口 240s（2026-09-30 -> 现在）
+monitor 重启缺口 360s（2026-09-30 -> 现在）
+monitor 重启缺口 360s（2026-09-30 -> 现在）
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 300s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (10758 -> 180)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (3586 -> 60)
+检测到 Counter 重置: llamacpp:n_decode_total (3586 -> 60)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 780s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (2340 -> 1980)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (780 -> 660)
+检测到 Counter 重置: llamacpp:n_decode_total (780 -> 660)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+monitor 重启缺口 360s（2026-09-30 -> 现在）
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+monitor 重启缺口 240s（2026-09-30 -> 现在）
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+检测到 Counter 重置: llamacpp:prompt_tokens_total (16740 -> 171)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (5580 -> 57)
+检测到 Counter 重置: llamacpp:n_decode_total (5580 -> 57)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 480s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (3231 -> 1080)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (1077 -> 360)
+检测到 Counter 重置: llamacpp:n_decode_total (1077 -> 360)
+monitor 重启缺口 240s（2026-09-30 -> 现在）
+monitor 重启缺口 420s（2026-09-30 -> 现在）
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 600s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (7380 -> 1260)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (2460 -> 420)
+检测到 Counter 重置: llamacpp:n_decode_total (2460 -> 420)
+检测到 Counter 重置: llamacpp:prompt_tokens_total (1260 -> 96)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (420 -> 32)
+检测到 Counter 重置: llamacpp:n_decode_total (420 -> 32)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 360s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (1176 -> 180)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (392 -> 60)
+检测到 Counter 重置: llamacpp:n_decode_total (392 -> 60)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+monitor 重启缺口 240s（2026-09-30 -> 现在）
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 480s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (4500 -> 720)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (1500 -> 240)
+检测到 Counter 重置: llamacpp:n_decode_total (1500 -> 240)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 600s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (1980 -> 360)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (660 -> 120)
+检测到 Counter 重置: llamacpp:n_decode_total (660 -> 120)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 480s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (5220 -> 180)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (1740 -> 60)
+检测到 Counter 重置: llamacpp:n_decode_total (1740 -> 60)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+检测到 Counter 重置: llamacpp:prompt_tokens_total (4500 -> 72)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (1500 -> 24)
+检测到 Counter 重置: llamacpp:n_decode_total (1500 -> 24)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 720s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (5652 -> 900)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (1884 -> 300)
+检测到 Counter 重置: llamacpp:n_decode_total (1884 -> 300)
+monitor 重启缺口 420s（2026-09-30 -> 现在）
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+检测到 Counter 重置: llamacpp:prompt_tokens_total (5580 -> 108)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (1860 -> 36)
+检测到 Counter 重置: llamacpp:n_decode_total (1860 -> 36)
+检测到 Counter 重置: llamacpp:prompt_tokens_total (3348 -> 66)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (1116 -> 22)
+检测到 Counter 重置: llamacpp:n_decode_total (1116 -> 22)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 360s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (1686 -> 540)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (562 -> 180)
+检测到 Counter 重置: llamacpp:n_decode_total (562 -> 180)
+检测到 Counter 重置: llamacpp:prompt_tokens_total (4860 -> 105)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (1620 -> 35)
+检测到 Counter 重置: llamacpp:n_decode_total (1620 -> 35)
+检测到 Counter 重置: llamacpp:prompt_tokens_total (2085 -> 108)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (695 -> 36)
+检测到 Counter 重置: llamacpp:n_decode_total (695 -> 36)
+monitor 重启缺口 420s（2026-09-30 -> 现在）
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+检测到 Counter 重置: llamacpp:prompt_tokens_total (8208 -> 48)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (2736 -> 16)
+检测到 Counter 重置: llamacpp:n_decode_total (2736 -> 16)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 480s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (2388 -> 540)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (796 -> 180)
+检测到 Counter 重置: llamacpp:n_decode_total (796 -> 180)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 300s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (1800 -> 360)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (600 -> 120)
+检测到 Counter 重置: llamacpp:n_decode_total (600 -> 120)
+检测到 Counter 重置: llamacpp:prompt_tokens_total (2160 -> 126)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (720 -> 42)
+检测到 Counter 重置: llamacpp:n_decode_total (720 -> 42)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+检测到 Counter 重置: llamacpp:prompt_tokens_total (2106 -> 78)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (702 -> 26)
+检测到 Counter 重置: llamacpp:n_decode_total (702 -> 26)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 300s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (3858 -> 180)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (1286 -> 60)
+检测到 Counter 重置: llamacpp:n_decode_total (1286 -> 60)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 300s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (7560 -> 360)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (2520 -> 120)
+检测到 Counter 重置: llamacpp:n_decode_total (2520 -> 120)
+检测到 Counter 重置: llamacpp:prompt_tokens_total (2520 -> 15)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (840 -> 5)
+检测到 Counter 重置: llamacpp:n_decode_total (840 -> 5)
+检测到 Counter 重置: llamacpp:prompt_tokens_total (1635 -> 165)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (545 -> 55)
+检测到 Counter 重置: llamacpp:n_decode_total (545 -> 55)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+monitor 重启缺口 240s（2026-09-30 -> 现在）
+monitor 重启缺口 360s（2026-09-30 -> 现在）
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 480s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (11685 -> 180)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (3895 -> 60)
+检测到 Counter 重置: llamacpp:n_decode_total (3895 -> 60)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+检测到 Counter 重置: llamacpp:prompt_tokens_total (17640 -> 108)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (5880 -> 36)
+检测到 Counter 重置: llamacpp:n_decode_total (5880 -> 36)
+monitor 重启缺口 300s（2026-09-30 -> 现在）
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 540s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (9288 -> 180)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (3096 -> 60)
+检测到 Counter 重置: llamacpp:n_decode_total (3096 -> 60)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+检测到 Counter 重置: llamacpp:prompt_tokens_total (6480 -> 21)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (2160 -> 7)
+检测到 Counter 重置: llamacpp:n_decode_total (2160 -> 7)
+检测到 Counter 重置: llamacpp:prompt_tokens_total (1281 -> 168)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (427 -> 56)
+检测到 Counter 重置: llamacpp:n_decode_total (427 -> 56)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+检测到 Counter 重置: llamacpp:prompt_tokens_total (6828 -> 174)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (2276 -> 58)
+检测到 Counter 重置: llamacpp:n_decode_total (2276 -> 58)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 540s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (3234 -> 1260)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (1078 -> 420)
+检测到 Counter 重置: llamacpp:n_decode_total (1078 -> 420)
+检测到 Counter 重置: llamacpp:prompt_tokens_total (3420 -> 45)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (1140 -> 15)
+检测到 Counter 重置: llamacpp:n_decode_total (1140 -> 15)
+monitor 重启缺口 420s（2026-09-30 -> 现在）
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+monitor 重启缺口 420s（2026-09-30 -> 现在）
+检测到 Counter 重置: llamacpp:prompt_tokens_total (13005 -> 177)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (4335 -> 59)
+检测到 Counter 重置: llamacpp:n_decode_total (4335 -> 59)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+monitor 重启缺口 420s（2026-09-30 -> 现在）
+monitor 重启缺口 300s（2026-09-30 -> 现在）
+monitor 重启缺口 300s（2026-09-30 -> 现在）
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 660s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (16197 -> 1440)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (5399 -> 480)
+检测到 Counter 重置: llamacpp:n_decode_total (5399 -> 480)
+检测到 Counter 重置: llamacpp:prompt_tokens_total (2340 -> 153)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (780 -> 51)
+检测到 Counter 重置: llamacpp:n_decode_total (780 -> 51)
+检测到 Counter 重置: llamacpp:prompt_tokens_total (7533 -> 162)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (2511 -> 54)
+检测到 Counter 重置: llamacpp:n_decode_total (2511 -> 54)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 300s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (3222 -> 540)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (1074 -> 180)
+检测到 Counter 重置: llamacpp:n_decode_total (1074 -> 180)
+llama-server 离线（http://127.0.0.1:9/metrics 抓取失败），采集循环继续
+已知缺口结束（server_offline, 300s）：期间核心 Counter 发生 reset，可能有不可恢复 token 丢失
+检测到 Counter 重置: llamacpp:prompt_tokens_total (1800 -> 360)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (600 -> 120)
+检测到 Counter 重置: llamacpp:n_decode_total (600 -> 120)
+monitor 重启缺口 360s（2026-09-30 -> 现在）
+检测到 Counter 重置: llamacpp:prompt_tokens_total (7920 -> 27)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (2640 -> 9)
+检测到 Counter 重置: llamacpp:n_decode_total (2640 -> 9)
+检测到 Counter 重置: llamacpp:prompt_tokens_total (747 -> 159)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (249 -> 53)
+检测到 Counter 重置: llamacpp:n_decode_total (249 -> 53)
+检测到 Counter 重置: llamacpp:prompt_tokens_total (1419 -> 60)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (473 -> 20)
+检测到 Counter 重置: llamacpp:n_decode_total (473 -> 20)
+monitor 重启缺口 300s（2026-09-30 -> 现在）
+monitor 重启缺口 240s（2026-09-30 -> 现在）
+检测到 Counter 重置: llamacpp:prompt_tokens_total (7620 -> 153)
+检测到 Counter 重置: llamacpp:tokens_predicted_total (2540 -> 51)
+检测到 Counter 重置: llamacpp:n_decode_total (2540 -> 51)
+......................高级硬件传感器 provider 不可用（基础系统监控继续）
+.......................................................................................................pre-update backup failed: DatabaseError('file is not a database')
+.....................................................等待 1s 后 LlamaMonitor 仍在运行
+...
+----------------------------------------------------------------------
+Ran 577 tests in 511.195s
+
+OK

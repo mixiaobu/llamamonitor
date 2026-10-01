@@ -111,13 +111,16 @@
     return Number(c).toFixed(0) + " \u00B0C";
   }
 
-  /** 时长（秒输入）：s / m s / h m / d h */
+  /** 时长（秒输入，中文）：8秒 / 1分5秒 / 2小时3分 / 2天3小时（§224-231 时间格式） */
   function formatDuration(sec) {
     sec = Math.max(0, Math.round(Number(sec) || 0));
-    if (sec < 60) return sec + "s";
-    if (sec < 3600) return Math.floor(sec / 60) + "m " + (sec % 60) + "s";
-    if (sec < 86400) return Math.floor(sec / 3600) + "h " + Math.floor((sec % 3600) / 60) + "m";
-    return Math.floor(sec / 86400) + "d " + Math.floor((sec % 86400) / 3600) + "h";
+    if (sec < 60) return sec + "秒";
+    var m = Math.floor(sec / 60), s = sec % 60;
+    if (sec < 3600) return (s > 0 ? m + "分" + s + "秒" : m + "分");
+    var h = Math.floor(sec / 3600), mm = Math.floor((sec % 3600) / 60);
+    if (sec < 86400) return (mm > 0 ? h + "小时" + mm + "分" : h + "小时");
+    var d = Math.floor(sec / 86400), hh = Math.floor((sec % 86400) / 3600);
+    return (hh > 0 ? d + "天" + hh + "小时" : d + "天");
   }
 
   /** 相对时间（中文）。1.1.3 §33：≤5s 显示"刚刚"（避免"2秒前/3秒前"每轮跳动），
@@ -204,5 +207,6 @@
     formatClock: formatClock,
     formatNumber: formatNumber,
     formatInt: formatInt,
+    pad2: pad2,
   };
 })();

@@ -13,7 +13,7 @@
  桌面规则一律不动（本文件所有规则都在 ≤760px 媒体查询内）。
  ============================================================ */
 
-@media (max-width: 760px) {
+@media (max-width: 760px), (orientation: landscape) and (max-height: 480px) {
   /* ---------- 页头：标题区 + 右侧 ••• Overflow（44×44 hit） ----------
      1.1.3：核心页标题行右侧放 •••（辅助页入口）；时间筛选等 ph-actions
      控件整行放在标题行下方（不挤标题）。 */
@@ -68,6 +68,23 @@
   /* ---------- 正文可读性：表格/caption 类不低于 14px ---------- */
   .table-full { font-size: var(--font-size-secondary); }
   .stat-hint { font-size: var(--font-size-caption); }
+  /* 1.1.4 精修 §31/§32：Mobile Section Action 14px/600（= --font-size-secondary
+     的 mobile 值）、hit 44px；字号不额外放大到 15。 */
+  a.link { font-size: var(--font-size-secondary); min-height: 44px; }
+
+  /* ---------- 1.1.4 精修 §62/§63：Mobile 不显示桌面式 10px 滚动条 ----------
+     手机端自然滚动（无持久滚动条）；桌面 (hover:fine) 保留细自定义滚动条。
+     滚动容器是 .content（唯一滚动区），隐藏其自身 + 子级滚动条。 */
+  .content,
+  .content * {
+    scrollbar-width: none;
+  }
+  .content::-webkit-scrollbar,
+  .content ::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+    display: none;
+  }
 
   /* ---------- 图表高度 240-280px（规格 29/37/40） ---------- */
   .chart { height: 240px; }
@@ -83,8 +100,18 @@
     gap: var(--spacing-sm);
     row-gap: 2px;
   }
+  /* Round-8：sh-actions min-width:0 + width:100%——flex 子项默认
+     min-width:auto，长说明（GPU 图例等）会把整行撑宽于 section，
+     撑破 .content 产生 App 级横向滚动。独占一行 + 右对齐 + 可换行。 */
   .section-header .sh-actions {
     margin-left: auto;
+    min-width: 0;
+    width: 100%;
+    justify-content: flex-end;
+  }
+  .section-header .sh-actions .sh-sub {
+    min-width: 0;
+    overflow-wrap: break-word;
   }
   /* 标题 + 说明 保持内联（sh-sub 本就 margin-left 跟随 sh-title） */
 
@@ -93,8 +120,8 @@
   .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
   /* 今日卡：双 hero 保留 2 列（两数并排是核心信息）；
-     1.1.3：breakdown 保持 3 列（输入/缓存/输出），label 允许两行——
-     单列会让今日卡纵向拉到 >500px（14 行）。≤360 才降为 2 列。 */
+     breakdown 保持 3 列（输入/缓存/输出），label 允许两行——
+     单列会让今日卡纵向拉到 >500px（14 行）。320 下由 auto-fit 自然收列。 */
   .today-hero { grid-template-columns: 1fr 1fr; gap: var(--spacing-md); }
   .today-breakdown { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .today-breakdown .tb-label {
@@ -102,11 +129,63 @@
     line-height: 1.3;
   }
   .ov-perf-grid { grid-template-columns: 1fr; }
+  /* 1.1.4 精修 §14：性能卡行高 48-52px（布局压缩，不缩字） */
+  .perf-card .pc-row { min-height: 48px; }
   .status-strip { flex-direction: column; align-items: flex-start; gap: var(--spacing-sm); }
+
+  /* 1.1.4 精修 §32/§34/§71：主机概况 2 列；主/次值不截断；单元格 64px+；
+     组件功耗（第 5 项）占整行。 */
+  .host-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--spacing-md); }
+  .host-grid .stat { min-height: 64px; min-width: 0; }
+  .host-grid .stat-label { font-size: var(--font-size-body); }
+  .host-grid .stat:last-child { grid-column: 1 / -1; }
+  /* Round-8 §490/§50：host-dual（磁盘/网络 ↓↑ 双行）在 2 列网格下 22px nowrap
+     值会撑破单元（"↑ 123.4 MB/s" 实测 106px 溢出 21px）。.host-dual 是通用
+     双值容器（概览 .host-grid 与系统 .sys-overview-grid 共用），不依赖具体
+     网格类名——min-width:0 链 + 值可换行（tabular-nums 保留，不 ellipsis）。 */
+  .host-dual { min-width: 0; width: 100%; white-space: normal; }
+  .host-dual .hv {
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: break-word;
+    word-break: break-word;
+  }
+
+  /* 1.1.4 精修 §36/§82：Mobile GPU 一张卡一行（auto-fill 会在 760 下塞 2 列窄卡） */
+  .gpu-mini-grid { grid-template-columns: 1fr; }
+  .gpu-mini-grid .gm-metric .v { font-size: var(--font-size-metric); }
+  /* 1.1.4 精修 §47/§83/§84：数据质量 2+1（数据库状态占整行，不挤小字） */
+  .dq-summary .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dq-summary .stat-grid .stat:last-child { grid-column: 1 / -1; }
+
+  /* ---- Round-6 Overview：Mobile（≤760）----
+     选择器 = 基础类 + ov- 复合（与 pages.css 概览规则同特异性 0,2,0），
+     mobile.css 加载最晚 -> 同特异性下胜出，确保 ≤760 概览列数确定性：
+     推理/主机 2 列（末项跨 2）、监测完整性 2 列（末项跨 2）。
+     今日用量 2 列由 pages.css 988 复合规则覆盖（本处不重复）。 */
+  .stat-grid.ov-inference-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .stat-grid.ov-host-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .stat-grid.ov-host-grid .stat:last-child { grid-column: 1 / -1; }
+  /* 监测完整性卡在 .dq-summary 容器内；≤360 的 .dq-summary .stat-grid(0,2,0)=1fr
+     会覆盖本规则，故此处用 (0,3,0) 确定性保 2 列（末项跨 2）。 */
+  .dq-summary .stat-grid.ov-integrity-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dq-summary .stat-grid.ov-integrity-grid .stat:last-child { grid-column: 1 / -1; }
+  /* 服务卡：右侧元信息（上下文/Slot/模态）+ 最后更新，换到左列下方（.status-strip 已 column）。 */
+  .ov-service-card .ov-service-meta { flex-direction: row; flex-wrap: wrap; gap: var(--spacing-sm) var(--spacing-lg); justify-content: flex-start; }
+  .ov-meta-grid { gap: var(--spacing-lg); flex-wrap: wrap; }
+  /* 需要关注：全宽堆叠。 */
+  .ov-attention-list { padding: var(--spacing-sm) var(--spacing-md); }
+  /* Page Header 分域跳转：整行铺满 + 换行。 */
+  .ov-page-links { width: 100%; }
 
   /* ---------- 指标条：5 项 → 2 列（最后一项独占一行） ---------- */
   .metric-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .metric-strip .ms-item { border-left: none; padding: var(--spacing-sm) 0; }
+
+  /* ---------- 用量 Daily：Day Cards（Round-8 §146-155）----------
+     手机用 Day Cards（核心 4 项 2×2 + Footer），桌面完整表格隐藏。 */
+  .day-cards { display: block; }
+  .daily-table-wrap { display: none; }
 
   /* ---------- 表格 → Card Rows（规格 30/31：daily/gaps/events 不横滚） ----------
  每行一张卡：首列（日期/时间）作为卡头加粗；其余每格一行"标签 + 值"，
@@ -124,6 +203,12 @@
   .table-wrap.mobile-card-table .table-full {
     min-width: 0;
     table-layout: auto;
+  }
+  /* 卡片模式下桌面逐列固定宽（如 .table-gap2 td:nth-child(1){width:190px}）
+     会让卡头/字段行只占一半、右侧空白——列宽在 block 行里无意义，统一 reset。 */
+  .table-wrap.mobile-card-table .table-full th,
+  .table-wrap.mobile-card-table .table-full td {
+    width: auto;
   }
   .table-wrap.mobile-card-table thead { display: none; }
   .table-wrap.mobile-card-table tbody tr {
@@ -226,7 +311,8 @@
   .settings-rail::-webkit-scrollbar { display: none; }
   .settings-rail .rail-item {
     flex: none;
-    min-height: 40px;        /* 规格 16：segmented 类单项 ≥40px */
+    width: auto;            /* 横向 tab：取消纵向 rail 的 width:100% */
+    min-height: 44px;        /* Round-7 §22：Touch Target >=44px */
     padding: var(--spacing-sm) var(--spacing-md);
     min-width: var(--touch-target);
   }
@@ -305,6 +391,64 @@
   .gpu-adv[open] > summary::before { transform: rotate(90deg); }
   .gpu-adv > summary:active { color: var(--text-primary); }
 
+  /* Round-4 §138-141 / §218-227：GPU 进程 mobile 转 Process Cards（2 列 definition
+     grid；path ellipsis，禁横滚/禁内部 vertical scroll）。每进程一张卡：
+     卡头 = 应用 basename（加粗、ellipsis、可点展开完整路径），
+     其余字段 = 2 列 definition（标签上、值下）。 */
+  .gpu-proc .gpu-proc-table { width: 100%; }
+  .gpu-proc .gpu-proc-table thead { display: none; }
+  /* 行 = 2 列 definition grid（卡头跨 2 列）。
+     旧实现用 td inline-block; width:50%，但行是 display:block（宽度不定），
+     50% 无参照 → 字段塌缩为 24px 挤在左侧。改 grid 1fr 1fr 让轨道有确定宽。 */
+  .gpu-proc .gpu-proc-table tbody tr {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    background: var(--bg-card);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-card);
+    margin: 0 0 var(--spacing-md);
+    padding: 0;
+    break-inside: avoid;
+  }
+  .gpu-proc .gpu-proc-table tbody tr:last-child { margin-bottom: 0; }
+  /* 卡头 = 应用列（首列）：ellipsis + 可点展开 */
+  .gpu-proc .gpu-proc-table tbody tr > td:first-child {
+    display: block;
+    grid-column: 1 / -1;
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-body);
+    color: var(--text-primary);
+    padding: var(--spacing-sm) var(--spacing-md);
+    border-bottom: 1px solid var(--border-subtle);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+    cursor: help;
+  }
+  /* 其余字段 2 列 definition（PID / GPU / 显存占用），各占一轨。
+     max-width:none 抵消桌面 ellipsis 技巧的 td{max-width:0}——否则 grid item
+     被压到只剩 padding 宽（实测 24px），文字竖排把卡片撑到 260px 高。 */
+  .gpu-proc .gpu-proc-table tbody tr > td:not(:first-child) {
+    max-width: none;
+    overflow: visible;
+    padding: var(--spacing-xs) var(--spacing-md);
+    white-space: normal;
+    font-size: var(--font-size-body);
+    color: var(--text-primary);
+    border: none;
+  }
+  .gpu-proc .gpu-proc-table tbody tr > td.tnum { text-align: left; }
+  .gpu-proc .gpu-proc-table tbody tr > td::before {
+    content: attr(data-label);
+    display: block;
+    color: var(--text-secondary);
+    font-size: var(--font-size-caption);
+    margin-bottom: 1px;
+  }
+  .gpu-proc .gpu-proc-table tbody tr > td:first-child::before { content: ""; display: none; }
+
   /* ---------- 系统页：长列表折叠（规格 41） ----------
  传感器/库存/磁盘长列表在手机上默认收起，details 标题可展开。
  由 JS 包裹；纯 CSS 兜底：kv-list 已是单列，长表自然文档流。 */
@@ -335,8 +479,14 @@
     grid-template-columns: repeat(auto-fill, minmax(30px, 1fr));
     gap: 2px;
   }
+  /* 旧 aspect-ratio:1.2 与 base min-height:40px 冲突：比例反推宽 48px >
+     30.6px 轨道，96 格全部横向溢出互相压叠（"挤在一起"）。改固定 32px 高、
+     宽度由轨道决定，索引+百分比两行文字（10px+12px）正好放得下。 */
   .core-heat-grid .core-cell {
-    aspect-ratio: 1.2;
+    aspect-ratio: auto;
+    height: 32px;
+    min-height: 0;
+    padding: 2px 1px;
     background: var(--accent);
     opacity: 0.14;
     position: relative;
@@ -418,11 +568,119 @@
     padding-bottom: calc(var(--spacing-2xl) + env(safe-area-inset-bottom));
   }
 
-  /* ---------- About：居中收窄（页级 max-width 已在 layout.css） ---------- */
-  #page-about .about-hero { flex-direction: column; text-align: center; }
+  /* ---------- About（Round-7 §273-§283：压缩，不产生横滚，Bottom Nav 不遮挡） ---------- */
+  #page-about .about-hero { flex-direction: column; text-align: center; gap: var(--spacing-sm); }
+  #page-about .about-hero-card { padding: var(--spacing-lg); }
+  #page-about .about-hero .ah-logo { width: 64px; height: 64px; }
+  #page-about .about-hero .ah-logo svg { width: 34px; height: 34px; }
+  #page-about .about-hero .ah-name { font-size: var(--font-size-title); }
+  /* 长路径单独整行换行（§242/§277） */
+  #page-about .kv-list { grid-template-columns: 1fr; gap: 2px; }
+  #page-about .kv-list .k { margin-top: var(--spacing-sm); }
+  #page-about .v-path-text { word-break: break-all; }
+  /* About 操作：2 列（§279），320 放不下时 1 列（§280，见 ≤360 块） */
+  #page-about .card-footer .btn-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--spacing-sm);
+  }
+  #page-about .about-links { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--spacing-sm); }
+  /* Bottom Nav 遮挡：内容底部留白（§282） */
+  #page-about { padding-bottom: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom) + var(--spacing-2xl)); }
+
+  /* ---------- Settings（Round-7：Control 全宽 + 触摸目标 + GPU 列表） ---------- */
+  .setting-row .setting-control { width: 100%; flex: 1 1 auto; }
+  .setting-row .setting-control .input,
+  .setting-row .setting-control .input.w-l,
+  .setting-row .setting-control .input.w-m,
+  .setting-row .setting-control .input.w-xl,
+  .setting-row .setting-control .input.w-s,
+  .input-suffix,
+  .input-suffix .input { width: 100%; }
+  .setting-row .setting-control .select { width: 100%; }
+  .setting-row .setting-control .btn { min-height: 44px; }
+  .gpu-device-list { max-width: none; }
+  .gpu-detected-row { min-height: 44px; }
+  .gpu-device-head { flex-direction: column; align-items: flex-start; }
+  .sys-mon-state .sms-row { flex-wrap: wrap; }
+  .sys-mon-state .sms-name { min-width: 0; }
+  .settings-card .group-title { margin-top: var(--spacing-lg); }
 
   /* ---------- 数值条（GPU 进程等保留表格者）：窄表不横滚时缩字号 ---------- */
   #gpuProcTableWrap .table-full { font-size: var(--font-size-caption); }
+
+  /* ---------- 推理性能页（Round 5）：Mobile 响应式 ---------- */
+  /* A. 实时摘要：2 + 2 + 1（§22） */
+  .perf-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--spacing-md);
+  }
+  .perf-summary .ps-item { border-left: none; padding: var(--spacing-xs) 0; }
+  .perf-summary .ps-item:nth-child(odd) { padding-right: var(--spacing-md); }
+  .perf-summary .ps-item:nth-child(even) { padding-left: var(--spacing-md); border-left: 1px solid var(--border-subtle); }
+  .perf-summary .ps-item:nth-child(n+5) { grid-column: 1 / -1; border-left: none; padding-left: 0; }
+
+  /* C. 运行时状态：2 列（§76 Mobile 2+2+1） */
+  .runtime-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .runtime-grid .stat:last-child { grid-column: 1 / -1; }
+
+  /* D. MTP Summary：2x3（§93） */
+  .mtp-metrics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mtp-charts { grid-template-columns: 1fr; }
+  .mtp-charts .chart { height: 240px; }
+
+  /* F. 模型与运行环境：2 列 Grid（§184） */
+  .model-env-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+  /* E. Slot 监控：Mobile 转 Card（§142-§144）——复用 table→card 机制的样式，
+     但作用域限定 .slot-table，不依赖 .table-wrap.mobile-card-table。 */
+  .slot-table-wrap { overflow-x: visible; }
+  /* 表格 + tbody 都转普通块级流：display:block 的 table 里若 tbody 仍是
+     table-row-group，会形成自己的匿名 table 并 shrink-to-fit（实测行只 163px
+     宽、只占卡片一半、右侧空白）。两者都 block + 100% 后行自然撑满卡片。 */
+  .slot-table { display: block; width: 100%; }
+  .slot-table tbody { display: block; width: 100%; }
+  .slot-table thead { display: none; }
+  .slot-table tbody tr.slot-row {
+    display: block;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-card);
+    margin-bottom: var(--spacing-md);
+    break-inside: avoid;
+    background: transparent;
+  }
+  .slot-table tbody tr.slot-row:first-child { margin-top: var(--spacing-sm); }
+  .slot-table tbody tr.slot-row > td:first-child {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-weight: var(--font-weight-semibold);
+    padding: var(--spacing-sm) var(--spacing-md);
+    border-bottom: 1px solid var(--border-subtle);
+    white-space: normal;
+  }
+  .slot-table tbody tr.slot-row > td:not(:first-child) {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: var(--spacing-md);
+    padding: var(--spacing-xs) var(--spacing-md);
+    border-bottom: 1px solid var(--border-subtle);
+    white-space: normal;
+    text-align: right;
+    font-size: var(--font-size-body);
+  }
+  .slot-table tbody tr.slot-row > td:not(:first-child)::before {
+    content: attr(data-label);
+    color: var(--text-secondary);
+    font-size: var(--font-size-body);
+    flex: none;
+  }
+  /* 空闲 Slot：无任务的字段行（值 = --）淡显；详情按钮隐藏（idle 无详情） */
+  .slot-table tbody tr.slot-row.idle > td.na { color: var(--text-disabled); }
+  .slot-table tbody tr.slot-detail-row { display: block; border: none; margin-bottom: var(--spacing-md); background: transparent; }
+  .slot-table tbody tr.slot-detail-row td { border: 1px solid var(--border-subtle); border-radius: var(--radius-card-sm); }
+  .slot-table td.slot-detail-btn, .slot-table td > .slot-detail-btn { }
 }
 
 /* ---------- Hover 只在真 hover 设备生效（规格 55：防手机点按残留高亮） ----------
@@ -479,6 +737,17 @@
   320 实测：3 列 breakdown 每列仅 ~76px，"缓存复用 Token" 等长 label 过挤。
   降为 2 列（第 3 项独占一行）更舒展，且无横向溢出；hero 保持 2 列（并排核心信息）。 */
 @media (max-width: 360px) {
-  .today-breakdown { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .content-inner { padding-bottom: var(--spacing-lg); }
+  /* 1.1.4 精修 §84：320 数据质量全部单列（不强行 2+1） */
+  .dq-summary .stat-grid { grid-template-columns: 1fr; }
+  /* 1.1.4 精修 §9/§24：320/360 三列 breakdown 每列 ~82px 会裁切数值，
+     降为 2 列（第 3 项排到下一行）；390+ 保持 3 列（实测无裁切）。 */
+  .today-breakdown { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  /* 1.1.4 精修：模型行在 320/360（卡宽 ~272px）会 ellipsis 截断，
+     允许自然换行（无横向溢出），保证完整可见。 */
+  .status-strip .ss-model { white-space: normal; }
+  /* About（Round-7 §280/§281）：320 操作按钮/项目链接放不下 2 列 -> 1 列 */
+  #page-about .card-footer .btn-row { grid-template-columns: 1fr; }
+  #page-about .about-links { grid-template-columns: 1fr; }
+  #page-about .about-hero .ah-logo { width: 64px; height: 64px; }
 }

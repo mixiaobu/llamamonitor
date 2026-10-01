@@ -60,7 +60,7 @@ class FreshDatabaseTests(unittest.TestCase):
             d = Database(Path(td) / "fresh.db", wal=False)
             try:
                 self.assertEqual(d.get_schema_version(), CURRENT_SCHEMA_VERSION)
-                self.assertEqual(d.get_schema_version(), 5)  # 1.1.0
+                self.assertEqual(d.get_schema_version(), 6)  # Round 5：v6（live_samples +prompt/predicted_seconds）
                 tables = {
                     r[0]
                     for r in d._connect().execute(
@@ -103,6 +103,9 @@ class FreshDatabaseTests(unittest.TestCase):
                 live_cols = {r[1] for r in d._connect().execute("PRAGMA table_info(live_samples)")}
                 self.assertIn("kv_cache_usage_ratio", live_cols)
                 self.assertIn("busy_slots", live_cols)
+                # v6 新增列（Round 5：窗口加权平均吞吐的秒数 delta）
+                self.assertIn("prompt_seconds", live_cols)
+                self.assertIn("predicted_seconds", live_cols)
                 daily_cols = {r[1] for r in d._connect().execute("PRAGMA table_info(daily_usage)")}
                 self.assertIn("draft_sequences", daily_cols)
                 # v3 表的关键列
@@ -126,7 +129,7 @@ class LegacyMigrationTests(unittest.TestCase):
 
             d = Database(p, wal=False)
             try:
-                self.assertEqual(d.get_schema_version(), 5)  # 1.1.0：v0 -> v5
+                self.assertEqual(d.get_schema_version(), CURRENT_SCHEMA_VERSION)  # v0 -> 当前
                 conn = d._connect()
                 # state 原样保留（baseline 不能丢）
                 state = {
@@ -182,12 +185,13 @@ class LegacyMigrationTests(unittest.TestCase):
             before = _snapshot(p)
             d2 = Database(p, wal=False)
             try:
-                self.assertEqual(d2.get_schema_version(), 5)
-                # no-op：不再插入额外 migration 事件（v0 -> v5 共 3 条：2->3/3->4/4->5；1->2 不记事件）
+                self.assertEqual(d2.get_schema_version(), CURRENT_SCHEMA_VERSION)
+                # no-op：不再插入额外 migration 事件
+                # （v0 -> 当前：2->3/3->4/4->5/5->6 共 4 条；1->2 不记事件）
                 self.assertEqual(
                     d2._connect().execute(
                         "SELECT COUNT(*) FROM monitor_events WHERE event_type='migration'"
-                    ).fetchone()[0], 3,
+                    ).fetchone()[0], 4,
                 )
                 self.assertEqual(_snapshot(p), before)
             finally:
@@ -226,10 +230,10 @@ class LegacyMigrationTests(unittest.TestCase):
             )
             conn.close()
 
-            # 重新打开：重试成功（v1 -> v2 -> v3 -> v4 -> v5）
+            # 重新打开：重试成功（v1 -> v2 -> v3 -> v4 -> v5 -> v6）
             d2 = Database(p, wal=False)
             try:
-                self.assertEqual(d2.get_schema_version(), 5)
+                self.assertEqual(d2.get_schema_version(), CURRENT_SCHEMA_VERSION)
                 self.assertEqual(
                     d2._connect().execute("SELECT COUNT(*) FROM state").fetchone()[0], 2
                 )

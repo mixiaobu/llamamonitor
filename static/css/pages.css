@@ -15,7 +15,7 @@
   .chart { height: 280px; }
 }
 /* 移动端：手机（≤700px）图表更紧凑，减少纵向滚动 */
-@media (max-width: 760px) {
+@media (max-width: 760px), (orientation: landscape) and (max-height: 480px) {
   .chart { height: 240px; }
   .chart.tall { height: 260px; }
 }
@@ -36,27 +36,45 @@
  每格 = 一个物理核（超线程 sibling 取均值）或逻辑核，显示真实利用率整数。 */
 .core-heat-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(46px, 1fr));
   gap: 3px;
   margin-top: var(--spacing-sm);
 }
+/* Round-3：逻辑处理器利用率 Heat Grid（§56-§62）。
+   颜色：低=中性 / 中=accent / 高=warning；100% 不直接 error red（高负载≠错误）。 */
 .core-heat-grid .core-cell {
-  aspect-ratio: 1.4;
+  min-height: 40px;
   border-radius: var(--radius-micro);
-  background: var(--accent);
-  opacity: 0.14;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-subtle);
   position: relative;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 1px;
+  padding: 4px 2px;
+  font-variant-numeric: tabular-nums;
 }
 .core-heat-grid .core-cell .core-val {
+  font-size: 10px;
+  line-height: 1;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+.core-heat-grid .core-cell .core-pct {
   font-size: 12px;
   line-height: 1;
   color: var(--text-primary);
-  font-variant-numeric: tabular-nums;
-  font-weight: var(--font-weight-semibold);
+  font-weight: 600;
 }
+.core-heat-grid .core-cell.med { background: var(--accent-subtle); border-color: color-mix(in srgb, var(--accent) 45%, var(--border-subtle)); }
+.core-heat-grid .core-cell.high { background: color-mix(in srgb, var(--accent) 40%, transparent); border-color: var(--accent); }
+.core-heat-grid .core-cell.high .core-pct { color: var(--accent); }
+.core-heat-grid .core-cell.hot { background: var(--warning-subtle); border-color: color-mix(in srgb, var(--warning) 70%, var(--border-subtle)); }
+.core-heat-grid .core-cell.hot .core-pct { color: var(--warning); }
+.core-heat-grid .core-cell.na { opacity: 0.45; }
+.core-heat-sub { color: var(--text-secondary); font-weight: 400; margin-left: var(--spacing-xs); font-size: var(--font-size-secondary); }
 .core-heat-head {
   display: flex;
   align-items: center;
@@ -186,13 +204,13 @@
   padding-top: var(--spacing-xs);
 }
 
-/* ---------- 备份列表 ---------- */
+/* ---------- 备份列表 ----------
+   不设 max-height/overflow：数据维护卡片随内容自然增高，
+   滚动交给外层页面（不出现卡片内嵌套滚动条）。 */
 .backup-list {
   margin-top: var(--spacing-sm);
   font-size: var(--font-size-caption);
   color: var(--text-secondary);
-  max-height: 220px;
-  overflow-y: auto;
   display: flex;
   flex-direction: column;
 }
@@ -280,8 +298,8 @@
   border-radius: var(--radius-large);
   position: sticky;
   bottom: 0; /* 固定钉在滚动视口最底部 */
-  /* 宽度 = settings-shell 右侧内容列（总宽 - 184px 菜单 - 32px 间隙） */
-  margin-left: calc(184px + var(--spacing-2xl));
+  /* 宽度 = settings-shell 右侧内容列（总宽 - 168px 菜单 - 28px 间隙，§13/§15） */
+  margin-left: calc(168px + 28px);
   box-shadow: var(--shadow-pop);
 }
 /* 未保存提示独占上一行（右对齐），按钮行保持完整宽度 */
@@ -379,14 +397,21 @@
   flex-wrap: wrap;
 }
 
-/* 今日大数字卡（：表面来自 .card，此处只管内部布局） */
+/* 今日大数字卡（表面来自 .card，此处只管内部布局）
+   1.1.4 精修（§6/§7/§85/§86）：布局由卡片自身宽度驱动——
+   .today-card 设 container-type:inline-size；Hero 恒 2 列（minmax(0,1fr)），
+   仅当容器真的非常窄（≤420px，含侧栏折叠导致的宽度变化）才允许 Hero 单列。
+   禁止用视口 @media(1100) 粗暴降级（§67）。 */
 .today-card {
-  
+  container-type: inline-size;
 }
 .today-hero {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--spacing-2xl);
+}
+@container (max-width: 420px) {
+  .today-hero { grid-template-columns: 1fr; }
 }
 .today-hero .hero-num {
   font-size: var(--font-size-hero);
@@ -406,7 +431,7 @@
   gap: var(--spacing-sm);
   font-size: var(--font-size-caption);
   color: var(--text-secondary);
-  margin-top: var(--spacing-sm);
+  margin-top: 5px; /* 1.1.4 精修：value -> label 间距 4-6px（原 8px 偏松） */
 }
 .today-divider {
   height: 1px;
@@ -415,13 +440,16 @@
 }
 .today-breakdown {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  /* 1.1.4 精修（§9/§24）：3 列优先；容器不够时 auto-fit 收列。
+     320px 下每列 ~90px，label 允许换行（不再强制单列）。 */
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
   gap: var(--spacing-lg);
 }
 .today-breakdown .tb-label {
   font-size: var(--font-size-caption);
   color: var(--text-secondary);
   margin-bottom: var(--spacing-xs);
+  line-height: 1.3;
 }
 .today-breakdown .tb-value {
   font-size: var(--font-size-metric);
@@ -460,9 +488,10 @@
 .perf-card .pc-value.dim { color: var(--text-disabled); }
 .perf-card .pc-value.small { font-size: var(--font-size-body); }
 
-@media (max-width: 1099px) {
-  .today-hero, .today-breakdown, .perf-grid { grid-template-columns: 1fr; }
-}
+/* 1.1.4 精修（§5-§7）：移除旧 @media(1100) 对 today-hero / today-breakdown /
+   ov-perf-grid 的强制 1fr——窄 Desktop（如 1065px 折叠侧栏后内容 ~900px）
+   必须保持桌面双列布局。Today 改由 .today-card 容器查询驱动；
+   性能双卡改 auto-fit（容器够宽就并排，不够就单列）。 */
 
 /* ---------- 数据质量缺口表外的提示块 ---------- */
 .gap-reason-tag {
@@ -517,42 +546,303 @@
   margin-top: 0;
 }
 
-/* ---------- 即时指标条（一行 5 项，表面来自 .card；
- 间距审计：自身带分区级下边距，与后续 section 保持 24px） ---------- */
-.metric-strip {
+/* ============================================================
+   推理性能页（Round 5 产品化）
+   A. 实时摘要（5 项） / B. Token 吞吐率 / C. 运行时状态 /
+   D. MTP / E. Slot 监控 / F. 模型与运行环境
+   节奏：Section Header -> Card 10~12px；Section -> Section 24px。
+   响应式：Wide 5 等分 / Compact 3+2 / Mobile 2+2+1（§20-§22）。
+   ============================================================ */
+
+/* A. 实时性能摘要（.card 表面；5 项） */
+.perf-summary {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: var(--spacing-lg);
   padding: var(--spacing-lg) var(--spacing-xl);
   margin-bottom: var(--section-gap);
 }
-.metric-strip .ms-item {
+.perf-summary .ps-item {
   min-width: 0;
   padding: 0 var(--spacing-md);
   border-left: 1px solid var(--border-subtle);
 }
-.metric-strip .ms-item:first-child { border-left: none; padding-left: 0; }
-.metric-strip .ms-key {
+.perf-summary .ps-item:first-child { border-left: none; padding-left: 0; }
+.perf-summary .ps-key {
   font-size: var(--font-size-caption);
   color: var(--text-secondary);
-  margin-bottom: 2px;
+  margin-bottom: 3px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
-.metric-strip .ms-value {
+.perf-summary .ps-value {
   font-size: var(--font-size-metric);
   font-weight: var(--font-weight-semibold);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  color: var(--text-primary);
 }
-.metric-strip .ms-value.dim { color: var(--text-disabled); }
+.perf-summary .ps-value.dim { color: var(--text-disabled); }
 @media (max-width: 1099px) {
-  .metric-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .metric-strip .ms-item { border-left: none; padding: 0; }
+  .perf-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .perf-summary .ps-item { border-left: none; padding: 0; }
 }
 
-/* ---------- 概览：GPU 迷你卡（仅 4 项关键指标） ---------- */
+/* 数据新鲜度 badge（Page Header 右侧；§31-§33） */
+.freshness-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-secondary);
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-elevated) 60%, transparent);
+  border: 1px solid var(--border-subtle);
+  white-space: nowrap;
+}
+.freshness-badge .fb-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--color-success, #4cc38a);
+}
+.freshness-badge.stale { color: var(--color-warning, #f7b955); }
+.freshness-badge.stale .fb-dot { background: var(--color-warning, #f7b955); }
+.freshness-badge.offline { color: var(--color-danger, #ff99a4); }
+.freshness-badge.offline .fb-dot { background: var(--color-danger, #ff99a4); }
+
+/* B. Token 吞吐率：窗口加权平均 Summary（Section Header 下轻量一行，§49） */
+.perf-window-avg {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-size-body);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  margin: 0 0 var(--spacing-sm);
+  min-height: 1.2em;
+}
+.perf-window-avg .pwa-key {
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+}
+.perf-window-avg .pwa-sep { color: var(--text-disabled); }
+.perf-window-avg.partial::after {
+  content: "\00B7 可用数据 " attr(data-note);
+  color: var(--color-warning, #f7b955);
+  font-size: var(--font-size-caption);
+}
+.perf-history-link { margin-top: var(--spacing-sm); }
+.perf-history-link .link { font-size: var(--font-size-caption); }
+
+/* C. 运行时状态（5 项，与摘要同构；§74-§76） */
+.runtime-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+.runtime-grid .stat { min-width: 0; }
+@media (max-width: 1099px) {
+  .runtime-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+/* 上下文占用进度（§77-§78：占用比例，非 KV Cache 显存率） */
+.ctx-progress {
+  position: relative;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--border-subtle);
+  margin-top: 8px;
+  overflow: hidden;
+}
+.ctx-progress::after {
+  content: "";
+  position: absolute;
+  top: 0; right: auto; bottom: 0; left: 0;
+  width: var(--ctx-pct, 0%);
+  border-radius: 3px;
+  background: var(--accent);
+}
+.ctx-progress.warn::after { background: var(--color-warning, #f7b955); }
+.ctx-progress.crit::after { background: var(--color-danger, #ff99a4); }
+
+/* D. MTP：Summary 6 项（§92-§93：Desktop 6 列/3+3，Mobile 2x3） */
+.mtp-metrics-grid {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+.mtp-metrics-grid .stat { min-width: 0; }
+.mtp-metrics-grid .stat-label {
+  font-size: var(--font-size-caption);
+}
+.mtp-metrics-grid .stat-value {
+  font-size: var(--font-size-metric);
+}
+@media (max-width: 1099px) {
+  .mtp-metrics-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+.mtp-state-note {
+  font-size: var(--font-size-body);
+  color: var(--text-secondary);
+  margin-top: var(--spacing-md);
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--border-subtle);
+}
+.mtp-charts { margin-top: var(--spacing-md); }
+.mtp-charts .card-title { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+
+/* E. Slot 监控（Desktop 紧凑 Table / Mobile Card，同一 DOM；§117-§144） */
+.slot-card-wrap { padding: var(--spacing-md) var(--spacing-lg) var(--spacing-lg); }
+.slot-table-wrap { overflow-x: auto; }
+.slot-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-body);
+  font-variant-numeric: tabular-nums;
+}
+.slot-table thead th {
+  text-align: left;
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-secondary);
+  font-size: var(--font-size-caption);
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  white-space: nowrap;
+}
+.slot-table thead th.num { text-align: right; }
+.slot-table tbody td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  white-space: nowrap;
+}
+.slot-table tbody tr.slot-row:last-child td { border-bottom: none; }
+.slot-table td.num { text-align: right; }
+.slot-table td.na { color: var(--text-disabled); }
+.slot-id-cell { font-weight: var(--font-weight-semibold); }
+.slot-state {
+  display: inline-block;
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-medium);
+  padding: 1px 8px;
+  border-radius: 999px;
+  color: var(--text-secondary);
+  background: var(--border-subtle);
+}
+.slot-state.busy {
+  color: var(--color-success, #4cc38a);
+  background: color-mix(in srgb, var(--color-success, #4cc38a) 14%, transparent);
+}
+.slot-ctx { min-width: 120px; }
+.slot-ctx-pct { color: var(--text-secondary); }
+.slot-ctx.warn .slot-ctx-pct { color: var(--color-warning, #f7b955); }
+.slot-ctx.crit .slot-ctx-pct { color: var(--color-danger, #ff99a4); }
+.slot-detail-btn {
+  font: inherit;
+  font-size: var(--font-size-caption);
+  color: var(--accent);
+  background: none;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: 2px 10px;
+  cursor: pointer;
+}
+.slot-detail-btn:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.slot-detail-off { color: var(--text-disabled); }
+/* Progressive Disclosure 详情行（§137-§141：诊断配置，非聊天审计） */
+.slot-detail-row td {
+  background: color-mix(in srgb, var(--surface-elevated) 40%, transparent);
+  padding: 10px 14px;
+  white-space: normal;
+}
+.slot-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 4px 18px;
+}
+.slot-detail-grid .sd-k {
+  color: var(--text-secondary);
+  font-size: var(--font-size-caption);
+  display: inline-block;
+  min-width: 84px;
+}
+.slot-detail-grid .sd-v {
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+.lock-icon {
+  display: inline-block;
+  width: 12px; height: 12px;
+  vertical-align: -1px;
+  background: currentColor;
+  -webkit-mask: no-repeat center / contain url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='11' width='18' height='11' rx='2'/%3E%3Cpath d='M7 11V7a5 5 0 0 1 10 0v4'/%3E%3C/svg%3E");
+  mask: no-repeat center / contain url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='11' width='18' height='11' rx='2'/%3E%3Cpath d='M7 11V7a5 5 0 0 1 10 0v4'/%3E%3C/svg%3E");
+}
+.sh-sub { display: inline-flex; align-items: center; gap: 4px; }
+
+/* F. 模型与运行环境（8 项；Wide 4 列 / Compact 2-4 / Mobile 2；§150-§184） */
+.model-env-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.model-env-grid .stat { min-width: 0; }
+.model-env-grid .stat-value {
+  font-size: var(--font-size-body);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 1099px) {
+  .model-env-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* ---------- 概览：主机概况（1.1.4 精修 §19-§34） ----------
+   宽屏 5 列；窄 Desktop（内容 ~900px）3+2；Mobile 2 列由 mobile.css 负责。
+   关键遥测值（内存/磁盘/网络/功耗/温度）禁止依赖 ellipsis：
+   数值用主值 + 次值（.stat-sub）或双行（.host-dual），不压缩字号。 */
+.host-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+.host-grid .stat {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-height: 64px;
+  justify-content: flex-start;
+}
+.host-grid .stat-value {
+  /* 主值：关键数字不截断（换行/双行由 .host-dual 处理） */
+  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
+}
+.host-grid .stat-value.mid {
+  font-size: var(--font-size-metric);
+  line-height: 1.15;
+}
+/* 磁盘/网络双行：↓ / ↑ 各占一行 */
+.host-grid .host-dual {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  white-space: nowrap;
+}
+.host-grid .host-dual .hv {
+  font-variant-numeric: tabular-nums;
+}
+/* 次值行（温度 / 内存明细 / 功耗来源）：13px，可换行不截断 */
+.stat-sub {
+  font-size: var(--font-size-secondary);
+  color: var(--text-secondary);
+  line-height: 1.3;
+  overflow-wrap: break-word;
+}
+.stat-sub.dim { color: var(--text-muted); }
+/* 窄 Desktop（折叠侧栏后内容 ~900px）：5 列 -> 3 + 2 */
+@media (max-width: 1200px) {
+  .host-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .host-grid .stat:last-child { grid-column: auto; }
+}
+/* 概览：GPU 迷你卡（仅 4 项关键指标） ---------- */
 .gpu-mini-head {
   display: flex;
   align-items: baseline;
@@ -618,21 +908,19 @@
   font-variant-numeric: tabular-nums;
 }
 .gm-metric .v.dim { color: var(--text-disabled); font-weight: var(--font-weight-regular); }
-@media (max-width: 1099px) {
-  .gpu-mini-grid { grid-template-columns: 1fr; }
-  /* 手机单列下 2×2 指标格半宽只有 ~120px，22px 的「29.7 / 32.0 GiB」
- 会从数字中间折断。降到 16px 后单行可容纳（~105px）。 */
-  .gm-metric .v { font-size: var(--font-size-card); }
-}
+/* 1.1.4 精修（§36/§80）：移除旧 @media(1099) 的 GPU 迷你卡强制单列——
+   窄 Desktop（1065 折叠侧栏后内容 ~800-940px）两张卡仍可并排（minmax(280px,340px)
+   内容宽度驱动）；单列交给 mobile.css（≤760）。 
+   VRAM「29.7 / 32.0 GiB」不再靠 16px 缩字：卡宽 ≥280 时单元格若放不下
+   允许自然换两行（§82），不再数字中间折断。
 
-/* ---------- 概览：性能/运行 双卡（宽屏两列，窄屏单列） ---------- */
+/* ---------- 概览：性能/运行 双卡（1.1.4 精修 §25/§79：
+   容器能放下两张 360px + gap 就并排（含 1065 折叠侧栏的窄 Desktop），
+   放不下自然单列；禁止为单一视口写死 1fr） ---------- */
 .ov-perf-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
   gap: var(--spacing-lg);
-}
-@media (max-width: 1099px) {
-  .ov-perf-grid { grid-template-columns: 1fr; }
 }
 
 /* ---------- GPU 页：筛选行（图表区上方单独一行） + 双图并排 ---------- */
@@ -657,79 +945,83 @@
   overflow-x: visible;
   max-width: none;
 }
-@media (max-width: 1099px) {
-  .gpu-toolbar #gpuPick {
-    flex-direction: column;
-    width: 100%;
-  }
-  .gpu-toolbar #gpuPick .check-chip {
-    width: 100%;
-    margin: 0;
-    justify-content: flex-start;
-  }
-}
+/* Round-4 §67-75：chip 始终 flex-wrap（禁横滚），8 GPU 自动换行；
+   窄屏不再强制竖排（旧规则会撑高工具条）。 */
 .charts-2col {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: var(--spacing-lg);
 }
-@media (max-width: 1366px) {
+/* Round-4 §90-92：功耗与温度 2 列到 988px，≤988 降单列（旧 1366 会过早单列）。 */
+@media (max-width: 988px) {
   .charts-2col { grid-template-columns: 1fr; }
 }
 
-/* ---------- GPU 卡（320-400px 动态网格 + VRAM 进度条
+/* ---------- GPU 卡（Round-4 §210-216：320-420px 左对齐网格 + VRAM 进度条
  移动端：min(320px,100%) 手机单列不溢出（390px 屏内容宽仅 270px） ---------- */
 .gpu-grid {
-  grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(340px, 100%), 420px));
+  justify-content: start;
 }
-.gpu-device .gd-primary {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: var(--spacing-md);
-  padding: var(--spacing-xs) 0;
-  font-size: var(--font-size-body);
+/* Round-4 两层卡：第一层 = 核心指标 2×2 网格（数值 primary text，不随阈值变色） */
+.gpu-device .gd-core {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing-sm) var(--spacing-md);
+  margin: var(--spacing-sm) 0 var(--spacing-sm);
 }
-.gpu-device .gd-primary .k { color: var(--text-secondary); }
-.gpu-device .gd-primary .v {
+.gpu-device .gd-cell { min-width: 0; }
+.gpu-device .gd-cell .gd-k {
+  color: var(--text-secondary);
+  font-size: var(--font-size-caption);
+  margin-bottom: 2px;
+}
+.gpu-device .gd-cell .gd-v {
   font-size: var(--font-size-metric);
   font-weight: var(--font-weight-semibold);
   font-variant-numeric: tabular-nums;
+  word-break: break-word;
 }
-.gpu-device .gd-primary .v.dim { color: var(--text-disabled); font-weight: var(--font-weight-regular); }
-/* 窄屏（手机单列 ~250-280px）主指标值字号 22px 会让「29.7 / 32.0 GiB」
- 这类长串折行（数字从中间断开）。降一档 + 禁止断行 + 允许整体右移收缩。 */
-@media (max-width: 1099px) {
-  .gpu-device .gd-primary {
-    font-size: var(--font-size-body);
-  }
-  .gpu-device .gd-primary .v {
-    font-size: var(--font-size-body);
-    white-space: nowrap;
-    min-width: 0;
-  }
-  .gpu-device .gd-primary .k {
-    white-space: nowrap;
-    flex: none;
-  }
-}
-.gpu-device .gd-secondary {
+.gpu-device .gd-cell .gd-v.dim { color: var(--text-disabled); font-weight: var(--font-weight-regular); }
+/* 第二层：紧凑元信息（风扇/P-State/SM 时钟/显存时钟/PCIe；label 定宽 + 值右对齐） */
+.gpu-device .gd-meta {
   margin-top: var(--spacing-sm);
   padding-top: var(--spacing-sm);
   border-top: 1px solid var(--border-subtle);
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0;
 }
-.gpu-device .gd-secondary .k { font-size: var(--font-size-caption); }
+.gpu-device .gd-meta .adv-row { padding: 2px 0; }
+@media (min-width: 761px) and (max-width: 1099px) {
+  .gpu-device .gd-cell .gd-v { font-size: var(--font-size-body); }
+}
+@media (max-width: 760px), (orientation: landscape) and (max-height: 480px) {
+  .gpu-device .gd-cell .gd-v { font-size: var(--font-size-body); }
+}
 .vram-bar {
   height: 4px;
   background: var(--bg-subtle-active);
   border-radius: 2px;
   overflow: hidden;
-  margin: var(--spacing-xs) 0 var(--spacing-sm);
+  margin: 6px 0 2px;
 }
 .vram-bar .fill {
   height: 100%;
   border-radius: 2px;
   background: var(--accent);
+}
+/* Round-4 §13-14：数据已过期徽标（保 last-known 值 + Stale） */
+.gpu-device.is-stale { opacity: 0.85; }
+.gpu-device .gpu-stale {
+  display: inline-block;
+  margin-top: var(--spacing-sm);
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--bg-subtle-active);
+  color: var(--text-secondary);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-semibold);
 }
 
 /* ---------- 监控事件（改为表格；无嵌套滚动，页面承担纵向滚动；15 条 + 查看更多） ----------
@@ -759,7 +1051,7 @@
 /* ---------- Settings 内部二级导航（---------- */
 .settings-shell {
   display: grid;
-  grid-template-columns: 184px minmax(0, 1fr);
+  grid-template-columns: 168px minmax(0, 1fr);  /* §13：Rail 150~170px */
   gap: var(--spacing-2xl);
   align-items: start;
 }
@@ -808,13 +1100,33 @@
   min-width: 0;
 }
 .settings-pane .settings-card[hidden] { display: none; }
-@media (max-width: 1099px) {
-  .settings-shell { grid-template-columns: 1fr; }
+/* §17-§21：Compact（内容 < ~720px）：分类切为顶部横向 Tabs（单行不换行、可横滚、
+   当前项可见），不再 8 项纵向占高 / 多行 wrap。
+   实测 rail 模式下内容 ≈ 视口宽 − 310（rail168 + gap24 + 页面/容器边距），
+   内容 ≥720 ⟺ 视口 ≥ ~1030。988px 内容 ~678 < 720 → 用横向 Tabs。 */
+@media (max-width: 1029px) {
+  .settings-shell { grid-template-columns: 1fr; gap: var(--spacing-md); }
   .settings-rail {
-    position: static;
+    position: sticky;
+    top: 0;
+    z-index: var(--z-sticky, 30);
     flex-direction: row;
-    flex-wrap: wrap;
-    gap: var(--spacing-xs);
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    gap: 2px;
+    background: var(--bg-base);
+    padding: var(--spacing-xs) 0;
+    margin: 0 calc(-1 * var(--page-pad));
+    padding-left: var(--page-pad);
+    padding-right: var(--page-pad);
+    scrollbar-width: none;
+  }
+  .settings-rail::-webkit-scrollbar { display: none; }
+  .settings-rail .rail-item {
+    flex: none;
+    width: auto;          /* 横向 tab：取消纵向 rail 的 width:100% */
+    min-height: 40px;
+    white-space: nowrap;
   }
 }
 
@@ -874,12 +1186,13 @@ a.link {
   display: inline-flex;
   align-items: center;
   gap: var(--spacing-xs);
-  font-size: var(--font-size-caption);
+  font-size: var(--font-size-secondary);
   font-weight: var(--font-weight-semibold);
   color: var(--accent);
   text-decoration: none;
   background: none;
   border: none;
+  min-height: 36px;
   padding: 4px 8px;
   margin: -4px -8px;
   border-radius: var(--radius-control);
@@ -1068,10 +1381,12 @@ a.link:hover .arr { transform: translateX(2px); }
   margin-left: var(--spacing-sm);
 }
 
-/* 概览 GPU 迷你卡：2 卡等宽占满（不要左二右空） */
+/* 概览 GPU 迷你卡：1.1.4 精修（§37-§39）——
+   min 280 / 偏好 320-340 / max ~380：2 卡不再各占 50% 拉伸到 600px，
+   1 卡不填满 1200px；3-4 卡自然换行。 */
 .gpu-mini-grid {
   max-width: none;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(280px, 340px));
 }
 
 /* MTP 组（summary + 双图 作为整体；
@@ -1085,16 +1400,14 @@ a.link:hover .arr { transform: translateX(2px); }
   
 }
 
-/* 数据质量 summary（横向 summary card；移除"最近有效采样"后 3 列均分） */
+/* 数据质量 summary（横向 summary card；移除"最近有效采样"后 3 列均分）。
+   1.1.4 精修 §48/§81：窄 Desktop（1065）优先保持 3 列——
+   auto-fit minmax(180px) 由内容宽度驱动，不够才收 2+1，不写死视口断点。
+   Mobile 2+1 / 320 单列由 mobile.css 负责。 */
 .dq-summary .stat-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
 }
-@media (max-width: 1366px) {
-  .dq-summary .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-@media (max-width: 760px) {
-  .dq-summary .stat-grid { grid-template-columns: 1fr; }
-}
+.dq-summary .stat-hint { font-size: var(--font-size-caption); }
 
 /* About 品牌卡（Logo + 名称 + 版本 + 副标题，独立卡片；
  间距审计：自身带分区级下边距，与后续 section 保持 24px） */
@@ -1239,59 +1552,45 @@ details.core-heat[open] summary::before { content: "▾ "; }
 }
 .kv-list .k { color: var(--text-secondary); }
 .kv-list .v { color: var(--text-primary); word-break: break-word; }
-@media (max-width: 760px) {
+@media (max-width: 760px), (orientation: landscape) and (max-height: 480px) {
   .kv-list { grid-template-columns: 1fr; gap: 2px; }
   .kv-list .k { margin-top: var(--spacing-xs); }
 }
 
-/* 性能页：模型与 Slot（slot 卡片网格 + 状态点） */
-#llmSlotList {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr));
-  gap: var(--spacing-md);
-}
-.slot-card {
-  background: var(--bg-card);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-card-sm);
-  padding: var(--spacing-sm) var(--spacing-md);
-  min-width: 0;
-}
-.slot-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: var(--spacing-sm);
-  margin-bottom: var(--spacing-xs);
-}
-.slot-id {
-  font-size: var(--font-size-body);
-  font-weight: var(--font-weight-semibold);
-}
-.slot-state {
-  font-size: var(--font-size-caption);
-  color: var(--text-secondary);
-}
-.slot-state.busy { color: var(--success); font-weight: var(--font-weight-semibold); }
-.slot-card .gpu-kv {
-  grid-template-columns: 120px minmax(0, 1fr);
-  gap: 2px var(--spacing-md);
-}
-/* AUDIT-1.1.1 BUG-1111-010：Slot 空闲时 per-request 数字是上一次请求的残留，
- 淡化显示 + 顶部一行说明，避免用户把旧值当当前状态 */
-.slot-stale-note {
-  font-size: var(--font-size-caption);
-  color: var(--text-secondary);
-  opacity: 0.75;
-  margin-bottom: var(--spacing-xs);
-}
+/* 性能页：Slot 监控（#llmSlotList 单一容器，内为 .slot-table-wrap > .slot-table）。
+   Desktop 紧凑 Table；Mobile 由 mobile.css 转 Card（§142-§144）。 */
 
 /* GPU 页：驱动版本（页头小字） */
 #gpuDriverVer { color: var(--text-secondary); }
 
 /* 1.1.2：桌面默认全展开——隐藏 .gpu-adv 的 summary（手机端的可展开 summary
  样式与交互在 mobile.css）。JS 侧桌面仍设 details.open=true 作为双保险。 */
-.gpu-adv > summary { display: none; }
+/* Round-4 §32-34：高级信息桌面/手机都默认折叠。summary 全程可见（chevron 由
+   ::before 提供），不再桌面隐藏。手机端的触摸目标/交互微调在 mobile.css。 */
+.gpu-adv {
+  margin-top: var(--spacing-sm);
+  border-top: 1px solid var(--border-subtle);
+}
+.gpu-adv > summary {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  min-height: 32px;
+  padding: var(--spacing-xs) 0;
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-secondary);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.gpu-adv > summary::-webkit-details-marker { display: none; }
+.gpu-adv > summary::before {
+  content: "▸";
+  transition: transform var(--transition-fast);
+  font-size: var(--font-size-caption);
+}
+.gpu-adv[open] > summary::before { transform: rotate(90deg); }
 
 /* GPU 页：高级遥测行（显存控制器 / 功耗占上限 / 性能状态 / throttle 原因） */
 .adv-row {
@@ -1310,7 +1609,15 @@ details.core-heat[open] summary::before { content: "▾ "; }
   text-align: right;
   word-break: break-word;
 }
+/* Round-4 §43-51：性能限制着色（Idle 不在此列——运行状态"空闲"用 primary text）。
+   功耗 amber / 温度 amber-red / 硬件降速 warning / 应用时钟 secondary。 */
 .adv-row.throttle-row .v { color: var(--warning); }
+.adv-row.throttle-row.level-power .v { color: var(--warning); }
+.adv-row.throttle-row.level-thermal .v { color: var(--error); }
+.adv-row.throttle-row.level-hw .v { color: var(--warning); font-weight: var(--font-weight-semibold); }
+/* 良性/未归类原因（应用时钟 / Sync Boost / 未知）：中性色，不报警色（§43-51） */
+.adv-row.throttle-row.level-app .v { color: var(--text-secondary); }
+.adv-row.throttle-row.level-other .v { color: var(--text-secondary); }
 
 /* GPU 页：ECC 健康块（ecc == null 时整块由 JS 不渲染） */
 .gpu-ecc {
@@ -1329,9 +1636,45 @@ details.core-heat[open] summary::before { content: "▾ "; }
   gap: 2px var(--spacing-md);
 }
 
-/* GPU 页：进程表（只读；tnum = tabular nums 右对齐） */
+/* GPU 页：进程区（Round-4 §143-176；只读；无内部 vertical scroll——页面外层滚动） */
 .tnum { font-variant-numeric: tabular-nums; text-align: right; }
 .gpu-proc-empty { color: var(--text-secondary); text-align: center; padding: var(--spacing-md) 0; }
+/* .gpu-proc 外层无 max-height/overflow（硬性 Gate §299-302：DOM/CSS 证明无内部滚动） */
+.gpu-proc { min-width: 0; }
+.gpu-proc .gpu-proc-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: var(--font-size-caption);
+}
+.gpu-proc .gpu-proc-table thead th {
+  text-align: left;
+  color: var(--text-secondary);
+  font-weight: var(--font-weight-semibold);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-bottom: 1px solid var(--border-subtle);
+  white-space: nowrap;
+}
+.gpu-proc .gpu-proc-table thead th:last-child { text-align: right; }
+.gpu-proc .gpu-proc-table tbody td {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  max-width: 0;  /* 让 ellipsis 生效（应用列） */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gpu-proc .gpu-proc-table tbody td.tnum { white-space: nowrap; }
+.gpu-proc .gpu-proc-table tbody td.dim { color: var(--text-disabled); }
+.gpu-proc .gpu-proc-table .proc-app { max-width: 260px; cursor: help; }
+.gpu-proc-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  margin-top: var(--spacing-sm);
+  flex-wrap: wrap;
+}
 
 /* Settings 页：系统监控传感器只读列表（复用 .sensor-row） */
 #sysMonSensorList {
@@ -1346,4 +1689,942 @@ details.core-heat[open] summary::before { content: "▾ "; }
 }
 #sysMonState { margin-bottom: var(--spacing-md); }
 
+/* ============ 用量页（1.1.4 Round 4 产品化） ============ */
+/* 页头范围控件组：分段 + 自定义按钮 并排 */
+.range-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+}
+.range-custom {
+  height: 30px;
+}
+/* 自定义范围弹层（锚定在页头右下的轻量 popover，非全屏 modal） */
+.range-popover {
+  position: fixed;
+  z-index: var(--z-popover);
+  min-width: 280px;
+  padding: var(--spacing-lg);
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-pop, 0 8px 24px rgba(0, 0, 0, 0.25));
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+.range-popover[hidden] { display: none; }
+.range-popover .rp-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+}
+.range-popover .rp-row label {
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+}
+.range-popover input[type="date"] {
+  height: 30px;
+  padding: 0 var(--spacing-sm);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  color: var(--text-primary);
+  font-size: var(--font-size-body);
+  color-scheme: dark;
+}
+.range-popover .rp-hint {
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+}
+.range-popover .rp-hint.bad { color: var(--error); }
+.range-popover .rp-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--spacing-sm);
+}
 
+/* 使用汇总：主值区（Token 总量 / 实际计算 Token 两列） */
+.us-summary .us-hero {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--spacing-lg) var(--spacing-xl);
+}
+.us-summary .us-hero .stat-value {
+  font-size: 34px;
+}
+.us-summary .us-hero .stat-value.mid {
+  font-size: 28px;
+}
+@media (max-width: 760px), (orientation: landscape) and (max-height: 480px) {
+  .us-summary .us-hero { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Token 构成条（6–8px 堆叠条 + 图例） */
+.us-comp { display: flex; flex-direction: column; gap: 6px; }
+.us-comp-track {
+  display: flex;
+  height: 7px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--bg-subtle);
+}
+.us-comp-track i {
+  display: block;
+  height: 100%;
+}
+.us-comp-track i.prompt { background: #4da3ff; }
+.us-comp-track i.cached { background: #7a8194; }
+.us-comp-track i.output { background: #4cc38a; }
+.us-comp-legend {
+  display: flex;
+  gap: var(--spacing-lg);
+  flex-wrap: wrap;
+}
+.us-comp-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+}
+.us-comp-key .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  display: inline-block;
+}
+.us-comp-key .dot.prompt { background: #4da3ff; }
+.us-comp-key .dot.cached { background: #7a8194; }
+.us-comp-key .dot.output { background: #4cc38a; }
+
+/* 洞察行：日均 / 峰值日 / 采集覆盖率 / 采集缺口（4 列，窄屏 2 列） */
+.us-insights {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--spacing-md) var(--spacing-xl);
+}
+.us-insight { min-width: 0; }
+.us-insight .ui-label {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+  margin-bottom: 2px;
+}
+.us-insight .ui-value {
+  font-size: var(--font-size-metric);
+  font-weight: var(--font-weight-semibold);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.us-insight .ui-loss {
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+.us-insight .ui-loss.warn { color: var(--warning); }
+@media (max-width: 1099px) {
+  .us-insights { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 480px) {
+  .us-insights { grid-template-columns: minmax(0, 1fr); }
+}
+/* 4 格明细：窄屏 2 列（复用 stat-grid auto-fit 之外显式收口） */
+@media (max-width: 480px) {
+  .us-grid4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* 趋势图：小时档（今天）与日档共用同一 chart 容器，沿用 .chart 响应式高度 */
+
+/* ============================================================
+   Round-3 系统页（A–I 信息架构）
+   概览 6 项 / CPU / 内存 / 存储 / 网络 / 功耗 / 硬件传感器 / 硬件信息
+   ============================================================ */
+
+/* 系统概览：6 项（§30-§32：Wide 6 列 / Compact 3×2 / Mobile 2 列） */
+.sys-overview-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.sys-overview-grid .stat { min-height: 64px; }
+.sys-overview-grid .stat-value.mid { font-size: var(--font-size-metric); line-height: 1.15; }
+
+/* CPU / 内存 / 网络 / 功耗 Summary 网格（§35/§67/§103/§109） */
+.sys-cpu-summary { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.sys-mem-summary { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.sys-net-summary { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.sys-power-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.sys-power-grid .stat { min-height: 60px; }
+/* 能力自适应：不可用项淡显、缩小（不占显眼主位，§36-§37） */
+.sys-cpu-summary .stat.cap-hidden { opacity: 0.55; }
+
+/* 图表标题 + 分析摘要（§46：当前 / 平均 / 峰值） */
+.card-title {
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+  display: flex; align-items: baseline; gap: var(--spacing-sm); flex-wrap: wrap;
+}
+.card-sub {
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-normal);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.sh-sub {
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+}
+
+/* 网络接口选择器（§98-§100） */
+.sh-actions .select { min-width: 0; max-width: 220px; }
+.select.small { font-size: var(--font-size-small); }
+/* 图表摘要可换行/收缩（避免 320px 下 CPU/内存 区 header 摘要撑爆横向） */
+.sh-actions .sh-sub { min-width: 0; max-width: 100%; overflow-wrap: break-word; }
+.sh-sub, .card-sub { font-variant-numeric: tabular-nums; }
+@media (max-width: 400px) {
+  #page-system .section-header .sh-actions { flex: 1 1 100%; justify-content: flex-start; }
+  #page-system .section-header .sh-actions .sh-sub { max-width: 100%; }
+  #page-system .host-dual { gap: 6px; }
+}
+
+/* 硬件传感器：结构化分组（§138-§153） */
+.sensor-group { margin-bottom: var(--spacing-md); }
+.sensor-group:last-child { margin-bottom: 0; }
+.sensor-group-title {
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-secondary);
+  margin-bottom: var(--spacing-xs);
+}
+.sensor-group-list { display: grid; gap: 2px; }
+.sensor-row {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--spacing-sm);
+  font-size: var(--font-size-small);
+  padding: 3px 0;
+}
+.sensor-name { color: var(--text-secondary); overflow-wrap: break-word; }
+.sensor-val { color: var(--text-primary); font-variant-numeric: tabular-nums; flex: none; }
+.sensor-table { width: 100%; border-collapse: collapse; font-size: var(--font-size-small); }
+.sensor-table th, .sensor-table td {
+  text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--border-subtle);
+}
+.sensor-table th { color: var(--text-secondary); font-weight: var(--font-weight-medium); }
+.sensor-table td.num, .sensor-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.sensor-table .na { color: var(--text-muted); }
+#sensorProviderHint { font-weight: var(--font-weight-normal); color: var(--text-muted); font-size: var(--font-size-caption); margin-left: var(--spacing-xs); }
+
+/* 硬件信息：定义网格（§167-§168：Desktop 2-4 列 / Mobile 1 列） */
+.kv-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--spacing-md) var(--spacing-lg, var(--spacing-md));
+}
+.kv-item { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.kv-item .k { font-size: var(--font-size-caption); color: var(--text-secondary); }
+.kv-item .v {
+  font-size: var(--font-size-body); color: var(--text-primary);
+  overflow-wrap: break-word; font-variant-numeric: tabular-nums;
+}
+.kv-item .v-sub { font-size: var(--font-size-caption); color: var(--text-muted); }
+
+/* 卷容量（§88-§92）：复用 .disk-cap / .vram-bar */
+.disk-list { display: grid; gap: var(--spacing-md); }
+
+/* ============================================================
+   Round-8 用量页 Day Cards（§146-155）
+   默认隐藏（桌面走 .daily-table-wrap 表格）；≤760px 由 mobile.css
+   切换显示。结构：卡头（日期 + Token 总量）→ 核心 4 项 2×2 →
+   Footer（缓存复用率 · 覆盖率 · Gap）。一卡一天，紧凑不拉高。
+   ============================================================ */
+.day-cards { display: none; }
+.day-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  padding: var(--spacing-sm) var(--spacing-md) var(--spacing-xs);
+  margin-bottom: var(--spacing-md);
+  break-inside: avoid;
+}
+.day-card:last-child { margin-bottom: 0; }
+.day-card .dc-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  padding-bottom: var(--spacing-sm);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.day-card .dc-date {
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-body);
+  font-variant-numeric: tabular-nums;
+}
+.day-card .dc-total {
+  font-size: var(--font-size-metric);
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+.day-card .dc-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px var(--spacing-md);
+  padding: var(--spacing-sm) 0;
+}
+.day-card .dc-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--spacing-sm);
+}
+.day-card .dc-k {
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+  flex: none;
+}
+.day-card .dc-v {
+  font-size: var(--font-size-body);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+.day-card .dc-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px var(--spacing-lg);
+  padding-top: var(--spacing-xs);
+  border-top: 1px solid var(--border-subtle);
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+}
+.day-card .dc-foot b {
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+.day-card .dc-foot .dc-f.cell-ok b { color: var(--success); }
+.day-card .dc-foot .dc-f.cell-warn b { color: var(--warning); }
+.day-card .dc-foot .dc-f.cell-bad b { color: var(--error); }
+.day-card .dc-note {
+  padding: var(--spacing-sm) 0;
+  font-size: var(--font-size-body);
+  color: var(--text-muted);
+}
+
+/* ============================================================
+   Round-3 系统页 响应式
+   ============================================================ */
+@media (max-width: 1200px) {
+  .sys-overview-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .sys-power-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .kv-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 760px), (orientation: landscape) and (max-height: 480px) {
+  .sys-overview-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sys-cpu-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sys-mem-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sys-net-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sys-power-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .kv-grid { grid-template-columns: 1fr; }
+  .sh-actions .select { max-width: 150px; }
+  .core-heat-grid { grid-template-columns: repeat(auto-fill, minmax(40px, 1fr)); }
+}
+
+/* ============================================================
+   Round-5 History 页（监控历史）
+   A. Page Header+Range → B. 监测完整性 → C. 完整性趋势 →
+   D. 采集缺口 → E. 监控事件 → F. 数据导出。
+   ============================================================ */
+/* B. 监测完整性 Summary（6 项；desktop 6 列 / 988 3×2 / mobile 2 列，§31-33） */
+.integrity-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: var(--spacing-lg) var(--spacing-xl);
+}
+.integrity-stat { min-width: 0; }
+.integrity-stat .stat-value { white-space: normal; }
+@media (max-width: 1240px) {
+  .integrity-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 987px) {
+  .integrity-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 560px) {
+  .integrity-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--spacing-md); }
+}
+
+/* A. Schema 状态 Banner（只读兼容模式 / 只读 / 异常，§241-252） */
+.schema-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: var(--radius-card);
+  border: 1px solid var(--border-subtle);
+  margin-bottom: var(--spacing-lg);
+  font-size: var(--font-size-body);
+  line-height: 1.5;
+}
+.schema-banner .sb-icon { flex: none; margin-top: 2px; }
+.schema-banner.amber { background: color-mix(in srgb, var(--warning) 14%, transparent); border-color: color-mix(in srgb, var(--warning) 45%, transparent); color: var(--text-primary); }
+.schema-banner.red { background: color-mix(in srgb, var(--error) 14%, transparent); border-color: color-mix(in srgb, var(--error) 45%, transparent); color: var(--text-primary); }
+
+/* C. 完整性趋势（高度 mobile 240 / desktop 280，§79-80） */
+.history-trend-box .chart { height: 280px; }
+@media (max-width: 760px), (orientation: landscape) and (max-height: 480px) { .history-trend-box .chart { height: 240px; } }
+
+/* D. 采集缺口 Filter Bar（§90-91） */
+.gap-filterbar, .ev-filterbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
+}
+.gfb-group { display: inline-flex; align-items: center; gap: var(--spacing-sm); }
+.gfb-label { font-size: var(--font-size-caption); color: var(--text-secondary); }
+.gfb-select, .gfb-input {
+  background: var(--bg-card);
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: var(--font-size-body);
+  min-height: 34px;
+}
+.gfb-input { min-width: 180px; }
+.gfb-search { flex: 1 1 200px; }
+@media (max-width: 560px) {
+  .gap-filterbar, .ev-filterbar { gap: var(--spacing-sm); }
+  .gfb-input { min-width: 0; width: 100%; }
+  .gfb-search { flex: 1 1 100%; }
+}
+/* 缺口表（desktop 高信息密度 table，不卡片化；§250-258） */
+.table-gap2 { table-layout: fixed; min-width: 640px; }
+.table-gap2 th:nth-child(1), .table-gap2 td:nth-child(1) { width: 190px; } /* 时间（跨日宽） */
+.table-gap2 th:nth-child(2), .table-gap2 td:nth-child(2) { width: 92px; }  /* 持续时间 */
+.table-gap2 th:nth-child(3), .table-gap2 td:nth-child(3) { width: 96px; }  /* 来源 */
+.table-gap2 th:nth-child(4), .table-gap2 td:nth-child(4) { width: auto; }  /* 原因 */
+.table-gap2 th:nth-child(5), .table-gap2 td:nth-child(5) { width: 120px; } /* Token 风险 */
+.gap-row { cursor: pointer; }
+.gap-row:hover td { background: color-mix(in srgb, var(--text-secondary) 6%, transparent); }
+.gap-detail-row td { background: color-mix(in srgb, var(--text-secondary) 4%, transparent); }
+.gap-detail, .ev-detailbox { font-size: var(--font-size-caption); line-height: 1.7; color: var(--text-secondary); padding: 2px 0; }
+.cell-time { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cell-warn { color: var(--warning); }
+.cell-bad { color: var(--error); }
+
+/* 显示更多（§114-119：无固定高度内部滚动，仅页面外层滚动） */
+.load-more-row { text-align: center; margin-top: var(--spacing-md); }
+
+/* E. 监控事件（desktop 表 + mobile Timeline） */
+.ev-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ev-sev { display: inline-flex; vertical-align: middle; margin-right: 6px; width: 15px; height: 15px; }
+.ev-sev svg { width: 100%; height: 100%; }
+.ev-sev-info { color: var(--info); }
+.ev-sev-ok { color: var(--success); }
+.ev-sev-warn { color: var(--warning); }
+.ev-sev-error { color: var(--error); }
+.ev-row { cursor: pointer; }
+.ev-row:hover td { background: color-mix(in srgb, var(--text-secondary) 6%, transparent); }
+.ev-detail-row td { background: color-mix(in srgb, var(--text-secondary) 4%, transparent); }
+.ev-detail { color: var(--text-secondary); }
+/* mobile Timeline（§174-176：时间 + ●marker + 事件名 + detail，每项 60-90px） */
+.ev-timeline { list-style: none; margin: 0; padding: 0; }
+.ev-tl-item { display: flex; gap: var(--spacing-md); padding: var(--spacing-sm) 0; border-bottom: 1px solid var(--border-subtle); }
+.ev-tl-item:last-child { border-bottom: none; }
+.ev-tl-time { flex: none; width: 78px; font-size: var(--font-size-caption); color: var(--text-secondary); padding-top: 2px; }
+.ev-tl-line { position: relative; flex: 1; padding-left: var(--spacing-md); }
+.ev-tl-line::before { content: ""; position: absolute; left: 4px; top: 4px; bottom: -12px; width: 1px; background: var(--border-subtle); }
+.ev-tl-item:last-child .ev-tl-line::before { display: none; }
+.ev-tl-dot { position: absolute; left: 0; top: 5px; width: 9px; height: 9px; border-radius: 50%; background: var(--info); }
+.ev-tl-title { font-size: var(--font-size-body); font-weight: var(--font-weight-medium); }
+.ev-tl-detail { font-size: var(--font-size-caption); color: var(--text-secondary); }
+
+/* F. 数据导出（desktop 横向 / mobile 2 列，§211-213） */
+.export-row { flex-wrap: wrap; gap: var(--spacing-md); }
+@media (max-width: 760px), (orientation: landscape) and (max-height: 480px) {
+  .export-row .btn { flex: 1 1 calc(50% - var(--spacing-md)); }
+}
+
+/* ============================================================
+   Round-6 Overview 产品化（概览页：服务卡 + 需要关注 + 5 个状态 Section）
+   IA：Page Header（右侧分域跳转）→ 服务卡 → 需要关注（仅问题存在）
+   → 今日用量(6) → 推理状态(6) → 主机状态(6) → GPU 状态(2×2/卡) → 监测完整性(5)。
+   布局断点：Wide / 988 Compact Desktop / Mobile(≤760)。
+   关键数字禁止 ellipsis（仅模型名/GPU 全名/路径/长错误可截断）。
+   ============================================================ */
+
+/* ---- Page Header 右侧分域跳转（统一「查看 X →」） ---- */
+.ov-page-links {
+  flex-wrap: wrap;
+  row-gap: var(--spacing-xs);
+}
+.ov-page-links .link {
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+}
+.ov-page-links .link:hover {
+  color: var(--accent);
+}
+
+/* ---- 服务状态卡：右侧 上下文窗口 / 并发 Slot / 模态（桌面三列；
+     「最后更新」为次要信息；移动端整组换到左列下方） ---- */
+.ov-service-card {
+  align-items: flex-start;
+}
+.ov-service-meta {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--spacing-xl);
+  flex: 1 1 auto;
+  justify-content: flex-end;
+}
+.ov-meta-grid {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xl);
+}
+.ov-meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.ov-meta-label {
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+.ov-meta-value {
+  font-size: var(--font-size-subtitle);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ov-meta-value-sm { font-size: var(--font-size-body); }
+.ov-last-update {
+  margin-top: 0;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ---- 需要关注（仅当存在可靠问题时显示；Error>Warning>Info；最多 3 条 + 还有 N 项） ---- */
+.ov-attention {
+  margin-bottom: var(--section-gap);
+}
+.ov-attention[hidden] { display: none; }
+.ov-attention-list {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  padding: var(--spacing-md) var(--spacing-xl);
+  display: flex;
+  flex-direction: column;
+}
+.ov-attention-item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) 0;
+}
+.ov-attention-item + .ov-attention-item {
+  border-top: 1px solid var(--border-subtle);
+}
+.ov-attention-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-top: 6px;
+  background: var(--info);
+}
+.ov-attention-item[data-sev="error"] .ov-attention-dot { background: var(--error); }
+.ov-attention-item[data-sev="warning"] .ov-attention-dot { background: var(--warning); }
+.ov-attention-item[data-sev="info"] .ov-attention-dot { background: var(--info); }
+.ov-attention-body { min-width: 0; }
+.ov-attention-title {
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+}
+.ov-attention-item[data-sev="error"] .ov-attention-title { color: var(--error); }
+.ov-attention-item[data-sev="warning"] .ov-attention-title { color: var(--warning); }
+.ov-attention-sub {
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+  margin-top: 1px;
+  overflow-wrap: break-word;
+}
+.ov-attention-more {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-xl) 0;
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+}
+.ov-attention-more[hidden] { display: none; }
+
+/* ---- 今日用量（6 指标：Hero 2 大数字 + 输入/缓存复用/输出/缓存复用率 4 项） ----
+   Wide：breakdown 4 列一行；988：2×2；Mobile：2×2。Hero 恒 2 列。
+   选择器 = 基础类 + ov- 复合（.today-breakdown.ov-today-breakdown），
+   特异性 (0,2,0) > 基础类 .today-breakdown (0,1,0) / .stat-grid (0,1,0)，
+   确保概览列数在宽/988/移动各断点确定性胜过共享基础规则（避免 auto-fit 串列）。 */
+.today-breakdown.ov-today-breakdown {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+@media (max-width: 988px) {
+  .today-breakdown.ov-today-breakdown { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* ---- 推理状态（单张合并卡 6 指标）：Wide 6 列 / 988 3×2 / Mobile 2×3 ---- */
+.stat-grid.ov-inference-grid {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+@media (max-width: 988px) {
+  .stat-grid.ov-inference-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+/* 概览主指标字号（规格 28-32px） */
+.ov-inference-grid .stat-value.mid,
+.ov-host-grid .stat-value.mid,
+.ov-integrity-grid .stat-value.mid {
+  font-size: 28px;
+  line-height: 1.15;
+}
+.ov-inference-grid .stat,
+.ov-host-grid .stat,
+.ov-integrity-grid .stat {
+  min-height: 64px;
+}
+.ov-inference-grid .stat-value,
+.ov-host-grid .stat-value,
+.ov-integrity-grid .stat-value {
+  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
+}
+.ov-mtp-value { font-weight: var(--font-weight-semibold); }
+
+/* ---- 主机状态（6 指标：CPU/内存/磁盘 I/O/网络/监测组件功耗/系统运行时间） ----
+   Wide 6 列 / 988 3×2 / Mobile 2×3（卡片 ≥~260px）。复用 .host-grid 的
+   主值+次值/双行规则（禁 ellipsis）。 */
+.stat-grid.ov-host-grid {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+@media (max-width: 988px) {
+  .stat-grid.ov-host-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+.ov-uptime-value { font-weight: var(--font-weight-semibold); }
+
+/* ---- GPU 状态：每卡仅 利用率/显存占用/温度/功耗（2×2）；
+   左对齐 auto-fit（1/2/4/8 张自动换行）；988=2 列；Mobile=1 列。 ---- */
+/* GPU 状态：每卡仅 利用率/显存占用/温度/功耗（2×2）；
+   左对齐 auto-fit（1/2/4/8 张自动换行）；988=2 列；Mobile=1 列。
+   注意：GPU 用 .ov-gpu-grid (0,1,0) 即可——基础 .gpu-mini-grid 的
+   auto-fit/1fr 与概览 988 repeat(2)/mobile 1fr 在源序上正确分层
+   （components→pages→mobile），保持现状不动。 */
+.ov-gpu-grid {
+  grid-template-columns: repeat(auto-fit, minmax(280px, 340px));
+  justify-content: start;
+  max-width: none;
+}
+@media (max-width: 988px) {
+  .ov-gpu-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.ov-gpu-unavailable {
+  font-size: var(--font-size-body);
+  color: var(--text-secondary);
+  padding: var(--spacing-md) 0;
+}
+.ov-gpu-unavailable[hidden] { display: none; }
+
+/* ---- 监测完整性（5 指标）：Wide 5 列 / 988 3+2 / Mobile 2 列（末项跨 2） ---- */
+.stat-grid.ov-integrity-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+@media (max-width: 988px) {
+  .stat-grid.ov-integrity-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+.ov-risk-value, .ov-db-value { font-weight: var(--font-weight-semibold); }
+/* 状态色（仅用于状态语义，非装饰） */
+.ov-risk-value[data-tone="ok"], .ov-db-value[data-tone="ok"] { color: var(--success); }
+.ov-risk-value[data-tone="warn"], .ov-db-value[data-tone="warn"] { color: var(--warning); }
+.ov-risk-value[data-tone="bad"], .ov-db-value[data-tone="bad"] { color: var(--error); }
+
+
+
+/* ============================================================
+ Round-7 设置/关于精修
+ ============================================================ */
+
+/* 生效方式 Badge（§8：需重启 = 小型标记；主题立即生效无 Badge；保存后生效无标记） */
+.eff-badge {
+  display: inline-block;
+  margin-left: var(--spacing-xs);
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border-default);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: var(--font-weight-regular);
+  line-height: 1.5;
+  vertical-align: 1px;
+  white-space: nowrap;
+}
+
+/* 数值输入 Suffix（§34：单位不塞进 Description） */
+.input-suffix {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+.input-suffix .suffix {
+  color: var(--text-secondary);
+  font-size: var(--font-size-caption);
+  white-space: nowrap;
+}
+.input-suffix.suffix-disabled .suffix { color: var(--text-muted); }
+.input-suffix .input:disabled { opacity: 0.55; }
+
+/* 字段 Inline Error（§36：不 alert） */
+.field-error {
+  grid-column: 1 / -1;
+  margin-top: -6px;
+  color: var(--error);
+  font-size: var(--font-size-caption);
+  line-height: 1.4;
+}
+.input.input-invalid { border-color: var(--error); }
+
+/* 分组标题（应用页 Group：启动与后台 / Web 访问 / 日志 / 快捷位置 / 退出） */
+.settings-card .group-title {
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-secondary);
+  text-transform: none;
+  letter-spacing: 0.4px;
+  margin: var(--spacing-lg) 0 var(--spacing-xs);
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* 设置行内次要信息（当前数据库路径等，§138） */
+.setting-row .setting-secondary {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: var(--font-size-caption);
+  font-variant-numeric: tabular-nums;
+  word-break: break-all;
+}
+
+/* 设置行内运行时只读值（最近备份等，Runtime State） */
+.setting-runtime-value {
+  color: var(--text-primary);
+  font-size: var(--font-size-body);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 高级设置折叠（§143：默认折叠；WAL 等高级项） */
+.adv-group {
+  margin-top: var(--spacing-md);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  padding: 0;
+}
+.adv-group summary {
+  cursor: pointer;
+  padding: var(--spacing-sm) var(--spacing-md);
+  color: var(--text-secondary);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-semibold);
+  list-style: none;
+  user-select: none;
+}
+.adv-group summary::-webkit-details-marker { display: none; }
+.adv-group summary::before {
+  content: "▸ ";
+  display: inline-block;
+  transition: transform 120ms ease;
+}
+.adv-group[open] summary::before { transform: rotate(90deg); }
+.adv-group .adv-group-body { padding: 0 var(--spacing-md) var(--spacing-md); }
+
+/* GPU Device List（§103-§112：标准设备列表；UUID Secondary Monospace 可复制） */
+.gpu-device-list {
+  flex-direction: column;
+  align-items: stretch;
+  flex: 1;
+  max-width: 640px;
+  width: 100%;
+}
+.gpu-device-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+  margin-bottom: var(--spacing-xs);
+}
+.gpu-device-count {
+  color: var(--text-secondary);
+  font-size: var(--font-size-caption);
+  font-variant-numeric: tabular-nums;
+}
+.gpu-device-actions { display: flex; gap: var(--spacing-xs); flex-wrap: wrap; }
+.gpu-detected { display: flex; flex-direction: column; }
+.gpu-detected-row {
+  display: block;
+  padding: var(--spacing-sm) 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.gpu-detected-row:last-child { border-bottom: none; }
+.gpu-detected-row label {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  cursor: pointer;
+  color: var(--text-primary);
+  font-size: var(--font-size-body);
+}
+.gpu-detected-row .gpu-row-uuid {
+  margin-left: 24px;
+  color: var(--text-secondary);
+  font-size: var(--font-size-caption);
+  font-family: var(--font-mono, ui-monospace, Consolas, monospace);
+  word-break: break-all;
+  margin-top: 2px;
+  cursor: pointer;
+  user-select: all;
+}
+.gpu-detected-row .gpu-row-uuid:hover { color: var(--text-primary); }
+.gpu-detected-row input { accent-color: var(--accent); width: auto; }
+.gpu-empty-hint {
+  margin-top: var(--spacing-sm);
+  color: var(--warning);
+  font-size: var(--font-size-caption);
+}
+.control-disabled { opacity: 0.75; }
+
+/* 系统监控状态块（§114-§116：基础监控 / 高级硬件传感器 两行） */
+.sys-mon-state {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  padding: var(--spacing-sm) var(--spacing-md);
+  margin-bottom: var(--spacing-lg);
+  background: var(--bg-subtle, transparent);
+}
+.sys-mon-state .sms-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: 3px 0;
+  font-size: var(--font-size-body);
+}
+.sys-mon-state .sms-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--text-muted);
+  flex: none;
+}
+.sys-mon-state.ok .sms-row:last-of-type .sms-dot { background: var(--success); }
+.sys-mon-state.ok .sms-dot { background: var(--success); }
+.sys-mon-state.warn .sms-dot { background: var(--warning); }
+.sys-mon-state.bad .sms-dot { background: var(--error); }
+.sys-mon-state .sms-name { color: var(--text-primary); min-width: 132px; }
+.sys-mon-state .sms-sub { color: var(--text-muted); font-size: var(--font-size-caption); }
+.sys-mon-state .sms-val { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.sys-mon-state .sms-sub-full {
+  display: block;
+  color: var(--text-muted);
+  font-size: var(--font-size-caption);
+  margin-top: 2px;
+}
+.sys-mon-state .sms-detail {
+  margin-top: var(--spacing-sm);
+  padding-top: var(--spacing-sm);
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* 数据库状态四态（§154 中文；不出现 raw incompatible） */
+.db-status { font-weight: var(--font-weight-semibold); }
+.db-status[data-tone="ok"] { color: var(--success); }
+.db-status[data-tone="warn"] { color: var(--warning); }
+.db-status[data-tone="bad"] { color: var(--error); }
+
+/* 局域网安全说明（§181 Amber） */
+.setting-desc.lan-note { color: var(--warning); }
+
+/* 远程只读说明 */
+.settings-desc.remote-note {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--bg-subtle, transparent);
+}
+
+/* About：路径复制按钮（§244） */
+.v-path { display: flex; align-items: baseline; gap: var(--spacing-sm); flex-wrap: wrap; }
+.v-path-text { word-break: break-all; }
+.path-copy {
+  border: 1px solid var(--border-default);
+  background: none;
+  color: var(--text-secondary);
+  border-radius: var(--radius-control);
+  padding: 1px 8px;
+  font-size: var(--font-size-caption);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.path-copy:hover { color: var(--text-primary); background: var(--bg-subtle-hover); }
+
+/* About：项目链接（外链） */
+.about-links {
+  display: flex;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+}
+.about-ext { text-decoration: none; }
+
+/* About：工作方式与隐私列表 */
+.about-privacy {
+  margin: 0;
+  padding-left: var(--spacing-lg);
+  color: var(--text-secondary);
+  font-size: var(--font-size-body);
+  line-height: 1.7;
+}
+.about-privacy li { margin-bottom: var(--spacing-xs); }
+
+/* Update：Release 元信息（版本/发布时间） */
+.release-meta {
+  color: var(--text-muted);
+  font-size: var(--font-size-caption);
+  margin-bottom: var(--spacing-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+/* About Hero：Icon 64~72px（§231） */
+.about-hero-card .about-hero .ah-logo {
+  width: 68px;
+  height: 68px;
+}
+.about-hero-card .about-hero .ah-logo svg { width: 38px; height: 38px; }
+
+/* Settings 字体（§293：Setting Title 14 / Desc 12~13 / Control 14） */
+.setting-row .setting-title { font-size: 14px; }
+.setting-row .setting-desc { font-size: 12.5px; }
+@media (min-width: 761px) {
+  .setting-row { min-height: 56px; }
+}

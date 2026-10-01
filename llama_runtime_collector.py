@@ -166,6 +166,13 @@ def build_model_info(
         dgs = props.get("default_generation_settings")
         if isinstance(dgs, dict) and dgs.get("n_ctx") is not None:
             info["context_size"] = dgs.get("n_ctx")
+        # Round 5：build_info 权威来源 = /props（llama-server 运行时直接报告，
+        # 如 "b10976-987498f45"）。此前只从 `llama-server --version` 子进程取，
+        # PATH 无该 exe 时恒为 None -> UI 长期显示 "--"（§159-§161 bug）。
+        # props 提供了就用它，覆盖上面的 --version 回退值。
+        bi = props.get("build_info")
+        if isinstance(bi, str) and bi:
+            info["build_info"] = bi
 
     if isinstance(models, dict):
         # /v1/models：{"models": [...], "data": [{"id","aliases","meta":{...}}]}

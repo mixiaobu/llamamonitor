@@ -264,6 +264,31 @@ class PersistenceFlowTests(unittest.TestCase):
         remaining = [row["timestamp"] for row in db.get_live_samples(hours=None)]
         self.assertEqual(remaining, [int(now) - 48 * 3600, int(now)])
 
+    # 7b) live 全量（hours=None）短 TTL 缓存：突发内共享一次加载，写入后失效
+    def test_get_live_samples_none_uses_short_ttl_cache(self):
+        collector, db, _ = self._make_collector()
+        collector.persist_sample(parse_metrics(TEXT_A))  # 先建 1 行样本
+        db._invalidate_live_cache()  # 起点：无缓存
+
+        # 首次 hours=None 触发一次加载并缓存（对象可被识别）
+        first = db.get_live_samples(hours=None)
+        self.assertEqual(len(first), 1)
+        cached_obj = db._live_all_cache
+        self.assertIs(cached_obj, first)
+
+        # TTL 内的第二次 hours=None 读取返回**同一对象**（共享一次加载，不重查）
+        self.assertIs(db.get_live_samples(hours=None), cached_obj)
+
+        # 一次 live 写入（persist_sample）必须失效缓存 -> 下一次读取是**新对象**且数据推进
+        collector.persist_sample(parse_metrics(TEXT_B))
+        third = db.get_live_samples(hours=None)
+        self.assertIsNot(third, cached_obj)
+        self.assertEqual(len(third), 2)  # 两轮样本
+
+        # 清空 live 同样失效缓存（避免读到已删除的旧行）
+        db.clear_live_samples(vacuum=False)
+        self.assertEqual(db.get_live_samples(hours=None), [])
+
     # 8) 事务：任一步失败整体回滚，不留半写入状态
     def test_apply_sample_rolls_back_on_error(self):
         collector, db, _ = self._make_collector()

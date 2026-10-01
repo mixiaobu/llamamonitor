@@ -1,0 +1,39 @@
+{
+ "w": 932,
+ "h": 430,
+ "page": "gpu",
+ "probe": {
+  "innerW": 932,
+  "innerH": 430,
+  "docScrollW": 932,
+  "docHScroll": false,
+  "contentScrollH": 6572,
+  "contentScrollW": 932,
+  "contentHScroll": false,
+  "overCount": 0,
+  "over": [],
+  "nestedScroll": [],
+  "mnav": {
+   "h": 61,
+   "top": 369,
+   "w": 932
+  },
+  "mnavItemH": [
+   60,
+   60,
+   60,
+   60,
+   60
+  ],
+  "contentPadBottom": "0px",
+  "chartInstances": 5,
+  "pageH": 6572
+ },
+ "events": [],
+ "sizes": {
+  "top": 84680,
+  "mid": 42821,
+  "bottom": 40899,
+  "full": 173809
+ }
+}

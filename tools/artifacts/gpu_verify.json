@@ -1,0 +1,79 @@
+{
+  "pageVisible": "visible",
+  "gpuCards": 2,
+  "coreCells": 8,
+  "advDetails": 2,
+  "advOpenDesktop": [
+    false,
+    false
+  ],
+  "pageState": "采集正常",
+  "gpuCount": "2 张 GPU",
+  "driverVer": "驱动 580.88",
+  "energyRows": 0,
+  "energyTexts": [],
+  "procTable": true,
+  "procRows": 20,
+  "procShowAll": "显示全部 34 个",
+  "moreTrendsExists": true,
+  "chartUtil": true,
+  "procScroll": {
+    "found": true,
+    "sel": "#gpuProc",
+    "overflowY": "visible",
+    "overflowX": "visible",
+    "maxHeight": "none",
+    "clientH": 587,
+    "scrollH": 587,
+    "scrollW": 1496,
+    "clientW": 1496
+  },
+  "procTableScroll": {
+    "found": true,
+    "sel": "#gpuProc .gpu-proc-table",
+    "overflowY": "visible",
+    "overflowX": "visible",
+    "maxHeight": "none",
+    "clientH": 553,
+    "scrollH": 553,
+    "scrollW": 1496,
+    "clientW": 1496
+  },
+  "pageHOverflow": {
+    "scrollW": 1920,
+    "clientW": 1920,
+    "overflow": false
+  },
+  "advAfterOpen": [
+    true,
+    false
+  ],
+  "advRows": [
+    "风扇转速",
+    "P-State",
+    "SM 时钟",
+    "显存时钟",
+    "PCIe 链路",
+    "显存控制器利用率",
+    "功耗上限",
+    "PCIe 最大能力",
+    "PCI Bus ID",
+    "UUID",
+    "Compute Mode",
+    "运行状态",
+    "P-State",
+    "SM 时钟",
+    "显存时钟",
+    "PCIe 链路",
+    "显存控制器利用率",
+    "功耗上限",
+    "PCIe 最大能力",
+    "PCI Bus ID",
+    "UUID",
+    "Compute Mode",
+    "可纠正 · 易失性计数",
+    "可纠正 · 累计计数",
+    "不可纠正 · 易失性计数",
+    "不可纠正 · 累计计数"
+  ]
+}

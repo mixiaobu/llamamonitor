@@ -1,0 +1,56 @@
+{
+ "w": 390,
+ "h": 844,
+ "page": "usage",
+ "probe": {
+  "innerW": 390,
+  "innerH": 844,
+  "docScrollW": 390,
+  "docHScroll": false,
+  "contentScrollH": 3490,
+  "contentScrollW": 400,
+  "contentHScroll": true,
+  "overCount": 2,
+  "over": [
+   {
+    "id": "",
+    "cls": "sh-actions",
+    "w": 376,
+    "r": 400,
+    "scr": 0,
+    "tag": "span"
+   },
+   {
+    "id": "usageTrendHint",
+    "cls": "sh-sub",
+    "w": 236,
+    "r": 400,
+    "scr": 0,
+    "tag": "span"
+   }
+  ],
+  "nestedScroll": [],
+  "mnav": {
+   "h": 61,
+   "top": 783,
+   "w": 390
+  },
+  "mnavItemH": [
+   60,
+   60,
+   60,
+   60,
+   60
+  ],
+  "contentPadBottom": "0px",
+  "chartInstances": 1,
+  "pageH": 3490
+ },
+ "events": [],
+ "sizes": {
+  "top": 127493,
+  "mid": 132971,
+  "bottom": 112803,
+  "full": 145326
+ }
+}

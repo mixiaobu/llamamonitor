@@ -1,0 +1,248 @@
+/* ============================================================
+   推理性能页（Round 5 产品化）
+   A. 实时摘要（5 项） / B. Token 吞吐率 / C. 运行时状态 /
+   D. MTP / E. Slot 监控 / F. 模型与运行环境
+   节奏：Section Header -> Card 10~12px；Section -> Section 24px。
+   响应式：Wide 5 等分 / Compact 3+2 / Mobile 2+2+1（§20-§22）。
+   ============================================================ */
+
+/* A. 实时性能摘要（.card 表面；5 项） */
+.perf-summary {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--spacing-lg);
+  padding: var(--spacing-lg) var(--spacing-xl);
+  margin-bottom: var(--section-gap);
+}
+.perf-summary .ps-item {
+  min-width: 0;
+  padding: 0 var(--spacing-md);
+  border-left: 1px solid var(--border-subtle);
+}
+.perf-summary .ps-item:first-child { border-left: none; padding-left: 0; }
+.perf-summary .ps-key {
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+  margin-bottom: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.perf-summary .ps-value {
+  font-size: var(--font-size-metric);
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+.perf-summary .ps-value.dim { color: var(--text-disabled); }
+@media (max-width: 1099px) {
+  .perf-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .perf-summary .ps-item { border-left: none; padding: 0; }
+}
+
+/* 数据新鲜度 badge（Page Header 右侧；§31-§33） */
+.freshness-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-secondary);
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-elevated) 60%, transparent);
+  border: 1px solid var(--border-subtle);
+  white-space: nowrap;
+}
+.freshness-badge .fb-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--color-success, #4cc38a);
+}
+.freshness-badge.stale { color: var(--color-warning, #f7b955); }
+.freshness-badge.stale .fb-dot { background: var(--color-warning, #f7b955); }
+.freshness-badge.offline { color: var(--color-danger, #ff99a4); }
+.freshness-badge.offline .fb-dot { background: var(--color-danger, #ff99a4); }
+
+/* B. Token 吞吐率：窗口加权平均 Summary（Section Header 下轻量一行，§49） */
+.perf-window-avg {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-size-body);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  margin: 0 0 var(--spacing-sm);
+  min-height: 1.2em;
+}
+.perf-window-avg .pwa-key {
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+}
+.perf-window-avg .pwa-sep { color: var(--text-disabled); }
+.perf-window-avg.partial::after {
+  content: "\00B7 可用数据 " attr(data-note);
+  color: var(--color-warning, #f7b955);
+  font-size: var(--font-size-caption);
+}
+.perf-history-link { margin-top: var(--spacing-sm); }
+.perf-history-link .link { font-size: var(--font-size-caption); }
+
+/* C. 运行时状态（5 项，与摘要同构；§74-§76） */
+.runtime-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+.runtime-grid .stat { min-width: 0; }
+@media (max-width: 1099px) {
+  .runtime-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+/* 上下文占用进度（§77-§78：占用比例，非 KV Cache 显存率） */
+.ctx-progress {
+  position: relative;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--border-subtle);
+  margin-top: 8px;
+  overflow: hidden;
+}
+.ctx-progress::after {
+  content: "";
+  position: absolute;
+  top: 0; right: auto; bottom: 0; left: 0;
+  width: var(--ctx-pct, 0%);
+  border-radius: 3px;
+  background: var(--accent);
+}
+.ctx-progress.warn::after { background: var(--color-warning, #f7b955); }
+.ctx-progress.crit::after { background: var(--color-danger, #ff99a4); }
+
+/* D. MTP：Summary 6 项（§92-§93：Desktop 6 列/3+3，Mobile 2x3） */
+.mtp-metrics-grid {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+.mtp-metrics-grid .stat { min-width: 0; }
+.mtp-metrics-grid .stat-label {
+  font-size: var(--font-size-caption);
+}
+.mtp-metrics-grid .stat-value {
+  font-size: var(--font-size-metric);
+}
+@media (max-width: 1099px) {
+  .mtp-metrics-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+.mtp-state-note {
+  font-size: var(--font-size-body);
+  color: var(--text-secondary);
+  margin-top: var(--spacing-md);
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--border-subtle);
+}
+.mtp-charts { margin-top: var(--spacing-md); }
+.mtp-charts .card-title { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+
+/* E. Slot 监控（Desktop 紧凑 Table / Mobile Card，同一 DOM；§117-§144） */
+.slot-card-wrap { padding: var(--spacing-md) var(--spacing-lg) var(--spacing-lg); }
+.slot-table-wrap { overflow-x: auto; }
+.slot-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-body);
+  font-variant-numeric: tabular-nums;
+}
+.slot-table thead th {
+  text-align: left;
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-secondary);
+  font-size: var(--font-size-caption);
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  white-space: nowrap;
+}
+.slot-table thead th.num { text-align: right; }
+.slot-table tbody td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  white-space: nowrap;
+}
+.slot-table tbody tr.slot-row:last-child td { border-bottom: none; }
+.slot-table td.num { text-align: right; }
+.slot-table td.na { color: var(--text-disabled); }
+.slot-id-cell { font-weight: var(--font-weight-semibold); }
+.slot-state {
+  display: inline-block;
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-medium);
+  padding: 1px 8px;
+  border-radius: 999px;
+  color: var(--text-secondary);
+  background: var(--border-subtle);
+}
+.slot-state.busy {
+  color: var(--color-success, #4cc38a);
+  background: color-mix(in srgb, var(--color-success, #4cc38a) 14%, transparent);
+}
+.slot-ctx { min-width: 120px; }
+.slot-ctx-pct { color: var(--text-secondary); }
+.slot-ctx.warn .slot-ctx-pct { color: var(--color-warning, #f7b955); }
+.slot-ctx.crit .slot-ctx-pct { color: var(--color-danger, #ff99a4); }
+.slot-detail-btn {
+  font: inherit;
+  font-size: var(--font-size-caption);
+  color: var(--accent);
+  background: none;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: 2px 10px;
+  cursor: pointer;
+}
+.slot-detail-btn:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.slot-detail-off { color: var(--text-disabled); }
+/* Progressive Disclosure 详情行（§137-§141：诊断配置，非聊天审计） */
+.slot-detail-row td {
+  background: color-mix(in srgb, var(--surface-elevated) 40%, transparent);
+  padding: 10px 14px;
+  white-space: normal;
+}
+.slot-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 4px 18px;
+}
+.slot-detail-grid .sd-k {
+  color: var(--text-secondary);
+  font-size: var(--font-size-caption);
+  display: inline-block;
+  min-width: 84px;
+}
+.slot-detail-grid .sd-v {
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+.lock-icon {
+  display: inline-block;
+  width: 12px; height: 12px;
+  vertical-align: -1px;
+  background: currentColor;
+  -webkit-mask: no-repeat center / contain url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='11' width='18' height='11' rx='2'/%3E%3Cpath d='M7 11V7a5 5 0 0 1 10 0v4'/%3E%3C/svg%3E");
+  mask: no-repeat center / contain url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='11' width='18' height='11' rx='2'/%3E%3Cpath d='M7 11V7a5 5 0 0 1 10 0v4'/%3E%3C/svg%3E");
+}
+.sh-sub { display: inline-flex; align-items: center; gap: 4px; }
+
+/* F. 模型与运行环境（8 项；Wide 4 列 / Compact 2-4 / Mobile 2；§150-§184） */
+.model-env-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.model-env-grid .stat { min-width: 0; }
+.model-env-grid .stat-value {
+  font-size: var(--font-size-body);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 1099px) {
+  .model-env-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

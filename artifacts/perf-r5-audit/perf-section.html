@@ -1,0 +1,187 @@
+      <section class="page" id="page-performance">
+        <div class="page-header">
+          <div class="ph-head">
+            <h1 class="page-title">推理性能</h1>
+            <p class="page-subtitle">监测推理吞吐、请求与 Slot 状态、上下文占用及 MTP（Multi-Token Prediction）效率。</p>
+          </div>
+          <div class="ph-actions">
+            <span class="freshness-badge" id="perfFreshness" hidden>
+              <span class="fb-dot"></span><span class="fb-text">实时</span>
+            </span>
+          </div>
+        </div>
+
+        <!-- A. 实时性能摘要（5 项；Wide 5 等分 / Compact 3+2 / Mobile 2+2+1） -->
+        <div class="perf-summary card">
+          <div class="ps-item">
+            <div class="ps-key">Prompt TPS</div>
+            <div class="ps-value" id="perfPromptTps">--</div>
+          </div>
+          <div class="ps-item">
+            <div class="ps-key">Decode TPS</div>
+            <div class="ps-value" id="perfDecodeTps">--</div>
+          </div>
+          <div class="ps-item">
+            <div class="ps-key">处理中请求</div>
+            <div class="ps-value" id="perfProcessing">--</div>
+          </div>
+          <div class="ps-item">
+            <div class="ps-key">等待中请求 <span class="info-tip-slot" data-tip="llama.cpp 当前延后/等待调度的请求数量（Deferred requests）。"></span></div>
+            <div class="ps-value" id="perfQueued">--</div>
+          </div>
+          <div class="ps-item">
+            <div class="ps-key">活跃 Slot</div>
+            <div class="ps-value" id="perfActiveSlots">--</div>
+          </div>
+        </div>
+
+        <!-- B. Token 吞吐率（范围选择器 + 窗口加权平均 + 图） -->
+        <div class="section">
+          <div class="section-header">
+            <span class="sh-title">Token 吞吐率</span>
+            <span class="sh-actions">
+              <div class="seg" id="perfThroughputRange" role="group" aria-label="吞吐时间范围"></div>
+            </span>
+          </div>
+          <div class="section-body">
+            <div class="perf-window-avg" id="perfWindowAvg"></div>
+            <div class="card chart-box" id="chartTpsBox">
+              <div class="chart" id="chartTps" data-chart="chartTps"></div>
+              <div class="chart-empty-overlay"></div>
+            </div>
+            <div class="perf-history-link" id="perfHistoryLink" hidden>
+              <a class="link" href="#" data-goto="history">查看监控历史 <span class="arr">→</span></a>
+            </div>
+          </div>
+        </div>
+
+        <!-- C. 运行时状态（实时；5 项，不重复顶部请求/Slot） -->
+        <div class="section">
+          <div class="section-header">
+            <span class="sh-title">运行时状态</span>
+          </div>
+          <div class="section-body">
+            <div class="card">
+              <div class="stat-grid runtime-grid">
+                <div class="stat">
+                  <div class="stat-label">活跃 Slot / 总 Slot</div>
+                  <div class="stat-value mid" id="rtSlots">--</div>
+                </div>
+                <div class="stat">
+                  <div class="stat-label">平均忙碌 Slot / Decode <span class="info-tip-slot" data-tip="llama_decode() 调用期间平均处于忙碌状态的 Slot 数量。来源：llamacpp:n_busy_slots_per_decode"></span></div>
+                  <div class="stat-value mid" id="rtBusySlots">--</div>
+                </div>
+                <div class="stat">
+                  <div class="stat-label">当前序列长度 <span class="info-tip-slot" data-tip="所有活跃 Slot 中当前序列 Token 数（Prompt + 已生成）的最大值；无活跃 Slot 时为空闲。"></span></div>
+                  <div class="stat-value mid" id="rtCurrentSeq">--</div>
+                  <div class="ctx-progress" id="rtCurrentCtxBar" hidden></div>
+                  <div class="stat-hint" id="rtCurrentCtxHint"></div>
+                </div>
+                <div class="stat">
+                  <div class="stat-label">最大观测序列长度 <span class="info-tip-slot" data-tip="llama.cpp 进程运行期间观测到的最大序列长度（Prompt + Generation）。来源：llamacpp:n_tokens_max"></span></div>
+                  <div class="stat-value mid" id="rtTokenMax">--</div>
+                </div>
+                <div class="stat">
+                  <div class="stat-label">上下文窗口上限</div>
+                  <div class="stat-value mid" id="rtContextMax">--</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- D. MTP（Multi-Token Prediction）（范围控制整个 Section：Summary + 趋势 + 位置） -->
+        <div class="section">
+          <div class="section-header">
+            <span class="sh-title">MTP（Multi-Token Prediction） <span class="info-tip-slot" data-tip="Multi-Token Prediction：多 Token 预测。在当前 llama.cpp 中，MTP 可作为 Draft 来源用于推测解码，草稿 Token 由主模型批量验证。"></span></span>
+            <span class="sh-actions">
+              <div class="seg" id="perfMtpRange" role="group" aria-label="MTP 时间范围"></div>
+            </span>
+          </div>
+          <div class="section-body mtp-group">
+            <div class="card mtp-summary" id="mtpSummaryCard">
+              <div class="stat-grid mtp-metrics-grid">
+                <div class="stat">
+                  <div class="stat-label">Draft Token 接受率 <span class="info-tip-slot" data-tip="Accepted Draft Tokens / Draft Tokens。该比例反映 Draft 利用程度，不等同于实际推理加速比例。"></span></div>
+                  <div class="stat-value mid" id="mtpAcceptRate">--</div>
+                </div>
+                <div class="stat"><div class="stat-label">Draft Token</div><div class="stat-value mid" id="mtpDraft">--</div></div>
+                <div class="stat"><div class="stat-label">已接受 Draft Token</div><div class="stat-value mid" id="mtpAccepted">--</div></div>
+                <div class="stat">
+                  <div class="stat-label">验证步数 <span class="info-tip-slot" data-tip="推测解码验证步数（speculative decoding verification steps）。来源：llamacpp:spec_decode_num_drafts_total"></span></div>
+                  <div class="stat-value mid" id="mtpSeqs">--</div>
+                </div>
+                <div class="stat">
+                  <div class="stat-label">平均 Draft 长度 <span class="info-tip-slot" data-tip="Draft Token / 验证步数：每次验证平均提交多少 Draft Token。"></span></div>
+                  <div class="stat-value mid" id="mtpAvgDraft">--</div>
+                </div>
+                <div class="stat">
+                  <div class="stat-label">平均接受长度 <span class="info-tip-slot" data-tip="已接受 Draft Token / 验证步数：每次验证平均真正接受多少 Token。"></span></div>
+                  <div class="stat-value mid" id="mtpAvgAccepted">--</div>
+                </div>
+              </div>
+              <div class="mtp-state-note" id="mtpStateNote" hidden></div>
+            </div>
+            <div class="grid cols-2 mtp-charts">
+              <div class="card chart-box" id="chartMtpBox">
+                <div class="card-title">Draft Token 接受率趋势 <span class="card-sub" id="mtpTrendSub">按天</span></div>
+                <div class="chart" id="chartMtp" data-chart="chartMtp"></div>
+                <div class="chart-empty-overlay"></div>
+              </div>
+              <div class="card chart-box" id="chartMtpPosBox">
+                <div class="card-title">按 Draft 位置的已接受 Token <span class="info-tip-slot" data-tip="此图展示各 Draft 位置累计被接受的 Token 数量。由于当前 metrics 未提供各位置对应的 Draft 总数，不能据此直接计算分位置接受率。"></span> <span class="card-sub" id="mtpPosSub">按 Draft 位置</span></div>
+                <div class="chart" id="chartMtpPos" data-chart="chartMtpPos"></div>
+                <div class="chart-empty-overlay"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- E. Slot 监控（实时；Desktop 紧凑 Table / Mobile Card） -->
+        <div class="section">
+          <div class="section-header">
+            <span class="sh-title">Slot 监控</span>
+            <span class="sh-actions">
+              <span class="sh-sub"><span class="lock-icon" aria-hidden="true"></span> 仅展示运行元数据 <span class="info-tip-slot" data-tip="LlamaMonitor 仅读取 Slot 运行元数据，不展示 Prompt 正文。"></span></span>
+            </span>
+          </div>
+          <div class="section-body">
+            <div class="card slot-card-wrap">
+              <div id="llmSlotList"><div class="stat-hint" id="llmSlotEmpty">暂无 Slot 数据</div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- F. 模型与运行环境（静态；页面靠后） -->
+        <div class="section">
+          <div class="section-header">
+            <span class="sh-title">模型与运行环境 <span class="info-tip-slot" data-tip="数据来自 llama.cpp 运行时只读接口（/props · /v1/models · /slots）。"></span></span>
+          </div>
+          <div class="section-body">
+            <div class="card">
+              <div class="stat-grid model-env-grid">
+                <div class="stat"><div class="stat-label">模型别名</div><div class="stat-value small" id="llmAlias">--</div></div>
+                <div class="stat"><div class="stat-label">量化</div><div class="stat-value small" id="llmFtype">--</div></div>
+                <div class="stat"><div class="stat-label">参数量</div><div class="stat-value small" id="llmParams">--</div></div>
+                <div class="stat">
+                  <div class="stat-label">模型文件大小</div>
+                  <div class="stat-value small" id="llmSize">--</div>
+                </div>
+                <div class="stat">
+                  <div class="stat-label">上下文窗口</div>
+                  <div class="stat-value small" id="llmContext">--</div>
+                </div>
+                <div class="stat">
+                  <div class="stat-label">并行 Slot <span class="info-tip-slot" data-tip="llama.cpp 配置的总 Slot 数量。"></span></div>
+                  <div class="stat-value small" id="llmSlots">--</div>
+                </div>
+                <div class="stat"><div class="stat-label">模态</div><div class="stat-value small" id="llmModal">--</div></div>
+                <div class="stat">
+                  <div class="stat-label">llama.cpp 构建</div>
+                  <div class="stat-value small" id="llmBuild">--</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>

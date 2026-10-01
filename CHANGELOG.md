@@ -7,6 +7,113 @@
 > 互相视为"不同系列"：安装器降级保护按数值比较（1.0.0 > 0.13.x），从 1.0.0 安装
 > 0.13.x 会被识别为降级并拒绝（实测行为，非缺陷）。
 
+## [1.1.4] - 2026-10-01
+
+**System / GPU / Inference Telemetry + Overview Redesign + Mobile UX Hardening**。
+在 1.1.3 的 8 页骨架上补齐深度数据：系统页趋势图与硬件遥测、GPU 进程级监控、
+推理性能页（活跃 Slot / 吞吐 / MTP）、概览页 /api/overview 聚合重构、
+监控历史页（采集缺口 + 事件 + 范围筛选 + CSV 导出）、设置/关于页完善，
+以及 ≤760px 真机级 Mobile UX 全量验证与 6 处布局缺陷修复。
+数据库 schema **5 → 6**（迁移幂等，旧数据保留）。测试 530 → **578 全绿**。
+
+### 系统页（系统遥测深化）
+- 新增 4 张趋势图：内存 / 磁盘 IO / 网络吞吐 / 功耗（24h 范围，
+  `/api/system/live` 降采样 ~1000 点/series）。
+- CPU 逻辑处理器利用率 Heat Grid（1.1.3 引入真 per-core）补全
+  物理核/逻辑核切换 + 96 格手机响应式（轨道对齐、无压叠）。
+- 新增网络接口清单（`/api/system/network-interfaces`：状态/链路速率/
+  IPv4/IPv6/MAC，只读）。
+- 高级传感器（LibreHardwareMonitor 只读桥）与硬件库存
+  （`/api/system/sensors` / `/api/system/inventory`）；长列表手机默认折叠。
+- 全程只读、null = 不可用（UI 显示 --），不引入新 Provider 依赖。
+
+### GPU 页
+- 新增 **GPU 进程表**（nvidia-smi compute-apps，只读不结束进程）：
+  应用（basename + 点击展开完整路径）/ PID / GPU / 显存占用；
+  按 GPU → 显存降序 → PID 排序；>20 进程分页 + 显示全部；
+  显存 N/A 显示"不可用"（WDDM 常态，绝不假 0）。
+- 驱动版本 / GPU 计数页头展示；GPU 选择器（monitored uuids 过滤）。
+- 高级区：ECC / 驱动 / PCIe 能力等静态遥测；数据陈旧（stale > 3×poll）
+  保留最后已知值 + "数据已过期"徽标。
+- 每日能耗图（`/api/gpu/daily`）。
+
+### 推理性能页
+- 活跃 Slot 监控（`/api/llama/slots` 一次驱动）：顶部活跃 Slot 摘要 +
+  下方 Slot 明细表（上下文/Prompt/缓存复用/已生成 Token/剩余预算/MTP，
+  详情行可展开）；空闲 Slot 字段弱化。
+- **Token 吞吐率**：窗口加权平均（Δprompt_tokens/Δprompt_seconds 与
+  Δgenerated_tokens/Δpredicted_seconds），**不是**逐样本 TPS 简单平均
+  （schema 6 增 `live_samples.prompt_seconds` / `predicted_seconds`）。
+- MTP 指标 + 双图（MTP 接受率 / 逐位置），当前范围控制整个 Section。
+- 模型与运行环境（`/api/llama/info` 静态，进页刷新）。
+- 实时摘要 + 运行时状态（status/runtime 同源刷新）。
+
+### 概览页（Round-6 重构）
+- 统一走 `/api/overview` 只读聚合端点（service/usage/inference/system/
+  gpus/integrity/attention 一次取齐，按域隔离渲染）；
+  overview 尚未首载时 `/api/gpu/status` bootstrap 填充 GPU 迷你卡。
+- 域卡片：今日用量（hero + 3 列 breakdown）/ 推理 / 主机（磁盘/网络
+  双值）/ GPU 状态 / 监测完整性（数据质量 2+1）/ 需要关注（attention list）。
+- 页头分域跳转链接；副标题去营销化。
+
+### 监控历史页
+- 采集缺口表（`/api/history/gaps`）：分页（mobile 8 / desktop 20）+
+  "显示更多"（本地余量优先，cursor 翻页）+ 行点击展开详情（时间/持续/
+  来源/原因/推定依据/Token 风险）+ 来源/风险筛选 + 趋势图点击按桶筛选。
+- 监控事件表（`/api/events`）：类型/严重度展示 + 筛选 + 搜索。
+- 范围体系：24h/7d/30d/all 预设 + 自定义日历范围（服务器本机日历日）；
+  hard/soft 刷新语义（进页/切范围 hard 清空重拉，轮询 soft 原子替换防闪烁）。
+- CSV 导出：gaps / events（UTF-8 BOM，遵守当前范围）。
+- 历史趋势图 + 摘要 + DB 健康（`/api/health`）。
+
+### 设置 / 关于
+- 设置：应用集成（开机自启/打开数据目录/退出）、GPU 监控选择、
+  数据管理（备份/清 live/重置统计/DB 检查，均 loopback-only）、
+  自动更新；横向 tab + sticky save bar（mobile 单行横滚）。
+- 关于：版本/构建信息、项目链接、操作按钮 2 列（320 降 1 列）。
+- 远程只读客户端：loopback-only 端点提前跳过（零 403），设置项禁用并标注。
+
+### Mobile（≤760px）全量验证与修复
+- **底部导航点击失效修复**：`.mnav-item` 从未接线（旧实现只绑桌面
+  `.nav-item`）→ 统一事件委托到 `showPage`；5 核心页点击切换、
+  aria-current、重击回顶、滚动记忆全部恢复（Edge Stable CDP 实测）。
+- **z-index 层级体系补齐**：`--z-*` token 此前只被引用从未定义，
+  `.mobile-nav` 计算为 `auto` → 页内 sticky 表头（z:1）与 120ms 页面
+  切换 fade 的临时 stacking context 会盖住底部导航（切页"闪一下"、
+  滚动到图表时导航被遮）。tokens.css 定义 8 级层级
+  （sticky 1 → mobile-nav 40 → popover 50 → sheet 60 → modal 70 →
+  tooltip 80 → toast 90），同步替换散落魔法数。
+- **4 处手机布局缺陷修复**（均为桌面 CSS 语义泄漏到 mobile 卡片模式）：
+  1. 性能页 Slot 卡只占一半（`display:block` 的 table 里 `tbody` 仍是
+     `table-row-group` 形成匿名 table shrink-to-fit，行 163px/卡 324px）
+     → table + tbody 双 `display:block; width:100%`（322/358px 全宽）；
+  2. GPU 进程字段 24px 竖排（行 `display:block` 宽度不定下
+     `inline-block; width:50%` 无参照 + 桌面 ellipsis 技巧的
+     `td{max-width:0}` 泄漏）→ 行改 `grid 1fr 1fr`（卡头跨两列）+
+     `max-width:none`（PID/GPU/显存 各 178px@390 / 145px@320，卡高 262→140px）；
+  3. CPU 逻辑核小框全挤在一起（`aspect-ratio:1.2` 与 base `min-height:40px`
+     冲突，48px > 30.6px 轨道，96 格每格横溢 17px 压叠）
+     → 固定 32px 高、宽度由轨道决定（31×32，重叠 0，文字 fits）；
+  4. 采集缺口卡列宽未撑开（`.table-gap2` 桌面逐列固定宽 190/92/96/120
+     泄漏进 block 卡片行，卡头停在 190px）→ 卡片模式统一
+     `th,td{width:auto}`（全部字段行 356px 全宽）。
+- 视口矩阵 0 横向溢出：320/360/390/430 竖屏 + 844×390 / 932×430 横屏
+  + 988×1394 / 1920×1080 / 2560×1440 回归，8 页全覆盖（CDP 截图矩阵
+  `artifacts/r8_final-audit/`）。
+
+### 数据库（schema 5 → 6）
+- `live_samples` 增 `prompt_seconds` / `predicted_seconds`（REAL，
+  本轮 counter delta；历史行 NULL 向前兼容）；
+  幂等 ALTER（不 DROP / 不 DELETE / 不动旧数据），
+  迁移前自动备份 + `monitor_events` 记录 migration 事件。
+
+### 测试 / 质量
+- 530 → **578 单测全绿**（+48：gpu parser/collector、system collector/api、
+  api dashboard、mobile UI、术语审计、persistence、migration 扩展）。
+- `tools/`：CDP 巡检/截图/布局探针脚本族（`cdp_m_*.py` 等，
+  320–2560 视口矩阵、nav A/B、z-index 探针、泄漏审计）随版本入库
+  （后续版本复用）；各 Round 审计产物见 `artifacts/*/`。
+
 ## [1.1.3] - 2026-09-27
 
 **Pixel & Interaction Refinement**。不新增后端功能、不新增页面、不改变监控语义、

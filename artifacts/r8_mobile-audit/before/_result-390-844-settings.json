@@ -1,0 +1,64 @@
+{
+ "w": 390,
+ "h": 844,
+ "page": "settings",
+ "probe": {
+  "innerW": 390,
+  "innerH": 844,
+  "docScrollW": 390,
+  "docHScroll": false,
+  "contentScrollH": 1107,
+  "contentScrollW": 398,
+  "contentHScroll": true,
+  "overCount": 3,
+  "over": [
+   {
+    "id": "",
+    "cls": "settings-rail",
+    "w": 406,
+    "r": 398,
+    "scr": 1,
+    "tag": "div"
+   },
+   {
+    "id": "",
+    "cls": "rail-item",
+    "w": 54,
+    "r": 414,
+    "scr": 0,
+    "tag": "button"
+   },
+   {
+    "id": "",
+    "cls": "rail-item",
+    "w": 54,
+    "r": 470,
+    "scr": 0,
+    "tag": "button"
+   }
+  ],
+  "nestedScroll": [],
+  "mnav": {
+   "h": 61,
+   "top": 783,
+   "w": 390
+  },
+  "mnavItemH": [
+   60,
+   60,
+   60,
+   60,
+   60
+  ],
+  "contentPadBottom": "0px",
+  "chartInstances": 0,
+  "pageH": 1107
+ },
+ "events": [],
+ "sizes": {
+  "top": 148991,
+  "mid": 149438,
+  "bottom": 126437,
+  "full": 149668
+ }
+}

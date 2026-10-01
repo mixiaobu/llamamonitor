@@ -1,0 +1,48 @@
+{
+ "w": 390,
+ "h": 844,
+ "page": "system",
+ "probe": {
+  "innerW": 390,
+  "innerH": 844,
+  "docScrollW": 390,
+  "docHScroll": false,
+  "contentScrollH": 4552,
+  "contentScrollW": 390,
+  "contentHScroll": false,
+  "overCount": 1,
+  "over": [
+   {
+    "id": "sysNetW",
+    "cls": "hv",
+    "w": 119,
+    "r": 430,
+    "scr": 0,
+    "tag": "span"
+   }
+  ],
+  "nestedScroll": [],
+  "mnav": {
+   "h": 61,
+   "top": 783,
+   "w": 390
+  },
+  "mnavItemH": [
+   60,
+   60,
+   60,
+   60,
+   60
+  ],
+  "contentPadBottom": "0px",
+  "chartInstances": 5,
+  "pageH": 4552
+ },
+ "events": [],
+ "sizes": {
+  "top": 143375,
+  "mid": 105732,
+  "bottom": 108381,
+  "full": 168438
+ }
+}

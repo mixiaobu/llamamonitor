@@ -92,10 +92,20 @@ DB_HEALTH_PROTECTIVE = (DB_HEALTH_CORRUPT, DB_HEALTH_UNAVAILABLE, DB_HEALTH_INCO
 # v5 = 1.1.0（System & Hardware Telemetry：system_samples / system_daily +
 #       gpu_samples 高级遥测列扩展）
 # 版本机制见 _connect/_migrate
-CURRENT_SCHEMA_VERSION = 5
+CURRENT_SCHEMA_VERSION = 6
 
 # live_samples 默认保留时长：48 小时（实际值来自配置 collector.live_retention_hours）
 LIVE_SAMPLE_RETENTION_SECONDS = 48 * 3600
+
+# PERF：live_samples **全量**（hours=None）读取的短 TTL 缓存窗口（秒）。
+# /api/daily、/api/usage-summary、/api/today-hourly 都在 async 事件循环里同步加载全量
+# live（48h 保留，长期运行可达十万行）并逐行 dict 物化——单次约 1s。「进入用量页」
+# 会一次并发触发这三个端点，串行阻塞事件循环数秒 -> 使用汇总卡长时间显示 "--"。
+# 短 TTL 让同一轮突发共享一次全量加载；任何 live 写入都会立即失效缓存（见
+# _invalidate_live_cache），因此 TTL 只是突发内的去重窗口，不会读到过期新样本。
+# 3.0s 足够覆盖一次突发（前端轮询最小间隔 1s + 突发内并发），又不至于让带时间戳
+# 的全量读取（小时桶等）明显滞后于下一轮采样（采集间隔 5s）。
+LIVE_ALL_CACHE_TTL_SECONDS = 3.0
 
 # live_samples 的列（不含自增 id），也是 apply_sample 的 live_row 必须提供的键
 LIVE_SAMPLE_COLUMNS = (
@@ -110,6 +120,8 @@ LIVE_SAMPLE_COLUMNS = (
     "mtp_accept_rate",
     "kv_cache_usage_ratio",   # v2 新增（gauge 0~1；服务器无该指标时 NULL）
     "busy_slots",             # v2 新增（gauge；服务器无该指标时 NULL）
+    "prompt_seconds",         # v6 新增（本轮 prompt_seconds delta；窗口加权平均用）
+    "predicted_seconds",      # v6 新增（本轮 predicted_seconds delta；窗口加权平均用）
 )
 
 # daily_usage 的可累加列（date 为主键）
@@ -400,12 +412,34 @@ def _migrate_v3_to_v4(conn: sqlite3.Connection) -> None:
         logger.warning("写入 migration 事件失败（不影响迁移本身）", exc_info=True)
 
 
+def _migrate_v5_to_v6(conn: sqlite3.Connection) -> None:
+    """
+    v5 -> v6（Round 5 推理性能页）：
+    - live_samples 增 prompt_seconds / predicted_seconds（本轮 counter delta，REAL；
+      历史行 NULL）。用途：/api/throughput 的**窗口加权平均吞吐**（Δprompt_tokens /
+      Δprompt_seconds 与 Δgenerated_tokens / Δpredicted_seconds），而不是对逐样本
+      TPS 做简单平均（§46-§48）。新增列对旧行保持 NULL，向前兼容。
+    幂等 ALTER：不 DROP、不 DELETE、不动旧数据。
+    """
+    _add_column_if_missing(conn, "live_samples", "prompt_seconds", "REAL")
+    _add_column_if_missing(conn, "live_samples", "predicted_seconds", "REAL")
+    try:
+        conn.execute(
+            "INSERT INTO monitor_events(timestamp, event_type, severity, source, details_json) "
+            "VALUES(?, 'migration', 'info', 'database', ?)",
+            (int(time.time()), _json_dumps({"from": 5, "to": 6})),
+        )
+    except Exception:
+        logger.warning("写入 migration 事件失败（不影响迁移本身）", exc_info=True)
+
+
 # 数据库版本 -> 迁移函数（执行后库从该版本升到 version+1）
 _MIGRATIONS: dict[int, object] = {
     1: _migrate_v1_to_v2,
     2: _migrate_v2_to_v3,
     3: _migrate_v3_to_v4,
     4: _migrate_v4_to_v5,
+    5: _migrate_v5_to_v6,
 }
 
 
@@ -479,6 +513,15 @@ class Database:
         self._health = DB_HEALTH_HEALTHY
         self._health_detail: str | None = None
         self.journal_mode: str | None = None  # 实际 journal_mode（不假设 WAL 一定成功）
+        # PERF：live_samples **全量**（hours=None）读取缓存。
+        # /api/daily、/api/usage-summary、/api/today-hourly 都在 async 事件循环里
+        # 同步加载全量 live（48h 保留，长期运行可达十万行）并逐行 dict 物化——单次约 1s，
+        # 而「进入用量页」会一次并发触发这三个端点，串行阻塞事件循环数秒 -> 使用汇总卡
+        # 长时间显示 "--"。此处对 hours=None 加短 TTL 缓存，让同一轮突发**共享一次**全量
+        # 加载；任何 live 写入（apply_sample / 清空 / 重置）都会失效缓存，因此不会读到
+        # 过期的新样本。仅缓存 hours=None（小时桶/最近 N 小时走带 WHERE 的查询，不缓存）。
+        self._live_all_cache: list[dict] | None = None
+        self._live_all_cache_at: float = 0.0
 
     @property
     def health(self) -> str:
@@ -623,6 +666,7 @@ class Database:
                 deleted += conn.execute("DELETE FROM gpu_samples").rowcount
         finally:
             conn.close()
+        self._invalidate_live_cache()
         if vacuum:
             self.vacuum_threadsafe()
         return deleted
@@ -829,20 +873,39 @@ class Database:
             rows = conn.execute(sql + " ORDER BY date ASC").fetchall()
         return [dict(row) for row in rows]
 
+    def _invalidate_live_cache(self) -> None:
+        """live 写入后失效全量缓存，保证下一次 hours=None 读取重新加载（不读旧数据）。"""
+        self._live_all_cache = None
+        self._live_all_cache_at = 0.0
+
     def get_live_samples(self, hours: float | None = 48.0) -> list[dict]:
         """
         按 timestamp 升序返回 live_samples。
 
         hours=None 返回全部行；否则只返回最近 hours 小时内（基于系统当前时间）。
+
+        hours=None 走短 TTL 缓存（LIVE_ALL_CACHE_TTL_SECONDS）：同一轮突发（进入
+        用量页并发触发 /api/daily、/api/usage-summary、/api/today-hourly）共享一次
+        全量加载，避免各自同步物化十万行 live 串行阻塞事件循环。缓存对新样本保守
+        失效——任何 live 写入都会立即清空（_invalidate_live_cache），TTL 只是突发
+        内的去重窗口。hours 为具体值时走带 WHERE 的查询（最近 N 小时），不缓存。
         """
-        conn = self._connect()
         if hours is None:
+            now = time.time()
+            cached = self._live_all_cache
+            if cached is not None and (now - self._live_all_cache_at) <= LIVE_ALL_CACHE_TTL_SECONDS:
+                return cached
+            conn = self._connect()
             rows = conn.execute("SELECT * FROM live_samples ORDER BY timestamp ASC").fetchall()
-        else:
-            rows = conn.execute(
-                "SELECT * FROM live_samples WHERE timestamp >= ? ORDER BY timestamp ASC",
-                (time.time() - hours * 3600,),
-            ).fetchall()
+            out = [dict(row) for row in rows]
+            self._live_all_cache = out
+            self._live_all_cache_at = now
+            return out
+        conn = self._connect()
+        rows = conn.execute(
+            "SELECT * FROM live_samples WHERE timestamp >= ? ORDER BY timestamp ASC",
+            (time.time() - hours * 3600,),
+        ).fetchall()
         return [dict(row) for row in rows]
 
     def get_day_sample_bounds(self, date: str) -> tuple[float | None, float | None]:
@@ -975,6 +1038,8 @@ class Database:
         # 下一轮从旧 baseline 重新计算完整 delta（不会丢、不会双计）
         with self._write_lock:
             self._tx_with_retry(_do, what="apply_sample")
+        # 新 live 样本已落盘 -> 失效全量缓存，下一次 hours=None 读取拿到含新样本的数据
+        self._invalidate_live_cache()
 
     # ---------- 事件 / 数据缺口 / 备份（Phase 11） ----------
 
@@ -1151,7 +1216,7 @@ class Database:
             ).fetchall()
         return [dict(row) for row in rows]
 
-    def get_gap_stats(self, date: str) -> dict:
+    def get_gap_stats(self, date: str, start_ts: float | None = None) -> dict:
         """
         某自然日的缺口统计：gap_count / possible_token_loss(是否存在) /
         total_gap_seconds / token_recoverable(是否全部可恢复)。
@@ -1160,16 +1225,21 @@ class Database:
         不再拉取最多 10 万行 Python 物化——data_gaps 永久保留，长期运行后
         原实现每轮轮询 O(n) 全表扫描。日期边界与 get_gaps(date=) 同一口径
         （本地 00:00，DST 安全）。
+
+        Round-5：start_ts 可选——把统计窗口从"整个自然日"收窄到
+        [start_ts, 次日00:00)（供完整性趋势的小时桶按真实窗口计算缺口，
+        避免跨日大缺口把上一小时算满）。缺省 None = 整个自然日。
         """
         start_dt = datetime.strptime(date, "%Y-%m-%d")
         start_day = start_dt.timestamp()
         end_day = (start_dt + timedelta(days=1)).timestamp()
+        eff_start = float(start_ts) if start_ts is not None else start_day
         conn = self._connect()
         row = conn.execute(
             "SELECT COUNT(*), COALESCE(SUM(duration_seconds), 0), "
             "COALESCE(MAX(possible_token_loss), 0), COALESCE(MIN(token_recoverable), 1) "
             "FROM data_gaps WHERE start_timestamp < ? AND end_timestamp >= ?",
-            (end_day, start_day),
+            (end_day, eff_start),
         ).fetchone()
         return {
             "gap_count": row[0],
@@ -1220,6 +1290,169 @@ class Database:
             "SELECT COUNT(*), COALESCE(MAX(possible_token_loss), 0) FROM data_gaps"
         ).fetchone()
         return (row[0], bool(row[1]))
+
+    # ---------- Round-5 History 页：范围查询 + cursor 分页 + 趋势桶 ----------
+    # cursor 约定：新 -> 旧（start_timestamp DESC, id DESC）。cursor=(ts, id) 取
+    # "严格比 (ts,id) 更旧"的下一批——keyset 分页（实时插入不重复/不漏，§218-220）。
+
+    def get_gaps_range(
+        self,
+        start_ts: float | None = None,
+        end_ts: float | None = None,
+        source: str | None = None,
+        risk: str | None = None,
+        cursor: tuple[int, int] | None = None,
+        limit: int = 50,
+    ) -> list[dict]:
+        """
+        按范围/来源/Token 风险查询 data_gaps（start_timestamp DESC, id DESC）。
+
+        - start_ts/end_ts：gap 起始时间落在 [start_ts, end_ts] 内（半开：>= start, < end）。
+        - source：llama / gpu / application / system（精确匹配）。
+        - risk："lost" = possible_token_loss=1；"time_uncertain" = 1-possible_token_loss
+          且 token_recoverable=0（总量可恢复但日期归属不确定，§108-109）；其余 = 全部。
+        - cursor=(last_ts, last_id)：取严格更旧的一批（keyset，稳定分页）。
+        """
+        sql = "SELECT * FROM data_gaps WHERE 1=1"
+        args: list = []
+        if start_ts is not None:
+            sql += " AND start_timestamp >= ?"
+            args.append(int(start_ts))
+        if end_ts is not None:
+            sql += " AND start_timestamp < ?"
+            args.append(int(end_ts))
+        if source:
+            sql += " AND source = ?"
+            args.append(source)
+        if risk == "lost":
+            sql += " AND possible_token_loss = 1"
+        elif risk == "time_uncertain":
+            sql += " AND possible_token_loss = 0 AND token_recoverable = 0"
+        if cursor is not None:
+            sql += " AND (start_timestamp < ? OR (start_timestamp = ? AND id < ?))"
+            args.extend([int(cursor[0]), int(cursor[0]), int(cursor[1])])
+        sql += " ORDER BY start_timestamp DESC, id DESC LIMIT ?"
+        args.append(int(limit))
+        conn = self._connect()
+        return [dict(r) for r in conn.execute(sql, args).fetchall()]
+
+    def get_gap_range_stats(
+        self, start_ts: float | None = None, end_ts: float | None = None
+    ) -> dict:
+        """范围内缺口聚合：count / total_seconds / lost_count / time_uncertain_count。"""
+        sql = ("SELECT COUNT(*), COALESCE(SUM(duration_seconds), 0), "
+               "COALESCE(SUM(CASE WHEN possible_token_loss = 1 THEN 1 ELSE 0 END), 0), "
+               "COALESCE(SUM(CASE WHEN possible_token_loss = 0 AND token_recoverable = 0 "
+               "THEN 1 ELSE 0 END), 0) FROM data_gaps WHERE 1=1")
+        args: list = []
+        if start_ts is not None:
+            sql += " AND start_timestamp >= ?"
+            args.append(int(start_ts))
+        if end_ts is not None:
+            sql += " AND start_timestamp < ?"
+            args.append(int(end_ts))
+        conn = self._connect()
+        row = conn.execute(sql, args).fetchone()
+        return {
+            "gap_count": row[0],
+            "total_gap_seconds": row[1] or 0.0,
+            "lost_count": row[2] or 0,
+            "time_uncertain_count": row[3] or 0,
+        }
+
+    def get_events_range(
+        self,
+        start_ts: float | None = None,
+        end_ts: float | None = None,
+        category: str | None = None,
+        min_severity: str | None = None,
+        search: str | None = None,
+        cursor: tuple[int, int] | None = None,
+        limit: int = 30,
+        title_match_types: list[str] | None = None,
+    ) -> list[dict]:
+        """
+        按范围/分类/最低级别/关键词查询 monitor_events（timestamp DESC, id DESC），
+        details_json 已解析。category 过滤由后端按事件分类映射表匹配（与前端
+        Presentation Layer 同一映射，单一事实源在 server.py）。
+        title_match_types：展示层标题（中文，如"系统休眠"）匹配到的 raw event_type 集合，
+        让"按看到的标题搜索"也命中（与 raw LIKE 并列 OR）。
+        """
+        sql = "SELECT * FROM monitor_events WHERE 1=1"
+        args: list = []
+        if start_ts is not None:
+            sql += " AND timestamp >= ?"
+            args.append(int(start_ts))
+        if end_ts is not None:
+            sql += " AND timestamp < ?"
+            args.append(int(end_ts))
+        if category:
+            sql += " AND event_type IN (" + ",".join("?" for _ in category) + ")"
+            args.extend(category)
+        if min_severity:
+            # 级别序 info < warning < error：min_severity="warning" -> 只留 warning+error
+            if min_severity == "warning":
+                sql += " AND severity IN ('warning','error')"
+            elif min_severity == "error":
+                sql += " AND severity = 'error'"
+        if search:
+            # 轻量 LIKE（用户输入时执行，非 2s 轮询；§166-168）
+            like = "%" + str(search).strip() + "%"
+            if title_match_types:
+                inlist = ",".join("?" for _ in title_match_types)
+                sql += (" AND (event_type IN (" + inlist + ")"
+                        " OR event_type LIKE ? OR source LIKE ? OR details_json LIKE ?)")
+                args.extend(title_match_types + [like, like, like])
+            else:
+                sql += " AND (event_type LIKE ? OR source LIKE ? OR details_json LIKE ?)"
+                args.extend([like, like, like])
+        if cursor is not None:
+            sql += " AND (timestamp < ? OR (timestamp = ? AND id < ?))"
+            args.extend([int(cursor[0]), int(cursor[0]), int(cursor[1])])
+        sql += " ORDER BY timestamp DESC, id DESC LIMIT ?"
+        args.append(int(limit))
+        conn = self._connect()
+        out = []
+        for row in conn.execute(sql, args).fetchall():
+            d = dict(row)
+            d["details"] = _json_loads(d.pop("details_json", None))
+            out.append(d)
+        return out
+
+    def get_live_bounds(self) -> tuple[float | None, float | None]:
+        """(最早, 最近) live 样本时间戳——"监测开始时间" 与 最后采样。无数据 -> (None, None)。"""
+        conn = self._connect()
+        row = conn.execute(
+            "SELECT MIN(timestamp), MAX(timestamp) FROM live_samples"
+        ).fetchone()
+        return (row[0], row[1]) if row else (None, None)
+
+    def get_sleep_events(self, start_ts: float | None = None,
+                         end_ts: float | None = None) -> list[dict]:
+        """
+        范围 [start_ts, end_ts) 内的 sleep_gap / 系统暂停事件（timestamp 升序）。
+
+        Round-5 缺口原因推定（§113）：主 collector 在检测到 monotonic 断档时记
+        sleep_gap 事件（携带 monotonic_gap_seconds）。GPU 侧对**同一次**暂停因
+        阈值不同（GPU SLEEP_HINT=300s vs collector ~15s）常记成 gpu/unknown。
+        用这些事件作"休眠证据"推定 gpu/unknown 缺口的真实原因。
+        """
+        conn = self._connect()
+        sql = ("SELECT id, timestamp, details_json FROM monitor_events "
+               "WHERE event_type IN ('sleep_gap','system_monitor_stop')")
+        args: list = []
+        if start_ts is not None:
+            sql += " AND timestamp >= ?"
+            args.append(int(start_ts))
+        if end_ts is not None:
+            sql += " AND timestamp < ?"
+            args.append(int(end_ts))
+        sql += " ORDER BY timestamp ASC"
+        out = []
+        for row in conn.execute(sql, args).fetchall():
+            out.append({"id": row["id"], "timestamp": row["timestamp"],
+                        "details": _json_loads(row["details_json"])})
+        return out
 
     def get_first_and_last_sample(self) -> tuple[float | None, float | None]:
         """(首次, 最近) 有效 live_sample 的 timestamp（Unix 秒）；无数据 -> (None, None)。"""
@@ -1319,6 +1552,7 @@ class Database:
                 deleted += conn.execute("DELETE FROM gpu_samples").rowcount
             if vacuum:
                 conn.execute("VACUUM")
+        self._invalidate_live_cache()
         return deleted
 
     def reset_statistics(self) -> dict:
@@ -1347,6 +1581,7 @@ class Database:
                     ("gaps_deleted", "data_gaps"),
                 ):
                     out[key] = conn.execute(f"DELETE FROM {table}").rowcount
+        self._invalidate_live_cache()
         return out
 
     def backup_to(self, dest_path: str | os.PathLike) -> int:

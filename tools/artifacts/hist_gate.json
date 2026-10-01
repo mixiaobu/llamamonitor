@@ -1,0 +1,113 @@
+{
+  "console": [],
+  "results": {
+    "1920": {
+      "hscroll": {
+        "doc": false,
+        "dw": 1920,
+        "ds": 1920,
+        "body": 1920
+      },
+      "nested_scroll": [],
+      "els": {
+        "historyRange": "ok",
+        "integrityGrid": "ok",
+        "chartHistoryTrend": "ok",
+        "gapsTbody": "ok",
+        "eventsTbody": "ok",
+        "evTimeline": "hidden",
+        "btnExportGapsCsv": "ok",
+        "btnExportEventsCsv": "ok",
+        "historySchemaBanner": "hidden"
+      },
+      "cnt": {
+        "gaps": 20,
+        "events": 30,
+        "tl": 0,
+        "cov": "99.6%",
+        "db": "正常"
+      }
+    },
+    "988": {
+      "hscroll": {
+        "doc": false,
+        "dw": 988,
+        "ds": 988,
+        "body": 988
+      },
+      "nested_scroll": [],
+      "els": {
+        "historyRange": "ok",
+        "integrityGrid": "ok",
+        "chartHistoryTrend": "ok",
+        "gapsTbody": "ok",
+        "eventsTbody": "ok",
+        "evTimeline": "hidden",
+        "btnExportGapsCsv": "ok",
+        "btnExportEventsCsv": "ok",
+        "historySchemaBanner": "hidden"
+      },
+      "cnt": {
+        "gaps": 20,
+        "events": 30,
+        "tl": 0,
+        "cov": "99.6%",
+        "db": "正常"
+      }
+    },
+    "390": {
+      "hscroll": {
+        "doc": false,
+        "dw": 390,
+        "ds": 390,
+        "body": 390
+      },
+      "nested_scroll": [],
+      "els": {
+        "historyRange": "ok",
+        "integrityGrid": "ok",
+        "chartHistoryTrend": "ok",
+        "gapsTbody": "ok",
+        "eventsTbody": "ok",
+        "evTimeline": "hidden",
+        "btnExportGapsCsv": "ok",
+        "btnExportEventsCsv": "ok",
+        "historySchemaBanner": "hidden"
+      },
+      "cnt": {
+        "gaps": 20,
+        "events": 30,
+        "tl": 0,
+        "cov": "99.6%",
+        "db": "正常"
+      }
+    },
+    "320": {
+      "hscroll": {
+        "doc": false,
+        "dw": 320,
+        "ds": 320,
+        "body": 320
+      },
+      "nested_scroll": [],
+      "els": {
+        "historyRange": "ok",
+        "integrityGrid": "ok",
+        "chartHistoryTrend": "ok",
+        "gapsTbody": "ok",
+        "eventsTbody": "ok",
+        "evTimeline": "ok",
+        "btnExportGapsCsv": "ok",
+        "btnExportEventsCsv": "ok",
+        "historySchemaBanner": "hidden"
+      },
+      "cnt": {
+        "gaps": 8,
+        "events": 30,
+        "tl": 30,
+        "cov": "99.6%",
+        "db": "正常"
+      }
+    }
+  }
+}

@@ -193,6 +193,7 @@
     inputEl.placeholder = need ? "输入 " + need + " 以确认" : "";
 
     okBtn.textContent = opts.okLabel || "确定";
+    cancelBtn.textContent = opts.cancelLabel || "取消";
     // 只用 classList 切换样式类，保留 .modal-ok 定位类
     // （整体覆盖 className 会在第一次打开后把 .modal-ok 冲掉，
     // 导致第二次 querySelector(".modal-ok") 返回 null、模态永远打不开）
@@ -202,6 +203,9 @@
 
     modalState.lastFocus = document.activeElement;
     modalState.open = true;
+    // Round-8 §405：Back 键先关 Modal。push 一条 history 记录；
+    // popstate 在 modal 打开时走 cleanup（viaBack 不重复 back()）。
+    try { window.history.pushState({ lmModal: 1 }, ""); modalState.inHistory = true; } catch (e) {}
     overlay.hidden = false;
 
     var check = function () {
@@ -209,8 +213,14 @@
     };
     inputEl.addEventListener("input", check);
 
-    function cleanup() {
+    function cleanup(viaBack) {
       modalState.open = false;
+      if (modalState.inHistory && !viaBack) {
+        modalState.inHistory = false;
+        try { window.history.back(); } catch (e) {}
+      } else {
+        modalState.inHistory = false;
+      }
       overlay.hidden = true;
       okBtn.onclick = null;
       cancelBtn.onclick = null;
@@ -219,6 +229,14 @@
       if (modalState.lastFocus && modalState.lastFocus.focus) {
         try { modalState.lastFocus.focus(); } catch (e) { /* 元素可能已移除 */ }
       }
+    }
+
+    // Back 键关闭（委托式：监听器注册一次，避免每开一次 modal 叠一个）
+    if (!modalState.popBound) {
+      modalState.popBound = true;
+      window.addEventListener("popstate", function () {
+        if (modalState.open && modalState.inHistory) cleanup(true);
+      });
     }
 
     okBtn.onclick = function () { cleanup(); opts.onDone && opts.onDone(true); };

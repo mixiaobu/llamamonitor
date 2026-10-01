@@ -1,0 +1,8 @@
+C:\Users\mixiaobu\AppData\Local\Programs\Python\Python313\Lib\subprocess.py:1023: RuntimeWarning: line buffering (buffering=1) isn't supported in binary mode, the default buffer size will be used
+  self.stdin = io.open(p2cwrite, 'wb', bufsize)
+C:\Users\mixiaobu\AppData\Local\Programs\Python\Python313\Lib\subprocess.py:1029: RuntimeWarning: line buffering (buffering=1) isn't supported in binary mode, the default buffer size will be used
+  self.stdout = io.open(c2pread, 'rb', bufsize)
+C:\Users\mixiaobu\AppData\Local\Programs\Python\Python313\Lib\subprocess.py:1034: RuntimeWarning: line buffering (buffering=1) isn't supported in binary mode, the default buffer size will be used
+  self.stderr = io.open(errread, 'rb', bufsize)
+2026-09-30 09:00:15,191 WARNING llamamonitor.collector: 检测到系统暂停/睡眠（monotonic 间隔 12s > 阈值 6s），已记缺口
+2026-09-30 09:29:46,321 WARNING llamamonitor.collector: llama-server 离线（http://127.0.0.1:9091/metrics 抓取失败），采集循环继续

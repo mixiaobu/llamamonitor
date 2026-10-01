@@ -132,6 +132,11 @@
   var sheetOpen = false;
   var sheetTrigger = null; // 打开 sheet 的 ••• 按钮（关闭时回焦点）
   var lastFocused = null;
+  // Round-8 §404：Back 键先关 Sheet。
+  // open 时 pushState 一条记录；Back（popstate）只关 sheet（页面本就没换）；
+  // scrim/ESC 关闭则 history.back() 撤回这条记录（等价"没打开过"）。
+  var sheetInHistory = false;
+  var sheetSuppressPop = false; // 正在处理 Back 触发的 popstate，closeSheet 内不要再 back()
 
   function sheetNodes() {
     return {
@@ -150,11 +155,14 @@
     sheetOpen = true;
     lockBodyScroll(true);
     if (trigger) { trigger.setAttribute("aria-expanded", "true"); }
+    // Back 键可关闭（§404）：push 一条记录。用户按 Back 时浏览器 pop 回原
+    // 页面 entry（页面本就没换 -> 页面不变），popstate 里把 sheet 关掉。
+    try { window.history.pushState({ lmSheet: 1 }, ""); sheetInHistory = true; } catch (e) {}
     var first = n.sheet.querySelector(".sheet-item:not([disabled])");
     if (first) first.focus();
   }
 
-  function closeSheet() {
+  function closeSheet(viaBack) {
     var n = sheetNodes();
     if (n.scrim) n.scrim.hidden = true;
     if (n.sheet) n.sheet.hidden = true;
@@ -162,6 +170,15 @@
     sheetOpen = false;
     lockBodyScroll(false);
     if (sheetTrigger) sheetTrigger.setAttribute("aria-expanded", "false");
+    if (sheetSuppressPop || viaBack) {
+      // Back（popstate）关闭：浏览器已 pop 掉这条记录，只清 UI 状态。
+      sheetSuppressPop = false;
+      sheetInHistory = false;
+    } else if (sheetInHistory) {
+      // scrim/ESC 关闭：回到打开 sheet 之前的 entry（等价"没打开过"）。
+      sheetInHistory = false;
+      try { window.history.back(); } catch (e) {}
+    }
     // 焦点回触发按钮（无则回 lastFocused）
     var target = sheetTrigger || lastFocused;
     if (target && document.contains(target)) target.focus();
@@ -223,6 +240,18 @@
       btn.addEventListener("click", function () { openSheet(btn); });
     });
 
+    // 1b) 底栏 5 项点击（§57：之前只绑了 .nav-item 桌面侧边栏，
+    //     .mnav-item 从未接线 -> 手机端点底部导航无效果。统一委托到 nav）。
+    var mnav = document.querySelector(".mobile-nav");
+    if (mnav) {
+      mnav.addEventListener("click", function (e) {
+        var b = e.target && e.target.closest ? e.target.closest(".mnav-item") : null;
+        if (!b || b.disabled) return;
+        var dp = b.getAttribute("data-page");
+        if (dp) showPage(dp);
+      });
+    }
+
     // 2) sheet 项点击：切换页面才关闭（被守卫拦住时保持打开）。
     document.querySelectorAll(".sheet-item").forEach(function (b) {
       b.addEventListener("click", function () {
@@ -240,6 +269,16 @@
     document.addEventListener("keydown", function (e) {
       if (e.key === "Escape" && sheetOpen) { e.preventDefault(); closeSheet(); }
       else if (sheetOpen) trapFocus(e);
+    });
+
+    // 3b) Back 键（§404）：sheet 打开时 Back 只关 sheet，页面不动。
+    // 实现：open 时 pushState 一条记录；用户按 Back 时浏览器 pop 回原页面
+    // entry（页面本就没换，所以页面不变），popstate 在这里把 sheet 关掉。
+    window.addEventListener("popstate", function () {
+      if (sheetOpen && !sheetSuppressPop) {
+        sheetSuppressPop = true; // 防止 closeSheet 内的 back() 再退一条
+        closeSheet(true);
+      }
     });
 
     // 4) sheet 版本号。

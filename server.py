@@ -36,7 +36,7 @@ import re
 import sys
 import time
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timedelta, timedelta
 from pathlib import Path
 
 import httpx
@@ -118,26 +118,102 @@ _GPU_LIVE_FIELDS = (
     "performance_state",
 )
 
+# Round-3 系统页：/api/system/live 返回的历史字段（降采样时按此聚合，勿漏）。
+_SYS_LIVE_FIELDS = (
+    "cpu_usage_percent",
+    "cpu_frequency_mhz",
+    "cpu_temperature_c",
+    "cpu_package_power_w",
+    "memory_usage_percent",
+    "memory_used_bytes",
+    "memory_total_bytes",
+    "disk_read_bps",
+    "disk_write_bps",
+    "network_rx_bps",
+    "network_tx_bps",
+    "monitored_component_power_w",
+)
 
-def _downsample(points: list[dict], max_points: int = 2000) -> list[dict]:
+
+def _downsample(points: list[dict], max_points: int = 2000, fields: tuple | list | None = None) -> list[dict]:
     """
     简单 bucket 聚合降采样（纯 Python，无 numpy/pandas）：
 
     - 点数 <= max_points：原样返回；
     - 否则按等宽分桶，每桶取各数值字段的非空均值（时间戳取桶内第一个）。
     前端不需要一次画几万个点。
+
+    fields：要聚合的数值字段。None（缺省）= 从第一个点自动检测所有数值字段
+    （排除 timestamp）。GPU 传 _GPU_LIVE_FIELDS、System 传 _SYS_LIVE_FIELDS——
+    不显式指定会漏字段（曾发生 system 24h 因字段列表是 GPU-only 导致全 None 的 bug）。
     """
     if len(points) <= max_points:
         return points
+    if fields is None:
+        ref = points[0]
+        fields = [k for k in ref.keys()
+                  if k != "timestamp" and isinstance(ref.get(k), (int, float)) and ref.get(k) is not None]
     bucket = (len(points) + max_points - 1) // max_points
     out: list[dict] = []
     for start in range(0, len(points), bucket):
         chunk = points[start:start + bucket]
         merged: dict = {"timestamp": chunk[0]["timestamp"]}
-        for field in _GPU_LIVE_FIELDS:
+        for field in fields:
             values = [p[field] for p in chunk if p.get(field) is not None]
             merged[field] = round(sum(values) / len(values), 2) if values else None
         out.append(merged)
+    return out
+
+
+def _sys_stats(values: list) -> dict:
+    """一组（可能含 None 的）浮点 -> {current(末个非空), avg, max}；全空 -> 全 None。
+    用于 /api/system/live summary（chart header 当前/平均/峰值，§46-§48）。"""
+    vals = [float(v) for v in values if v is not None]
+    if not vals:
+        return {"current": None, "avg": None, "max": None}
+    return {"current": vals[-1], "avg": sum(vals) / len(vals), "max": max(vals)}
+
+
+def _system_live_summary(points: list[dict]) -> dict:
+    """所选范围系统历史摘要（chart header 分析摘要；在原始样本上算，准确）。"""
+    return {
+        "cpu": _sys_stats([p.get("cpu_usage_percent") for p in points]),
+        "memory": _sys_stats([p.get("memory_usage_percent") for p in points]),
+        "disk_read": _sys_stats([p.get("disk_read_bps") for p in points]),
+        "disk_write": _sys_stats([p.get("disk_write_bps") for p in points]),
+        "network_rx": _sys_stats([p.get("network_rx_bps") for p in points]),
+        "network_tx": _sys_stats([p.get("network_tx_bps") for p in points]),
+        "power": _sys_stats([p.get("monitored_component_power_w") for p in points]),
+    }
+
+
+def _system_adapters_public(system) -> dict[str, dict]:
+    """每接口当前速率 + 元数据（接口选择器 / §107-108 errors-drops）。
+    合并 system.adapter_rates()（rx/tx）与 system.network_interfaces()（kind/speed/err/...）。"""
+    try:
+        rates = system.adapter_rates() or {}
+    except Exception:
+        rates = {}
+    try:
+        meta = {itf["name"]: itf for itf in (system.network_interfaces() or [])}
+    except Exception:
+        meta = {}
+    out: dict[str, dict] = {}
+    for name in set(list(rates.keys()) + list(meta.keys())):
+        r = rates.get(name) or {}
+        m = meta.get(name) or {}
+        out[name] = {
+            "rx_bps": r.get("rx_bps"),
+            "tx_bps": r.get("tx_bps"),
+            "kind": m.get("kind"),
+            "is_default": m.get("is_default"),
+            "is_virtual": m.get("is_virtual"),
+            "speed_mbps": m.get("speed_mbps"),
+            "errin": m.get("errin"),
+            "errout": m.get("errout"),
+            "dropin": m.get("dropin"),
+            "dropout": m.get("dropout"),
+        }
     return out
 
 
@@ -201,8 +277,9 @@ def _gpu_ecc_payload(gpu, uuid: str) -> dict | None:
 
     - 不支持 ECC 的 GPU（ecc_enabled 未查到 / None）-> None（UI 整个 ECC 区隐藏，
       不显示一排 --）；
-    - 支持时返回 {enabled, corrected_volatile/aggregate, uncorrected_volatile/aggregate,
-      retired_pages, remapped_rows}；细项缺失（如消费卡无 SRAM）-> 该计数 None。
+    - 支持时返回 {enabled, corrected/uncorrected volatile/aggregate,
+      retired_pages_single_bit/double_bit/pending, remapped_rows}；
+      细项缺失（如消费卡无 SRAM / 驱动未提供退役页细分）-> 该计数 None。
     """
     if gpu is None or not gpu.available:
         return None
@@ -215,7 +292,10 @@ def _gpu_ecc_payload(gpu, uuid: str) -> dict | None:
         "corrected_aggregate": health.get("ecc_corrected_aggregate"),
         "uncorrected_volatile": health.get("ecc_uncorrected_volatile"),
         "uncorrected_aggregate": health.get("ecc_uncorrected_aggregate"),
-        "retired_pages": health.get("retired_pages"),
+        # Round-4：退役页细分（单比特/双比特/待处理）；None = 该驱动未提供
+        "retired_pages_single_bit": health.get("retired_pages_single_bit"),
+        "retired_pages_double_bit": health.get("retired_pages_double_bit"),
+        "retired_pages_pending": health.get("retired_pages_pending"),
         "remapped_rows": health.get("remapped_rows"),
     }
 
@@ -256,6 +336,83 @@ def _csv_safe_text(value) -> str:
     return s
 
 
+def _throughput_window_avg(samples: list[dict]) -> dict:
+    """
+    选定窗口的**加权平均吞吐**（Round 5 §46-§48）。
+
+    不是对逐样本 prompt_tps/decode_tps 做简单平均（那样每个 5s 样本等权，
+    短促 burst 会被稀释/夸大），而是：
+      prompt_tps_avg = Δprompt_tokens / Δprompt_seconds
+      decode_tps_avg = Δgenerated_tokens / Δpredicted_seconds
+    其中 Δ 取窗口内所有样本的 token delta 与 seconds delta 之和。
+
+    - 分母 <= 0（含无秒数推进、全 idle）或分子缺失 -> 该平均为 None（§48，
+      绝不返回 0 或 Infinity，也不把"无吞吐"当 0 tok/s 误报）。
+    - 仅统计 seconds delta 非 None 的样本参与分母，token delta 取对应样本。
+    """
+    prompt_tok = 0.0
+    prompt_sec = 0.0
+    decode_tok = 0.0
+    decode_sec = 0.0
+    has_prompt_tok = False
+    has_decode_tok = False
+    for s in samples or []:
+        dt = s.get("prompt_delta")
+        if dt is not None:
+            prompt_tok += dt
+            has_prompt_tok = True
+        ds = s.get("prompt_seconds")
+        if ds is not None:
+            prompt_sec += ds
+        ot = s.get("output_delta")
+        if ot is not None:
+            decode_tok += ot
+            has_decode_tok = True
+        os_ = s.get("predicted_seconds")
+        if os_ is not None:
+            decode_sec += os_
+    prompt_avg = (prompt_tok / prompt_sec) if (has_prompt_tok and prompt_sec > 0) else None
+    decode_avg = (decode_tok / decode_sec) if (has_decode_tok and decode_sec > 0) else None
+    return {
+        "prompt_tps_avg": prompt_avg,
+        "decode_tps_avg": decode_avg,
+        "prompt_seconds": prompt_sec if prompt_sec > 0 else None,
+        "predicted_seconds": decode_sec if decode_sec > 0 else None,
+    }
+
+
+def _downsample_throughput(samples: list[dict], max_points: int = 2000) -> list[dict]:
+    """
+    throughput 窗口的 bucket 降采样（纯 Python）。
+
+    24h / 5s 采集 = ~1.7 万点；折线一次画 ~2000 点足够。分桶规则：
+    - 时间戳取桶内第一个；
+    - prompt_tps / decode_tps / requests_* / busy_slots 取桶内非空均值
+      （速率类：均值是桶内该速率的近似，用于画图即可；**加权平均吞吐**
+      另由 _throughput_window_avg 在原始样本上计算，不走降采样，保证精确）；
+    - prompt_delta / output_delta / prompt_seconds / predicted_seconds 取桶内
+      求和（保持窗口加权平均与 tooltip 计数在降采样后仍一致）。
+    """
+    if len(samples) <= max_points:
+        return samples
+    bucket = (len(samples) + max_points - 1) // max_points
+    avg_fields = ("prompt_tps", "decode_tps", "requests_processing",
+                  "requests_deferred", "busy_slots")
+    sum_fields = ("prompt_delta", "output_delta", "prompt_seconds", "predicted_seconds")
+    out: list[dict] = []
+    for start in range(0, len(samples), bucket):
+        chunk = samples[start:start + bucket]
+        merged: dict = {"timestamp": chunk[0]["timestamp"]}
+        for f in avg_fields:
+            vals = [c[f] for c in chunk if c.get(f) is not None]
+            merged[f] = round(sum(vals) / len(vals), 3) if vals else None
+        for f in sum_fields:
+            vals = [c[f] for c in chunk if c.get(f) is not None]
+            merged[f] = (sum(vals) if vals else None)
+        out.append(merged)
+    return out
+
+
 def _summary_shape(prompt: int, cached: int, output: int) -> dict:
     """summary 的统一字段形状（含派生字段）。"""
     return {
@@ -265,6 +422,69 @@ def _summary_shape(prompt: int, cached: int, output: int) -> dict:
         "compute_tokens": prompt + output,
         "logical_tokens": prompt + cached + output,
     }
+
+
+def _attention_rank(sev: str) -> int:
+    """Attention 排序权重：Error(0) > Warning(1) > Info(2)（同级保持输入序）。"""
+    return {"error": 0, "warning": 1, "info": 2}.get(sev, 3)
+
+
+def build_attention_items(items: list[dict]) -> dict:
+    """
+    「需要关注」聚合（Round-6 §需要关注）：**只消费**各模块已产出的可靠状态
+    （service/gpu/system/integrity 域在端点内组装成 item 列表传入），本函数
+    只做排序与截断，不重新发明健康判断。
+
+    - 排序：severity Error > Warning > Info；同级保持传入顺序（各域组装顺序）；
+    - 截断：最多返回 3 条（items[:3]），total_count 为全量条数，
+      remaining = max(0, total - 3)（UI 显示「还有 N 项 查看监控历史 →」）。
+    每项形如 {key, severity("error"/"warning"/"info"), title, subtitle}。
+    """
+    ordered = sorted(items, key=lambda it: _attention_rank(it.get("severity", "info")))
+    shown = ordered[:3]
+    total = len(ordered)
+    return {
+        "items": shown,
+        "total_count": total,
+        "remaining": max(0, total - 3),
+        "hidden": total == 0,  # 0 项 -> 前端整块 display:none
+    }
+
+
+def _base_address_public(metrics_url: str) -> str:
+    """
+    从完整 metrics 地址（如 http://127.0.0.1:9091/metrics）提取公开展示的基础地址
+    （127.0.0.1:9091）：去 scheme、去 path。失败时回退为原始串去 scheme。
+    Overview 服务卡只展示 host:port（§服务卡地址），/metrics 走 tooltip。
+    """
+    s = metrics_url or ""
+    low = s.lower()
+    for pre in ("http://", "https://"):
+        if low.startswith(pre):
+            s = s[len(pre):]
+            break
+    slash = s.find("/")
+    if slash != -1:
+        s = s[:slash]
+    return s
+
+
+def _overview_tps_display(value, online: bool, metric_supported: bool) -> dict:
+    """
+    TPS 展示语义（Round-6 §推理状态：绝不混淆「0」与「不可用」）：
+    - 离线 -> {value: None, display: "unavailable", tip: None}；
+    - 在线且指标受支持（collector 已上报该 counter，即使本轮无 delta -> 空闲）
+      -> 空闲显示 0：{value: 0.0, display: "idle", tip: "当前无对应推理活动"}；
+    - 在线但指标不受支持（旧版 llama.cpp 无该 counter）-> unavailable。
+    value 非 None（真实速率）-> display "active"。
+    """
+    if not online:
+        return {"value": None, "display": "unavailable", "tip": None}
+    if value is not None:
+        return {"value": value, "display": "active", "tip": None}
+    if not metric_supported:
+        return {"value": None, "display": "unavailable", "tip": None}
+    return {"value": 0.0, "display": "idle", "tip": "当前无对应推理活动"}
 
 
 def _require_loopback(request: Request) -> None:
@@ -953,17 +1173,30 @@ def build_app(
                     "driver_version": (gpu.driver_version or None),
                     # slow health（60s 周期；不支持 -> None -> UI 隐藏 ECC 区）
                     "ecc": _gpu_ecc_payload(gpu, row["gpu_uuid"]),
+                    # Round-4：静态字段（PCI Bus ID / Compute Mode / Persistence；None -> UI 不显示）
+                    "pci_bus_id": (gpu.gpu_static or {}).get(row["gpu_uuid"], {}).get("pci_bus_id"),
+                    "compute_mode": (gpu.gpu_static or {}).get(row["gpu_uuid"], {}).get("compute_mode"),
+                    "persistence_mode": (gpu.gpu_static or {}).get(row["gpu_uuid"], {}).get("persistence_mode"),
                     # 性能限制原因（非故障；0x0 时 []）
                     "throttle_reasons": list(gpu.latest_throttle.get(row["gpu_uuid"], []))
                     if hasattr(gpu, "latest_throttle") else [],
                 })
         # 1.1：GPU 进程（只读；WDDM 下 used_memory 常 None -> UI 显示 --）
         processes = gpu.processes if gpu.available else []
+        # Round-4：数据新鲜度（§13-14）。stale_seconds = now - last_update（>0）；
+        # 前端 stale_seconds > 3 × poll_interval 时显示"数据已过期"（Last Known Values）。
+        now_ts = time.time()
+        stale_seconds = (
+            round(now_ts - gpu.last_update, 1)
+            if gpu.available and gpu.last_update else None
+        )
         return {
             "available": gpu.available,
             "provider": "nvidia-smi",
             "reason": None if gpu.available else gpu.unavailable_reason,
             "last_update": gpu.last_update,
+            "stale_seconds": stale_seconds,
+            "poll_interval_seconds": gpu.config.gpu.poll_interval_seconds,
             "detected": gpu.detected,
             # 当前被监控的 GPU uuid 集合（device_uuids；空 = 全部）。
             # 前端据此给 detected 里"检测到但未监控"的卡打标记，而不是直接隐藏
@@ -986,11 +1219,16 @@ def build_app(
         return _gpu_status_payload()
 
     @app.get("/api/gpu/live")
-    async def api_gpu_live(minutes: int = Query(60, ge=1, le=2880)) -> dict:
+    async def api_gpu_live(
+        minutes: int = Query(60, ge=1, le=2880),
+        max_points: int = Query(2000, ge=100, le=2000),
+    ) -> dict:
         """
         最近 N 分钟（1~2880）的 GPU 历史，按 UUID 分组。
 
-        每个 GPU 最多返回 2000 个点（超出时后端 bucket 降采样，纯 Python）。
+        每个 GPU 最多返回 max_points 个点（默认 2000；超出时后端 bucket 降采样，
+        纯 Python）。Round-4：max_points 可配（24h 页面用 ~1000 控制传输量；
+        现有前端不传时行为与之前完全一致）。
         字段：utilization_percent / memory_used_mb / memory_total_mb /
         temperature_c / power_draw_w / fan_percent / sm_clock_mhz / memory_clock_mhz。
         """
@@ -1005,7 +1243,7 @@ def build_app(
                 {"timestamp": p["timestamp"], **{f: p[f] for f in _GPU_LIVE_FIELDS}}
                 for p in points
             ]
-            down = _downsample(clean)
+            down = _downsample(clean, max_points=max_points)
             # 显存使用率在（可能的）降采样之后计算，保证每点都有
             for p in down:
                 p["memory_usage_percent"] = _memory_usage_percent(
@@ -1045,6 +1283,11 @@ def build_app(
                 "max_power_w": r["power_max_w"],
                 "energy_wh": round(r["energy_wh"], 3),
             })
+        # Round-4：power_available = 该 GPU 任一自然日是否有真实功耗采样
+        # （power_count > 0）。前端据此区分「今日能耗 0.x Wh（真实为 0）」与
+        # 「不可估算（无功耗遥测）」——power 恒 N/A 的卡绝不显示 0Wh（§122-131）。
+        for e in per_gpu.values():
+            e["power_available"] = any((d["avg_power_w"] is not None) for d in e["days"])
         return {"gpus": list(per_gpu.values())}
 
     # ---------- 1.1 llama.cpp Runtime（Health / Model / Slot） ----------
@@ -1115,8 +1358,9 @@ def build_app(
         当前系统状态（1.1 实时摘要）。
 
         - null = 不可用（前端显示 --）；**绝不**把 None 变 0（尤其风扇/功耗/温度）；
-        - monitored_component_power_w = CPU Package Power + 全部 GPU Power（已监测组件合计，
-          **非**墙插整机功耗）；无组件数据 -> null；
+        - monitored_components_w = 所有**可读取（非 null）**组件功耗之和（CPU Package +
+          被监控 GPU）。1.1.4 精修：null != 0，缺失组件不参与求和；全缺失 -> null。
+          **非**墙插整机功耗；
         - wall_power_w 恒为 null（1.1 无外部功率计；数据模型预留）。
         """
         if system is None:
@@ -1127,18 +1371,33 @@ def build_app(
             return {"available": system.available, "cpu": None, "memory": None,
                     "disk": None, "network": None, "power": None,
                     "last_update": system.last_update}
+        # 组件功耗：按**当前**可读取组件求和（cpu 取自样本，gpu 取 live），
+        # 与返回的 cpu_package_w / gpu_total_w 同源一致（1.1.4 精修 §110-§114）。
+        _pw_parts = [latest.cpu_package_power_w, system.gpu_power_total_w]
+        _pw_present = [p for p in _pw_parts if p is not None]
+        _monitored_w = float(sum(_pw_present)) if _pw_present else None
+        _cpu_has = latest.cpu_package_power_w is not None
+        _gpu_has = system.gpu_power_total_w is not None
+        # 内存：Windows Available 语义（§69）：used = total - available（采集器已算），
+        # available_bytes = total - used（回推，供 UI"可用"）。
+        _mem_avail = None
+        if latest.memory_used_bytes is not None and latest.memory_total_bytes is not None:
+            _mem_avail = latest.memory_total_bytes - latest.memory_used_bytes
         return {
             "available": system.available,
             "cpu": {
                 "usage_percent": latest.cpu_usage_percent,
                 # 1.1.3：逐逻辑核利用率（live-only，Heat Grid 真 per-core 数据源）
                 "per_core_percent": latest.cpu_per_core_percent,
+                # Round-3（§11-§12/§63-§65）：current 与 base 区分（不再都叫"CPU 频率"）
                 "frequency_mhz": latest.cpu_frequency_mhz,
+                "base_frequency_mhz": latest.cpu_base_frequency_mhz,
                 "temperature_c": latest.cpu_temperature_c,
                 "package_power_w": latest.cpu_package_power_w,
             },
             "memory": {
                 "used_bytes": latest.memory_used_bytes,
+                "available_bytes": _mem_avail,
                 "total_bytes": latest.memory_total_bytes,
                 "usage_percent": latest.memory_usage_percent,
             },
@@ -1149,36 +1408,79 @@ def build_app(
             "network": {
                 "rx_bps": latest.network_rx_bps,
                 "tx_bps": latest.network_tx_bps,
+                # Round-3（§98/§100）：当前速率对应的接口名；None=全接口合计（未识别默认接口）
+                "interface": latest.network_interface,
+                # 所有接口当前速率（接口选择器即时显示；含 errors/drops，§107-§108）
+                "adapters": _system_adapters_public(system),
             },
             "power": {
-                "monitored_components_w": latest.monitored_component_power_w,
+                "monitored_components_w": _monitored_w,
                 "cpu_package_w": latest.cpu_package_power_w,
                 "gpu_total_w": system.gpu_power_total_w,
-                "wall_power_w": None,  # 1.1 无外部测量源：恒 null（不显示假数值）
+                "wall_power_w": None,  # 无外部测量源：恒 null（UI 显示"未配置"，不显示 --，§121）
+                # 已读取组件数 + 缺失标记（§112-§113 部分数据提示 + §28 sub"X 个组件可读取"）
+                "components_present": sum((_cpu_has, _gpu_has)),
+                "cpu_package_available": _cpu_has,
+                "gpu_available": _gpu_has,
             },
             "last_update": system.last_update,
         }
 
     @app.get("/api/system/live")
-    async def api_system_live(minutes: int = Query(60, ge=1, le=1440)) -> dict:
+    async def api_system_live(minutes: int = Query(60, ge=1, le=1440),
+                              max_points: int = Query(1500, ge=50, le=3000)) -> dict:
         """
         最近 N 分钟（1~1440）的系统采样（schema v5 system_samples）。
-        超过 2000 点时后端 bucket 降采样（与 GPU live 同策略）。
+        超过 max_points 时后端 bucket 降采样（纯 Python；保留缺口不插 0）。
+
+        Round-3 系统页（§46-§55/§185-§190）：
+        - max_points 由前端按 range 选择（15m→~450 原始，1h→~720，6h/24h→~1200-1500），
+          避免向前端推 24h×5s≈1.7 万点；
+        - 附 summary（当前/平均/峰值）用于 chart header 分析摘要（§46-§48）；
+        - 降采样按 _SYS_LIVE_FIELDS 聚合（曾漏字段导致 24h 全 None 的 bug 已修）。
         """
         if system is None:
-            return {"points": []}
+            return {"points": [], "summary": {}}
         since = time.time() - minutes * 60
         rows = db.get_system_samples_since(since)
         points = [
             {k: r.get(k) for k in (
                 "timestamp", "cpu_usage_percent", "cpu_frequency_mhz",
                 "cpu_temperature_c", "cpu_package_power_w",
-                "memory_usage_percent", "disk_read_bps", "disk_write_bps",
+                "memory_usage_percent", "memory_used_bytes", "memory_total_bytes",
+                "disk_read_bps", "disk_write_bps",
                 "network_rx_bps", "network_tx_bps", "monitored_component_power_w",
             )}
             for r in rows
         ]
-        return {"points": _downsample(points)}
+        return {"points": _downsample(points, max_points, _SYS_LIVE_FIELDS),
+                "summary": _system_live_summary(points)}
+
+    @app.get("/api/system/network-interfaces")
+    async def api_system_network_interfaces() -> dict:
+        """
+        Round-3（§97-§102）：网络接口列表（供"接口选择器"）。
+        - default_interface = 拥有默认路由的主接口（自动模式的选中项）；
+        - interfaces = [{name, kind, is_default, is_virtual, speed_mbps, errin, errout, dropin, dropout}]；
+        - 前端"自动" = default_interface；选"接口合计" = 全 NIC 求和（当前历史口径）。
+        无 system 时返回空。
+        """
+        if system is None:
+            return {"available": False, "default_interface": None, "interfaces": []}
+        try:
+            ifs = system.network_interfaces()
+        except Exception:
+            ifs = []
+        default_name = None
+        for itf in ifs:
+            if itf.get("is_default"):
+                default_name = itf.get("name")
+                break
+        return {
+            "available": True,
+            "default_interface": default_name,
+            "interfaces": ifs,
+        }
 
     @app.get("/api/system/daily")
     async def api_system_daily(days: int = Query(30, ge=1, le=365)) -> dict:
@@ -1366,12 +1668,26 @@ def build_app(
         return base
 
     @app.get("/api/data/export/daily.csv")
-    async def api_export_daily_csv() -> Response:
+    async def api_export_daily_csv(start_date: str | None = None,
+                                   end_date: str | None = None) -> Response:
         """
         导出 daily_usage 为 CSV：UTF-8 with BOM（Windows Excel 直接打开不乱码），
         数字为原始整数（不做 1.2M 缩写），日期 YYYY-MM-DD。
+
+        1.1.2：支持 start_date / end_date（'YYYY-MM-DD'，服务器本机日历日）
+        按当前查看范围导出（使用页"导出 CSV"按钮传参）；不传 = 全部历史。
+        新增 reuse_rate_percent 列 = 缓存复用 Token / (Prompt + 缓存复用) * 100
+        （分母为 0 时为空；术语与页面一致——缓存复用率）。
         """
+        if (start_date is None) != (end_date is None):
+            raise HTTPException(status_code=400, detail="start_date 与 end_date 必须同时提供")
+        s_s = _parse_calendar_date(start_date)
+        e_s = _parse_calendar_date(end_date)
+        if s_s is not None and (e_s is None or s_s > e_s):
+            raise HTTPException(status_code=400, detail="start_date / end_date 非法")
         rows = db.get_daily_usage() if Path(db.path).is_file() else []
+        if s_s:
+            rows = [r for r in rows if s_s <= r["date"] <= e_s]
         # AUDIT-DB-003：同 /api/daily——live 样本一次取全按日分组（避免逐日全量扫）
         try:
             all_live = db.get_live_samples(hours=None)
@@ -1425,6 +1741,147 @@ def build_app(
         filename = "LlamaMonitor_gpu_daily_" + time.strftime("%Y%m%d_%H%M%S") + ".csv"
         body = ("\ufeff" + buf.getvalue()).encode("utf-8")  # utf-8-sig：BOM + UTF-8
         logger.info("GPU CSV exported: %s (%d rows)", filename, len(rows))
+        return Response(
+            content=body,
+            media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    # ---------- Round-5 History 页：采集缺口 / 监控事件 CSV 导出 ----------
+    # Gap 来源/原因/风险的中英文标签（导出用；与前端展示层同一语义）。
+    _GAP_SOURCE_CSV = {"llama": "llama.cpp", "gpu": "GPU", "application": "LlamaMonitor",
+                       "system": "系统"}
+    _GAP_REASON_CSV = {
+        "server_offline": "llama.cpp 服务不可达",
+        "monitor_restart": "LlamaMonitor 重启",
+        "system_pause_or_sleep": "系统休眠",
+        "invalid_metrics": "采集超时/异常",
+        "unknown": "原因未确定",
+    }
+    _GAP_RISK_CSV = {
+        # token_recoverable + possible_token_loss -> 风险级别
+        (0, 1): "可能丢失",
+        (0, 0): "时间归属不确定",
+        (1, 0): "无",
+        (1, 1): "可能丢失",
+    }
+
+    def _gap_risk_csv(recov: int, lost: int) -> str:
+        return _GAP_RISK_CSV.get((bool(recov), bool(lost)),
+                                 "可能丢失" if lost else ("时间归属不确定" if not recov else "无"))
+
+    @app.get("/api/data/export/gaps.csv")
+    async def api_export_gaps_csv(
+        preset: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        source: str | None = None,
+        risk: str | None = None,
+    ) -> Response:
+        """
+        采集缺口 CSV（UTF-8 BOM，Excel 直接打开）。遵守当前时间范围 + 来源/风险筛选
+        （§199-205）。分页拉取全部范围内缺口（cursor 循环，避免单次物化整表）。
+        文件名 LlamaMonitor-Gaps-<start>_to_<end>.csv（§205）。
+        """
+        start_ts, end_ts = _history_range_ts(preset, start_date, end_date)
+        if source not in (None, "llama", "gpu", "application", "system"):
+            source = None
+        if risk not in (None, "lost", "time_uncertain"):
+            risk = None
+        all_rows: list[dict] = []
+        cursor = None
+        while True:
+            rows = db.get_gaps_range(start_ts=start_ts, end_ts=end_ts, source=source,
+                                     risk=risk, cursor=cursor, limit=200)
+            all_rows.extend(rows)
+            if not rows or len(rows) < 200:
+                break
+            cursor = (rows[-1]["start_timestamp"], rows[-1]["id"])
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow(["start_time", "end_time", "duration_seconds", "source",
+                         "reason", "token_risk", "token_loss_possible"])
+        for g in all_rows:
+            def _iso(ts):
+                try:
+                    return datetime.fromtimestamp(int(ts)).strftime("%Y-%m-%d %H:%M:%S")
+                except Exception:
+                    return ""
+            writer.writerow([
+                _iso(g["start_timestamp"]),
+                _iso(g["end_timestamp"]),
+                round(float(g["duration_seconds"]), 2),
+                _GAP_SOURCE_CSV.get(g["source"], g["source"] or ""),
+                _GAP_REASON_CSV.get(g["reason"], g["reason"] or "原因未确定"),
+                _gap_risk_csv(int(g["token_recoverable"]), int(g["possible_token_loss"])),
+                "yes" if g["possible_token_loss"] else "no",
+            ])
+        s_iso = datetime.fromtimestamp(int(start_ts)).strftime("%Y-%m-%d") if start_ts else "all"
+        e_iso = datetime.fromtimestamp(int(end_ts)).strftime("%Y-%m-%d")
+        filename = f"LlamaMonitor-Gaps-{s_iso}_to_{e_iso}.csv"
+        body = ("\ufeff" + buf.getvalue()).encode("utf-8")
+        logger.info("Gaps CSV exported: %s (%d rows)", filename, len(all_rows))
+        return Response(
+            content=body,
+            media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    @app.get("/api/data/export/events.csv")
+    async def api_export_events_csv(
+        preset: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        category: str | None = None,
+        search: str | None = None,
+    ) -> Response:
+        """
+        监控事件 CSV（UTF-8 BOM）。遵守当前时间范围 + 分类/搜索筛选（§206-210）。
+        分页拉取全部范围内事件。字段 timestamp/category/event_type/display_title/
+        source/detail/severity/raw_event_type（§208）。
+        """
+        start_ts, end_ts = _history_range_ts(preset, start_date, end_date)
+        cat_types = _EVENT_CATEGORY_TYPES.get(category) if category else None
+        search = (search or "").strip() or None
+        title_types = _event_title_match_types(search) if search else None
+        all_rows: list[dict] = []
+        cursor = None
+        while True:
+            rows = db.get_events_range(start_ts=start_ts, end_ts=end_ts, category=cat_types,
+                                       search=search, cursor=cursor, limit=200,
+                                       title_match_types=title_types)
+            all_rows.extend(rows)
+            if not rows or len(rows) < 200:
+                break
+            cursor = (rows[-1]["timestamp"], rows[-1]["id"])
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow(["timestamp", "category", "event_type", "display_title",
+                         "source", "detail", "severity", "raw_event_type"])
+        for r in all_rows:
+            et = r["event_type"]
+            pres = EVENT_PRESENTATION.get(et)
+            title = pres[0] if pres else "未知事件"
+            cat = pres[1] if pres else "其它"
+            sev = pres[2] if (pres and pres[2] is not None) else (r.get("severity") or "info")
+            try:
+                detail = json.dumps(r.get("details") or {}, ensure_ascii=False)
+            except Exception:
+                detail = str(r.get("details") or "")
+            def _iso(ts):
+                try:
+                    return datetime.fromtimestamp(int(ts)).strftime("%Y-%m-%d %H:%M:%S")
+                except Exception:
+                    return ""
+            writer.writerow([
+                _iso(r["timestamp"]), cat, title, r.get("source") or "",
+                detail, sev, et,
+            ])
+        s_iso = datetime.fromtimestamp(int(start_ts)).strftime("%Y-%m-%d") if start_ts else "all"
+        e_iso = datetime.fromtimestamp(int(end_ts)).strftime("%Y-%m-%d")
+        filename = f"LlamaMonitor-Events-{s_iso}_to_{e_iso}.csv"
+        body = ("\ufeff" + buf.getvalue()).encode("utf-8")
+        logger.info("Events CSV exported: %s (%d rows)", filename, len(all_rows))
         return Response(
             content=body,
             media_type="text/csv; charset=utf-8",
@@ -1495,6 +1952,23 @@ def build_app(
         """corrupt / unavailable / incompatible 时返回 True（调用方应拒绝修改类操作）。"""
         return db.health in ("corrupt", "unavailable", "incompatible")
 
+    def _schema_status_from_health() -> str:
+        """
+        History 页数据库状态模型（§240-262）：把 db.health 映射为 4 态展示语义。
+        - healthy      -> normal          （版本匹配或已迁移，可读写）
+        - incompatible -> readonly_compat （DB schema 比 app 新，只读打开，§241-247）
+        - warning      -> readonly        （降级/保护态，只读）
+        - corrupt/unavailable -> abnormal （损坏/不可用，§249-250）
+        WAL 只作 Secondary，不改变该 4 态。
+        """
+        return {
+            "healthy": "normal",
+            "incompatible": "readonly_compat",
+            "warning": "readonly",
+            "corrupt": "abnormal",
+            "unavailable": "abnormal",
+        }.get(db.health, "normal")
+
     @app.get("/api/health")
     async def api_health() -> dict:
         """
@@ -1523,6 +1997,15 @@ def build_app(
             "database": db.health,
             "database_detail": db.health_detail,
             "journal_mode": db.journal_mode,
+            # Round-5：History 页数据库状态模型（§240-262）。
+            # schema_status = 数据库健康态 + schema 版本关系的最终展示语义：
+            #   normal          正常（版本匹配或已迁移）
+            #   readonly_compat 只读兼容模式（DB schema 比当前 app 新，只读打开）
+            #   readonly        只读（文件系统只读等保护态）
+            #   abnormal        异常（损坏 / 不可用 / 警告）
+            "schema_status": _schema_status_from_health(),
+            "db_schema_version": db.get_schema_version(),
+            "app_schema_version": CURRENT_SCHEMA_VERSION,
             "collector": {
                 "llama_online": bool(collector.last_snapshot and collector.last_snapshot.get("online"))
                 if collector.last_snapshot else None,
@@ -1533,6 +2016,341 @@ def build_app(
             "last_valid_sample_seconds_ago": (now - valid_ts) if valid_ts is not None else None,
             "known_data_gaps": open_gap,
             "possible_token_loss": gap_stats["possible_token_loss"],
+        }
+
+    # ---------- Round-6 Overview 页：只读聚合端点（§247-§283） ----------
+    @app.get("/api/overview")
+    async def api_overview(request: Request) -> dict:
+        """
+        Overview 页只读聚合端点：一次请求返回全部域的**摘要**（不含图表/明细/路径/键）。
+
+        各域独立可用：available / sample_timestamp / stale 逐域给出；前端按域隔离
+        渲染与错误处理（单域失败只影响该 Section）。attention 聚合器只消费各模块
+        已产出的可靠状态（不重新发明健康判断，§254-§256）。
+        """
+        now = collector.clock.now()
+        today_str = local_date(now)
+
+        # ---- service（llama-server 健康 + 指标采集） ----
+        snap = collector.last_snapshot
+        online = None
+        if snap is not None:
+            online = bool(snap.get("online"))
+        server_state = runtime.server_state if runtime is not None else None
+        if online is True:
+            service_status = "ready"  # 就绪
+        elif online is False:
+            # 健康检查仍正常但指标端点不可达 = 监测异常；健康也失败 = 不可达
+            service_status = (
+                "monitoring_error" if server_state in ("ready", "loading")
+                else "unreachable"
+            )
+        else:
+            service_status = "detecting"  # 首轮采集未完成
+        model_info = runtime.model_info if runtime is not None else None
+        service = {
+            "status": service_status,
+            "online": online,
+            "server_state": server_state,
+            "address": _base_address_public(collector.metrics_url),
+            "model": _model_summary_public(runtime, request) if runtime is not None else None,
+            "last_update": collector.last_update,
+            "available": online is not None,
+        }
+        # 上下文窗口：运行时 context_max 优先，回退模型配置 n_ctx（/props 或 /v1/models）
+        ctx = None
+        if online and snap is not None:
+            ctx = snap.get("context_max")
+        if ctx is None and model_info:
+            ctx = model_info.get("context_size")
+        service["context_window"] = ctx
+        # 静态模型元数据（上下文/Slot/模态）——内存态，无 I/O，无需额外缓存
+
+        # ---- usage_today（daily_usage 按本机日历日；与 /api/summary 同源） ----
+        rows = db.get_daily_usage()
+        today_row = next((r for r in rows if r["date"] == today_str), None) or {}
+        usage = _summary_shape(
+            (today_row.get("prompt_tokens", 0) or 0),
+            (today_row.get("cached_tokens", 0) or 0),
+            (today_row.get("output_tokens", 0) or 0),
+        )
+        denom = usage["prompt_tokens"] + usage["cached_tokens"]
+        usage["cache_reuse_rate_percent"] = (
+            round(usage["cached_tokens"] / denom * 100.0, 1) if denom > 0 else None
+        )  # 分母 0 -> None（UI 显示 --，不显示 0%）
+        schema_status = _schema_status_from_health()
+        usage["db_status"] = schema_status
+        usage["available"] = True
+        usage["sample_timestamp"] = now
+
+        # ---- inference（最新 live 样本 + runtime slots + 当日 MTP） ----
+        latest = db.get_latest_live_sample() if online else None
+        # TPS 三态（绝不混淆 0 与不可用）：counter 存在但本轮无 delta = 空闲 -> 0 t/s
+        prompt_disp = _overview_tps_display(
+            (latest or {}).get("prompt_tps"), bool(online),
+            (latest or {}).get("prompt_delta") is not None,
+        )
+        decode_disp = _overview_tps_display(
+            (latest or {}).get("decode_tps"), bool(online),
+            (latest or {}).get("output_delta") is not None,
+        )
+        # MTP 三态：未启用 / 暂无数据 / 百分比
+        mtp_cap = bool(collector.capabilities.get("mtp"))
+        slots_spec = False
+        if runtime is not None:
+            for s in runtime.slots:
+                if s.get("speculative"):
+                    slots_spec = True
+                    break
+        mtp_enabled = mtp_cap or slots_spec
+        draft = (today_row.get("draft_tokens", 0) or 0)
+        accepted = (today_row.get("accepted_tokens", 0) or 0)
+        if not online:
+            mtp_state = "unavailable"
+        elif not mtp_enabled:
+            mtp_state = "disabled"
+        elif draft <= 0:
+            mtp_state = "no_data"
+        else:
+            mtp_state = "value"
+        mtp = {
+            "state": mtp_state,
+            "accept_rate": (accepted / draft * 100.0) if (mtp_state == "value" and draft > 0) else None,
+        }
+        # 当前上下文（§85-§91 优先级：可靠 Slot 占用 > Busy Slot > 省略；
+        # 用 n_prompt_tokens + n_decoded，不用 n_prompt_tokens_processed 冒充）
+        current_context = None
+        if runtime is not None and runtime.capabilities.get("slots") and runtime.slots:
+            active = [s for s in runtime.slots if s.get("is_processing")]
+            busy = len(active)
+            total_slots = (model_info or {}).get("total_slots")
+            if len(active) == 1:
+                s = active[0]
+                np_ = s.get("n_prompt_tokens")
+                nd = s.get("n_decoded")
+                limit = s.get("n_ctx")
+                if np_ is not None and nd is not None and limit:
+                    current_context = {
+                        "display": "usage", "used": np_ + nd, "limit": limit,
+                        "busy_slots": 1, "total_slots": total_slots,
+                    }
+            if current_context is None:
+                current_context = {
+                    "display": "busy", "busy_slots": busy, "total_slots": total_slots,
+                }
+        inference = {
+            "online": online,
+            "prompt_tps": prompt_disp,
+            "decode_tps": decode_disp,
+            "requests_processing": (snap or {}).get("requests_processing") if online else None,
+            "requests_deferred": (snap or {}).get("requests_deferred") if online else None,
+            "mtp": mtp,
+            "current_context": current_context,
+            "available": online is not None,
+            "sample_timestamp": (latest or {}).get("timestamp") if latest else None,
+        }
+
+        # ---- system（主机遥测；与 /api/system/status 同源数据） ----
+        sys_payload: dict = {"available": False, "sample_timestamp": None}
+        if system is not None:
+            sys_payload["sample_timestamp"] = system.last_update
+            sys_payload["available"] = bool(system.available)
+            if system.latest is not None:
+                L = system.latest
+                _pw_parts = [L.cpu_package_power_w, system.gpu_power_total_w]
+                _pw_present = [p for p in _pw_parts if p is not None]
+                sys_payload["cpu"] = {
+                    "usage_percent": L.cpu_usage_percent,
+                    "temperature_c": L.cpu_temperature_c,
+                }
+                sys_payload["memory"] = {
+                    "usage_percent": L.memory_usage_percent,
+                    "used_bytes": L.memory_used_bytes,
+                    "total_bytes": L.memory_total_bytes,
+                }
+                sys_payload["disk"] = {"read_bps": L.disk_read_bps, "write_bps": L.disk_write_bps}
+                sys_payload["network"] = {"rx_bps": L.network_rx_bps, "tx_bps": L.network_tx_bps}
+                sys_payload["power"] = {
+                    "monitored_components_w": float(sum(_pw_present)) if _pw_present else None,
+                    "components_present": len(_pw_present),
+                    "cpu_package_available": L.cpu_package_power_w is not None,
+                    "gpu_available": system.gpu_power_total_w is not None,
+                }
+            boot = (system.inventory or {}).get("boot_time")
+            sys_payload["uptime_seconds"] = (
+                int(now - boot) if boot and now - boot > 0 else None
+            )
+
+        # ---- gpus（与 /api/gpu/status 同源；每卡仅 4 项摘要） ----
+        gpu_payload = _gpu_status_payload()
+        gpus_out = []
+        for g in gpu_payload.get("gpus", []):
+            name = g.get("name") or ""
+            gpus_out.append({
+                "index": g.get("index"),
+                "name": name,
+                "name_short": name.replace("NVIDIA ", "", 1) if name else None,
+                "utilization_percent": g.get("utilization_percent"),
+                "memory_used_mb": g.get("memory_used_mb"),
+                "memory_total_mb": g.get("memory_total_mb"),
+                "temperature_c": g.get("temperature_c"),
+                "power_draw_w": g.get("power_draw_w"),
+                "power_limit_w": g.get("power_limit_w"),
+                "throttle_reasons": g.get("throttle_reasons") or [],
+                "ecc_uncorrected_volatile": (g.get("ecc") or {}).get("uncorrected_volatile"),
+            })
+        gpus = {
+            "available": bool(gpu_payload.get("available")),
+            "reason": gpu_payload.get("reason"),
+            "count": len(gpus_out),
+            "gpus": gpus_out,
+            "sample_timestamp": gpu_payload.get("last_update"),
+            "stale_seconds": gpu_payload.get("stale_seconds"),
+        }
+
+        # ---- integrity（今日窗口；与 /api/data/quality + /api/health 同源） ----
+        today_first, today_last = db.get_day_sample_bounds(today_str)
+        today_gap = db.get_gap_stats(today_str)
+        coverage = None
+        if today_first is not None:
+            window_end = today_last if today_last is not None else now
+            window = max(0.0, window_end - today_first)
+            in_window = min(today_gap["total_gap_seconds"], window) if window > 0 else 0.0
+            coverage = 100.0 if window <= 0 else round(max(0.0, 100.0 * (1.0 - in_window / window)), 2)
+        last_valid = db.get_latest_live_sample()
+        last_valid_ts = (last_valid or {}).get("timestamp") if last_valid else None
+        collector_last = collector._last_valid[0] if collector._last_valid else None
+        valid_ts = max(t for t in (collector_last, last_valid_ts, today_last) if t is not None) \
+            if any(t is not None for t in (collector_last, last_valid_ts, today_last)) else None
+        last_age = (now - valid_ts) if valid_ts is not None else None
+        if today_gap["possible_token_loss"]:
+            token_risk = "lost"
+        elif not today_gap["token_recoverable"]:
+            token_risk = "time_uncertain"
+        else:
+            token_risk = "none"
+        db_v = db.get_schema_version()
+        if schema_status == "readonly_compat":
+            db_secondary = f"Schema v{db_v} · 当前版本支持至 v{CURRENT_SCHEMA_VERSION}"
+        elif schema_status == "abnormal":
+            db_secondary = db.health_detail or db.health
+        elif schema_status == "readonly":
+            db_secondary = "保护模式（只读）"
+        else:
+            db_secondary = "WAL 已启用" if str(db.journal_mode).lower() == "wal" else "WAL 未启用"
+        integrity = {
+            "coverage_percent": coverage,
+            "gap_count_today": today_gap["gap_count"] + (1 if collector.open_gap_property() else 0),
+            "possible_token_loss": bool(today_gap["possible_token_loss"]),
+            "token_risk": token_risk,
+            "db_status": schema_status,
+            "db_secondary": db_secondary,
+            "last_sample_ts": valid_ts,
+            "last_sample_seconds_ago": round(last_age, 1) if last_age is not None else None,
+            "available": True,
+        }
+
+        # ---- attention（聚合各域可靠状态；排序 + 截断） ----
+        items: list[dict] = []
+        if service_status == "unreachable":
+            items.append({
+                "key": "service_unreachable", "severity": "error",
+                "title": "llama.cpp 服务不可达",
+                "subtitle": "实时推理与 Token 采集暂停，历史数据已保留",
+            })
+        elif service_status == "monitoring_error":
+            items.append({
+                "key": "service_metrics", "severity": "warning",
+                "title": "llama.cpp 指标采集异常",
+                "subtitle": "服务健康检查正常，但指标端点暂不可达",
+            })
+        if schema_status == "readonly_compat":
+            items.append({
+                "key": "db_readonly_compat", "severity": "warning",
+                "title": "数据库处于只读兼容模式",
+                "subtitle": f"Schema v{db_v} · 当前版本支持至 v{CURRENT_SCHEMA_VERSION}（统计暂停累计，数据不会丢失）",
+            })
+        elif schema_status == "readonly":
+            items.append({
+                "key": "db_readonly", "severity": "warning",
+                "title": "数据库处于只读模式",
+                "subtitle": "保护模式：只读展示，写入暂停",
+            })
+        elif schema_status == "abnormal":
+            items.append({
+                "key": "db_abnormal", "severity": "error",
+                "title": "数据库状态异常",
+                "subtitle": db.health_detail or db.health,
+            })
+        stale_threshold = max(30.0, collector.interval * 3)
+        if last_age is not None and last_age > stale_threshold:
+            items.append({
+                "key": "stale", "severity": "warning",
+                "title": "实时采样已过期",
+                "subtitle": "最近有效采样距今超过预期间隔",
+            })
+        if today_gap["possible_token_loss"]:
+            items.append({
+                "key": "token_loss", "severity": "warning",
+                "title": "今日可能存在 Token 丢失",
+                "subtitle": "存在可能导致 Token 丢失的采集缺口",
+            })
+        if coverage is not None and coverage < 99.9:
+            items.append({
+                "key": "coverage", "severity": "info",
+                "title": "今日采集覆盖率未达 100%",
+                "subtitle": f"{integrity['gap_count_today']} 个已知缺口",
+            })
+        if gpu is not None and not gpu.available:
+            items.append({
+                "key": "gpu_unavailable", "severity": "warning",
+                "title": "GPU 采集异常",
+                "subtitle": gpu_payload.get("reason") or "nvidia-smi 不可用",
+            })
+        if system is not None and not system.available:
+            items.append({
+                "key": "system_unavailable", "severity": "warning",
+                "title": "系统遥测采集异常",
+                "subtitle": "CPU / 内存 / 磁盘 / 网络指标暂不可读",
+            })
+        for g in gpus_out:
+            if g["throttle_reasons"]:
+                items.append({
+                    "key": f"gpu_throttle_{g['index']}", "severity": "info",
+                    "title": f"GPU {g['index']} 性能受限",
+                    "subtitle": "、".join(g["throttle_reasons"]),
+                })
+                break
+        for g in gpus_out:
+            if (g["ecc_uncorrected_volatile"] or 0) > 0:
+                items.append({
+                    "key": f"gpu_ecc_{g['index']}", "severity": "warning",
+                    "title": f"GPU {g['index']} 出现 ECC 不可纠正错误",
+                    "subtitle": f"{g['ecc_uncorrected_volatile']} 个（波动值）",
+                })
+                break
+        # 严重磁盘空间（静态库存，取容量最大盘）
+        disk_list = (system.inventory or {}).get("disk_list") if system is not None else []
+        if disk_list:
+            main = max(disk_list, key=lambda d: d.get("total_bytes") or 0)
+            if main.get("total_bytes") and main.get("used_bytes") is not None:
+                du = main["used_bytes"] / main["total_bytes"] * 100.0
+                if du > 90.0:
+                    items.append({
+                        "key": "disk_severe", "severity": "warning",
+                        "title": "磁盘空间紧张",
+                        "subtitle": f"{main.get('mountpoint') or main.get('device')} 已用 {du:.0f}%",
+                    })
+
+        return {
+            "service": service,
+            "usage_today": usage,
+            "inference": inference,
+            "system": sys_payload,
+            "gpus": gpus,
+            "integrity": integrity,
+            "attention": build_attention_items(items),
+            "timestamps": {"now": now},
         }
 
     @app.get("/api/data/quality")
@@ -1601,27 +2419,520 @@ def build_app(
             "recent_gaps": [_gap_view(g) for g in db.get_gaps(limit=20)],
         }
 
-    @app.get("/api/events")
-    async def api_events(limit: int = Query(30, ge=1, le=100)) -> dict:
+    # ---------- Round-5 History 页：监测完整性 Summary + 完整性趋势 ----------
+    @app.get("/api/history/summary")
+    async def api_history_summary(
+        preset: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
+    ) -> dict:
         """
-        最近监控事件（时间倒序，最多 limit 条；Phase 16B History 页"最近事件"）。
-
-        数据源为 monitor_events（应用生命周期审计：离线/恢复/重启/备份/
-        Counter Reset/数据库事件等——只记状态转换与异常，不是采样日志）。
-        只读，不受 reset-statistics 影响（与 data_gaps 的保留策略不同）。
+        监测完整性 Summary（随时间范围变化）：
+        - 采集覆盖率 = Σ(有效秒) / Σ(预期秒) × 100（范围内加权，**不是**逐日算术平均，
+          §52-54；监测开始前 / 未来时段不计入预期，§57-59）。
+        - 范围内缺口 / 累计缺口 / Token 数据风险（可能丢失 / 时间归属不确定）。
+        - 最后采样（实时）+ 监测开始时间。
+        数据库状态 / WAL 不受范围影响（前端另取 /api/health）。
         """
-        rows = db.get_events(limit=limit)
+        start_ts, end_ts, _label = _history_range(preset, start_date, end_date)
+        now = collector.clock.now()
+        today = local_date(now)
+        # 一次性取全 live（48h 保留，~数万行）按日分组（AUDIT-DB-003 同法）
+        try:
+            all_live = db.get_live_samples(hours=None)
+        except Exception:
+            all_live = []
+        live_by_date: dict[str, list] = {}
+        for s in all_live:
+            live_by_date.setdefault(local_date(s["timestamp"]), []).append(s)
+        # 逐自然日累计窗口（与 _day_quality 同源口径），再与范围求交
+        total_window = 0.0
+        total_valid = 0.0
+        d = datetime.fromtimestamp(start_ts).strftime("%Y-%m-%d")
+        end_date_s = local_date(end_ts)
+        while d <= end_date_s:
+            window, valid, _full = _coverage_window_for_day(
+                d, live_by_date.get(d, []), today, now, start_ts, end_ts)
+            total_window += window
+            total_valid += valid
+            d = (datetime.strptime(d, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
+        coverage = round(max(0.0, 100.0 * total_valid / total_window), 2) if total_window > 0 else None
+        # 范围内缺口聚合 + 全量累计
+        range_stats = db.get_gap_range_stats(start_ts=start_ts, end_ts=end_ts)
+        total_count, _ = db.get_gap_totals()
+        last_ts = db.get_live_bounds()[1]
+        last_age = (now - last_ts) if last_ts is not None else None
         return {
-            "events": [
-                {
-                    "timestamp": r["timestamp"],
-                    "event_type": r["event_type"],
-                    "severity": r["severity"],
-                    "source": r["source"],
-                    "details": r.get("details") or {},
-                }
-                for r in rows
-            ],
+            "coverage_percent": coverage,
+            "eligible_seconds": round(total_window, 1),
+            "valid_seconds": round(total_valid, 1),
+            "gap_count_range": range_stats["gap_count"],
+            "gap_count_total": total_count,
+            "lost_count": range_stats["lost_count"],
+            "time_uncertain_count": range_stats["time_uncertain_count"],
+            "total_gap_seconds_range": round(range_stats["total_gap_seconds"], 1),
+            "last_sample_ts": last_ts,
+            "last_sample_seconds_ago": round(last_age, 1) if last_age is not None else None,
+            "monitoring_start_ts": db.get_live_bounds()[0],
+            "server_now": now,
+        }
+
+    @app.get("/api/history/trend")
+    async def api_history_trend(
+        preset: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
+    ) -> dict:
+        """
+        完整性趋势（桶化）：采集覆盖率 0-100% 主序列 + 每桶缺口计数（小标记，非双 Y 轴，§70-71）。
+        分桶：24h=按小时；7d/30d=按日；>90d=按周；非常长=按月（§65-68）。
+        桶 coverage = 有效秒 / 预期秒；监测前 / 无窗口 -> null（tooltip 显示"未开始监测"，§74）；
+        有预期但 0 有效 -> 0%（§76）。tooltip 给 有效/预期秒 + 缺口数 + 可能丢失。
+        """
+        start_ts, end_ts, _label = _history_range(preset, start_date, end_date)
+        now = collector.clock.now()
+        today = local_date(now)
+        try:
+            all_live = db.get_live_samples(hours=None)
+        except Exception:
+            all_live = []
+        live_by_date: dict[str, list] = {}
+        for s in all_live:
+            live_by_date.setdefault(local_date(s["timestamp"]), []).append(s)
+        span = end_ts - start_ts
+        # 分桶粒度（§65-68，按 preset 语义而非裸时长）：
+        #   24h -> 按小时；7d/30d -> 按日；
+        #   all -> ≤90d 按日 / ≤1yr 按周 / 更长按月。
+        #   custom -> 按时长（≤2d 按小时 / ≤92d 按日 / ≤370d 按周 / 更长按月）。
+        if preset == "24h":
+            bucket = "hour"
+        elif preset in ("7d", "30d"):
+            bucket = "day"
+        elif preset == "all":
+            if span <= 92 * 86400:
+                bucket = "day"
+            elif span <= 370 * 86400:
+                bucket = "week"
+            else:
+                bucket = "month"
+        else:
+            if span <= 2 * 86400:
+                bucket = "hour"
+            elif span <= 92 * 86400:
+                bucket = "day"
+            elif span <= 370 * 86400:
+                bucket = "week"
+            else:
+                bucket = "month"
+        # 逐日窗口（日粒度），再按桶聚合
+        daily: list[dict] = []
+        d = datetime.fromtimestamp(start_ts).strftime("%Y-%m-%d")
+        end_date_s = local_date(end_ts)
+        while d <= end_date_s:
+            window, valid, _full = _coverage_window_for_day(
+                d, live_by_date.get(d, []), today, now, start_ts, end_ts)
+            gs = db.get_gap_stats(d)
+            daily.append({"date": d, "window": window, "valid": valid,
+                          "gap_count": gs["gap_count"],
+                          "lost": 1 if gs["possible_token_loss"] else 0,
+                          "time_uncertain": 0})  # 日粒度 time_uncertain 由范围聚合提供
+            d = (datetime.strptime(d, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
+        # 聚合到桶
+        out: list[dict] = []
+        if bucket == "hour":
+            # 按小时：只有今天/昨天有 live（48h 保留），其余桶窗口 0 -> null
+            cur = datetime.fromtimestamp(start_ts)
+            cur = cur.replace(minute=0, second=0, microsecond=0)
+            while cur.timestamp() < end_ts:
+                b_start = cur.timestamp()
+                b_end = b_start + 3600.0
+                day = cur.strftime("%Y-%m-%d")
+                ds = live_by_date.get(day, [])
+                # 该小时窗口 = [b_start, min(b_end, 末样本, now)] ∩ 有样本
+                in_hour = [s for s in ds if b_start <= s["timestamp"] < b_end]
+                window = 0.0
+                valid = 0.0
+                hour_gaps = db.get_gaps_range(start_ts=b_start, end_ts=b_end, limit=500)
+                gc = len(hour_gaps)
+                lost = any(g["possible_token_loss"] for g in hour_gaps)
+                if in_hour:
+                    first = in_hour[0]["timestamp"]
+                    last = in_hour[-1]["timestamp"]
+                    w_end = min(b_end, last + collector.interval * 2, now)
+                    if w_end > first:
+                        window = w_end - first
+                        # 本小时内的实际缺口秒（各 gap 与本小时窗口求交，累加）
+                        in_w = 0.0
+                        for g in hour_gaps:
+                            ov = min(float(g["end_timestamp"]), w_end) - max(float(g["start_timestamp"]), first)
+                            in_w += max(0.0, ov)
+                        valid = max(0.0, window - in_w)
+                out.append({
+                    "ts": int(b_start),
+                    "ts_end": int(b_start + 3600),
+                    "label": cur.strftime("%H:%M") if day == today else day + " " + cur.strftime("%H:%M"),
+                    "coverage": round(100.0 * valid / window, 2) if window > 0 else None,
+                    "valid_seconds": round(valid, 1),
+                    "eligible_seconds": round(window, 1),
+                    "gap_count": gc,
+                    "possible_token_loss": lost,
+                    "is_today": day == today,
+                })
+                cur = (cur + timedelta(hours=1))
+        else:
+            # 按日/周/月：把 daily 聚合到桶
+            def _bucket_key(day: str) -> tuple:
+                dt = datetime.strptime(day, "%Y-%m-%d")
+                if bucket == "day":
+                    return day
+                if bucket == "week":
+                    # ISO 周起始（周一）
+                    monday = dt - timedelta(days=dt.weekday())
+                    return monday.strftime("%Y-%m-%d")
+                return dt.strftime("%Y-%m")
+            buckets: dict[str, dict] = {}
+            order: list[str] = []
+            for row in daily:
+                k = _bucket_key(row["date"])
+                if k not in buckets:
+                    buckets[k] = {"window": 0.0, "valid": 0.0, "gap_count": 0, "lost": 0}
+                    order.append(k)
+                buckets[k]["window"] += row["window"]
+                buckets[k]["valid"] += row["valid"]
+                buckets[k]["gap_count"] += row["gap_count"]
+                buckets[k]["lost"] += row["lost"]
+            # 桶大小：day=1天, week=7天, month=到下月1号
+            def _bucket_end_ts(k: str) -> int:
+                dt = datetime.strptime(k, "%Y-%m-%d")
+                if bucket == "day":
+                    return int((dt + timedelta(days=1)).timestamp())
+                if bucket == "week":
+                    return int((dt + timedelta(days=7)).timestamp())
+                # month
+                if dt.month == 12:
+                    nxt = dt.replace(year=dt.year + 1, month=1)
+                else:
+                    nxt = dt.replace(month=dt.month + 1)
+                return int(nxt.timestamp())
+            for k in order:
+                b = buckets[k]
+                out.append({
+                    "ts": int(datetime.strptime(k, "%Y-%m-%d").timestamp()),
+                    "ts_end": _bucket_end_ts(k),
+                    "label": k,
+                    "coverage": round(100.0 * b["valid"] / b["window"], 2) if b["window"] > 0 else None,
+                    "valid_seconds": round(b["valid"], 1),
+                    "eligible_seconds": round(b["window"], 1),
+                    "gap_count": b["gap_count"],
+                    "possible_token_loss": b["lost"] > 0,
+                    "is_today": k == today,
+                })
+        return {"bucket": bucket, "points": out}
+
+    # ---------- Round-5 History 页：采集缺口（范围 + 筛选 + cursor 分页） ----------
+    def _history_range_ts(
+        preset: str | None, start_date: str | None, end_date: str | None
+    ) -> tuple[float | None, float | None]:
+        """History 范围 -> (start_ts, end_ts)；preset=all 时 start_ts=None（不限下界）。"""
+        now = collector.clock.now()
+        start_ts, end_ts, label = _history_range(preset, start_date, end_date)
+        if label == "all":
+            start_ts = None
+        return start_ts, end_ts
+
+    @app.get("/api/history/gaps")
+    async def api_history_gaps(
+        preset: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        source: str | None = None,
+        risk: str | None = None,
+        cursor: str | None = None,
+        limit: int = Query(20, ge=1, le=200),
+        sub_start_ts: int | None = None,
+        sub_end_ts: int | None = None,
+    ) -> dict:
+        """
+        采集缺口列表（时间倒序，cursor 分页 + 来源/风险筛选，§82-119）。
+        cursor = 'ts_id'（上一页最后一条）。返回 gaps + next_cursor + has_more。
+        未结束缺口（open_gap）置顶，标记 ongoing。
+        sub_start_ts/sub_end_ts：趋势点击 → 筛选到该桶（缺口与桶窗口有重叠即命中，§81-83）。
+        """
+        start_ts, end_ts = _history_range_ts(preset, start_date, end_date)
+        cur = None
+        if cursor:
+            try:
+                ts_s, id_s = str(cursor).split("_", 1)
+                cur = (int(float(ts_s)), int(id_s))
+            except ValueError:
+                cur = None
+        if source not in (None, "llama", "gpu", "application", "system"):
+            source = None
+        if risk not in (None, "lost", "time_uncertain"):
+            risk = None
+        q_start, q_end = start_ts, end_ts
+        if sub_start_ts is not None and sub_end_ts is not None:
+            # 桶窗口（重叠需允许 start 略早于桶开始；缺口最长 ~数分钟，宽 900s 足够）
+            q_start = sub_start_ts - 900
+            if start_ts is not None:
+                q_start = max(q_start, min(start_ts, q_start))
+            q_end = sub_end_ts
+            if end_ts is not None:
+                q_end = min(q_end, end_ts)
+        rows = db.get_gaps_range(start_ts=q_start, end_ts=q_end, source=source,
+                                 risk=risk, cursor=cur, limit=limit + 1)
+        # 趋势桶精确筛选：缺口与桶窗口重叠（start < sub_end 且 end > sub_start）
+        if sub_start_ts is not None and sub_end_ts is not None:
+            rows = [g for g in rows
+                    if g["start_timestamp"] < sub_end_ts and g["end_timestamp"] > sub_start_ts]
+        has_more = len(rows) > limit
+        rows = rows[:limit]
+        next_cursor = None
+        if has_more and rows:
+            last = rows[-1]
+            next_cursor = "%d_%d" % (last["start_timestamp"], last["id"])
+        open_gap = collector.open_gap_property()
+        return {
+            "gaps": _present_gaps(rows, start_ts, end_ts),
+            "next_cursor": next_cursor,
+            "has_more": has_more,
+            "open_gap": open_gap,
+        }
+
+    def _present_gaps(rows: list[dict], start_ts: float | None,
+                      end_ts: float | None) -> list[dict]:
+        """
+        缺口展示层（§88-127）：
+        - reason 中文化：系统休眠 / LlamaMonitor 重启 / llama.cpp 服务不可达 /
+          采集超时 / 采集器异常 / 数据源不可用 / 原因未确定（弃 raw unknown/sleep_gap 上主 UI）。
+        - **原因推定**（§113）：reason=unknown 且缺口时段附近有 sleep_gap 事件
+          -> reason_label 标"系统休眠（推定）"+ inferred=True + tooltip 说明证据；
+          无证据 -> "原因未确定"（不崩溃、不臆测）。
+        - token 风险：后端只有 2 bool（token_recoverable / possible_token_loss），
+          UI 表达 false=无已知风险、true=存在风险（§107-109），不假造三态：
+            lost=1            -> risk=lost        "可能丢失"
+            lost=0,recov=0    -> risk=time_uncertain "时间归属不确定"
+            其余              -> risk=none         "无"
+        """
+        # 一次取范围内休眠证据（sleep_gap / system_monitor_stop）
+        evidence: list = []
+        try:
+            evidence = db.get_sleep_events(start_ts, end_ts)
+        except Exception:
+            evidence = []
+        # 休眠证据窗口：事件时间戳 + 其 monotonic_gap_seconds（暂停持续时长）。
+        # gpu/unknown 缺口 start≈暂停开始，end≈暂停结束；只要 gap 的 [start,end]
+        # 与某个休眠段 [ts-gap_seconds, ts] 重叠（含 60s 容差）即推定。
+        def _sleep_windows() -> list[tuple[float, float]]:
+            wins = []
+            for e in evidence:
+                ts = e["timestamp"]
+                det = e["details"] or {}
+                gap_s = det.get("monotonic_gap_seconds")
+                if gap_s is None:
+                    # system_monitor_stop 无 duration：用 120s 默认暂停窗
+                    gap_s = 120.0
+                try:
+                    gap_s = float(gap_s)
+                except (TypeError, ValueError):
+                    gap_s = 120.0
+                wins.append((ts - gap_s - 60.0, ts + 60.0))
+            return wins
+        sleep_wins = _sleep_windows()
+        out = []
+        for g in rows:
+            lost = bool(g["possible_token_loss"])
+            recov = bool(g["token_recoverable"])
+            if lost:
+                risk, risk_label = "lost", "可能丢失"
+            elif not recov:
+                risk, risk_label = "time_uncertain", "时间归属不确定"
+            else:
+                risk, risk_label = "none", "无"
+            reason = g["reason"] or "unknown"
+            label, inferred, inferred_note = _reason_label(reason)
+            if reason == "unknown" and not lost:
+                s0, e0 = float(g["start_timestamp"]), float(g["end_timestamp"])
+                for ws, we in sleep_wins:
+                    if s0 <= we and e0 >= ws:  # 区间重叠
+                        label = "系统休眠（推定）"
+                        inferred = True
+                        inferred_note = (
+                            "同时段检测到系统休眠/采集暂停事件（monotonic 断档），"
+                            "推定为系统休眠；原始原因为 unknown（GPU 侧未达休眠阈值）。")
+                        break
+            out.append({
+                "id": g["id"],
+                "start": g["start_timestamp"],
+                "end": g["end_timestamp"],
+                "duration_seconds": g["duration_seconds"],
+                "source": g["source"],
+                "reason": reason,              # raw（Developer Detail）
+                "reason_label": label,          # 主 UI 中文
+                "reason_inferred": inferred,
+                "reason_inferred_note": inferred_note,
+                "token_recoverable": recov,
+                "possible_token_loss": lost,
+                "token_risk": risk,
+                "token_risk_label": risk_label,
+            })
+        return out
+
+    def _reason_label(reason: str) -> tuple[str, bool, str]:
+        """raw reason -> (中文 label, inferred=False, note="")（§97-104 正式分类）。未知 -> 原因未确定。"""
+        return {
+            "system_pause_or_sleep": ("系统休眠", False, ""),
+            "monitor_restart": ("LlamaMonitor 重启", False, ""),
+            "server_offline": ("llama.cpp 服务不可达", False, ""),
+            "invalid_metrics": ("采集超时 / 异常", False, ""),
+            "unknown": ("原因未确定", False, ""),
+        }.get(reason, ("原因未确定", False, ""))
+
+    # ---------- Round-5 History 页：监控事件 Presentation Layer ----------
+    # 事件来源中文展示（前端 来源 列不再出现 raw key collector/database/...）。
+    # 未知 source 原样保留（Developer Detail 可查）。
+    EVENT_SOURCE_LABELS: dict[str, str] = {
+        "collector": "llama.cpp 采集器",
+        "application": "LlamaMonitor",
+        "system": "系统",
+        "gpu": "GPU",
+        "database": "数据库",
+        "backup": "备份",
+        "update": "更新",
+        "llama.cpp": "llama.cpp",
+    }
+
+    def _event_title_match_types(search: str) -> list[str]:
+        """展示层标题匹配（§166-168 搜索增强）：用户按**看到的中文标题**搜，
+        把 display_title 含关键词的 raw event_type 收集起来，供 SQL IN 匹配。
+        未知事件标题"未知事件"不入表，raw LIKE 仍兜底。"""
+        s = (search or "").strip().lower()
+        if not s:
+            return []
+        # 匹配用户可见的展示标题 或 展示分类（两者都出现在事件行/详情里）
+        return [et for et, pres in EVENT_PRESENTATION.items()
+                if s in pres[0].lower() or s in pres[1].lower()]
+
+    # 单一事实源：raw event_type -> (display_title, category, severity_override)。
+    # severity_override=None 表示沿用 DB 里存的 severity；否则用此值（§146-148：
+    # 休眠=info 不标红、恢复=success、不可达=warning、损坏=error）。
+    # category ∈ 服务/应用/系统/GPU/传感器/数据库/备份/更新（§132）。
+    EVENT_PRESENTATION: dict[str, tuple[str, str, str | None]] = {
+        # 服务
+        "server_online": ("llama.cpp 服务已恢复", "服务", "success"),
+        "server_offline": ("llama.cpp 服务不可达", "服务", "warning"),
+        "llama_health_changed": ("llama.cpp 健康状态变化", "服务", None),
+        # 应用（LlamaMonitor 生命周期）
+        "monitor_start": ("LlamaMonitor 已启动", "应用", "info"),
+        "monitor_stop": ("LlamaMonitor 已停止", "应用", "info"),
+        "monitor_restart_gap": ("LlamaMonitor 已重启", "应用", "info"),
+        "metrics_valid": ("指标采集有效", "应用", "info"),
+        "invalid_metrics": ("采集到无效指标", "应用", "warning"),
+        "counter_reset": ("Token 计数器重置", "应用", "warning"),
+        "model_changed": ("模型已切换", "应用", "info"),
+        # 系统
+        "sleep_gap": ("系统休眠 / 采集暂停", "系统", "info"),
+        "system_monitor_stop": ("系统监控已停止", "系统", "info"),
+        # 传感器
+        "hardware_sensor_provider_recovered": ("硬件传感器已连接", "传感器", "success"),
+        "hardware_sensor_provider_unavailable": ("硬件传感器不可用", "传感器", "warning"),
+        # GPU
+        "gpu_unavailable": ("GPU 采集不可用", "GPU", "warning"),
+        "gpu_available": ("GPU 采集已恢复", "GPU", "success"),
+        # 数据库
+        "migration": ("数据库结构已升级", "数据库", "info"),
+        "backup_created": ("数据库备份完成", "备份", "info"),
+        "database_recovery": ("数据库已恢复", "数据库", "success"),
+        "database_integrity_error": ("数据库完整性错误", "数据库", "error"),
+        "database_write_failure": ("数据库写入失败", "数据库", "error"),
+        "database_protective_mode": ("数据库进入只读兼容模式", "数据库", "warning"),
+        # 更新
+        "update_check": ("更新检查", "更新", "info"),
+        "update_check_failed": ("更新检查失败", "更新", "warning"),
+        "update_available": ("发现新版本", "更新", "info"),
+        "update_download_started": ("更新下载开始", "更新", "info"),
+        "update_download_complete": ("更新下载完成", "更新", "info"),
+        "update_download_cancelled": ("更新下载取消", "更新", "info"),
+        "update_verification_failed": ("更新校验失败", "更新", "error"),
+        "update_install_started": ("更新安装开始", "更新", "info"),
+        "update_install_aborted": ("更新安装中止", "更新", "warning"),
+        "update_backup_failed": ("更新前备份失败", "更新", "error"),
+        "update_success": ("更新完成", "更新", "success"),
+    }
+    # category -> raw event_type 集合（供后端 category 过滤）
+    _EVENT_CATEGORY_TYPES: dict[str, list[str]] = {}
+    for _etype, (_t, _cat, _sv) in EVENT_PRESENTATION.items():
+        _EVENT_CATEGORY_TYPES.setdefault(_cat, []).append(_etype)
+
+    @app.get("/api/events")
+    async def api_events(
+        limit: int = Query(30, ge=1, le=100),
+        preset: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        category: str | None = None,
+        min_severity: str | None = None,
+        search: str | None = None,
+        cursor: str | None = None,
+    ) -> dict:
+        """
+        监控事件（时间倒序 + 范围/分类/级别/搜索 + cursor 分页）。
+
+        Presentation Layer（§130-145）：后端为每条事件补 display_title /
+        display_category / display_severity（前端主 UI 不再出现 sleep_gap 等
+        raw key）。raw event_type 仍原样返回（Developer Detail 用）。
+        未知 event_type -> display_title="未知事件"，category 兜底"其它"，不崩（§145）。
+        """
+        start_ts, end_ts = _history_range_ts(preset, start_date, end_date)
+        cat_types = _EVENT_CATEGORY_TYPES.get(category) if category else None
+        cur = None
+        if cursor:
+            try:
+                ts_s, id_s = str(cursor).split("_", 1)
+                cur = (int(float(ts_s)), int(id_s))
+            except ValueError:
+                cur = None
+        if min_severity not in (None, "warning", "error"):
+            min_severity = None
+        search = (search or "").strip() or None
+        title_types = _event_title_match_types(search) if search else None
+        rows = db.get_events_range(start_ts=start_ts, end_ts=end_ts, category=cat_types,
+                                   min_severity=min_severity, search=search,
+                                   cursor=cur, limit=limit + 1,
+                                   title_match_types=title_types)
+        has_more = len(rows) > limit
+        rows = rows[:limit]
+        next_cursor = None
+        if has_more and rows:
+            last = rows[-1]
+            next_cursor = "%d_%d" % (last["timestamp"], last["id"])
+
+        def _present(r: dict) -> dict:
+            et = r["event_type"]
+            pres = EVENT_PRESENTATION.get(et)
+            if pres is not None:
+                title, category_name, sev_override = pres
+            else:
+                title, category_name, sev_override = "未知事件", "其它", None
+            sev = sev_override if sev_override is not None else r.get("severity") or "info"
+            return {
+                "id": r.get("id"),
+                "timestamp": r["timestamp"],
+                "event_type": et,               # raw（Developer Detail）
+                "severity": sev,
+                "source": r.get("source"),
+                "display_source": EVENT_SOURCE_LABELS.get(r.get("source"), r.get("source") or "—"),
+                "details": r.get("details") or {},
+                "display_title": title,
+                "display_category": category_name,
+                "display_severity": sev,
+            }
+        return {
+            "events": [_present(r) for r in rows],
+            "next_cursor": next_cursor,
+            "has_more": has_more,
+            # 供前端分类 Filter 的可选项（固定展示顺序；前端按当前数据计数显示）
+            "categories": ["服务", "应用", "系统", "GPU", "传感器", "数据库", "备份", "更新"],
         }
 
     @app.post("/api/data/check-database", dependencies=[Depends(_require_loopback)])
@@ -2010,6 +3321,8 @@ def build_app(
             "mtp_accept_rate", "prompt_seconds", "predicted_seconds",
             # Phase 11：数据质量字段
             "monitoring_coverage_percent", "gap_count", "possible_token_loss",
+            # 1.1.2：缓存复用率（缓存复用 / (Prompt + 缓存复用) * 100）
+            "reuse_rate_percent",
         ])
         for r in rows:
             prompt = r.get("prompt_tokens") or 0
@@ -2039,6 +3352,9 @@ def build_app(
                     coverage = round(max(0.0, 100.0 * (1.0 - in_day / 86400.0)), 2)
                 gap_count = gap_stats["gap_count"]
                 possible_loss = bool(gap_stats["possible_token_loss"])
+            # 1.1.2：缓存复用率（与页面 /api/daily 口径一致：缓存复用 / (Prompt + 缓存复用)）
+            reuse_denom = prompt + cached
+            reuse_rate = round(cached / reuse_denom * 100.0, 2) if reuse_denom > 0 else ""
             writer.writerow([
                 date, prompt, cached, output,
                 prompt + output, prompt + cached + output,
@@ -2047,35 +3363,160 @@ def build_app(
                 r.get("predicted_seconds") if r.get("predicted_seconds") is not None else 0,
                 coverage if coverage is not None else "",
                 gap_count, "yes" if possible_loss else "no",
+                reuse_rate,
             ])
         return ("\ufeff" + buf.getvalue()).encode("utf-8")
 
+    _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+    def _parse_calendar_date(value: str | None) -> str | None:
+        """'YYYY-MM-DD' 严格校验（合法日历日期 + 格式），非法返回 None。"""
+        if value is None:
+            return None
+        if not _DATE_RE.match(value):
+            return None
+        try:
+            datetime.strptime(value, "%Y-%m-%d")
+        except ValueError:
+            return None
+        return value
+
+    # ---------- Round-5 History 页：全局时间范围 ----------
+    def _history_range(
+        preset: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
+    ) -> tuple[float, float, str]:
+        """
+        解析 History 页时间范围 -> (start_ts, end_ts, label)。
+
+        preset ∈ {24h, 7d, 30d, all}（now - N -> now）；
+        或 start_date/end_date（'YYYY-MM-DD'，服务器本机日历日，§19 自定义范围）。
+        自定义优先；两者都不合法 -> 400。end_ts 统一为 now（今天桶只计到当前，§57-58）。
+        """
+        now = collector.clock.now()
+        today = local_date(now)
+        if (start_date is not None) or (end_date is not None):
+            if _parse_calendar_date(start_date) is None or _parse_calendar_date(end_date) is None:
+                raise HTTPException(status_code=400, detail="自定义范围需同时提供合法 start_date / end_date")
+            s_s, e_s = start_date, end_date
+            if s_s > e_s:
+                raise HTTPException(status_code=400, detail="start_date 不能晚于 end_date")
+            if e_s > today:
+                raise HTTPException(status_code=400, detail="end_date 不能晚于今天")
+            start_ts = datetime.strptime(s_s, "%Y-%m-%d").timestamp()
+            # end_ts = end_date 当日 24:00（但今天则到 now；§57-58 未来时段不入 expected）
+            end_next = (datetime.strptime(e_s, "%Y-%m-%d") + timedelta(days=1)).timestamp()
+            end_ts = min(now, end_next)
+            return start_ts, end_ts, "custom"
+        preset = preset or "7d"
+        span = {"24h": 86400.0, "7d": 7 * 86400.0, "30d": 30 * 86400.0}.get(preset)
+        if span is None:
+            if preset == "all":
+                # 全部：监测开始（最早 live 样本）-> now；无数据则 30 天兜底
+                lo, hi = db.get_live_bounds()
+                start_ts = lo if lo is not None else now - 30 * 86400.0
+                return start_ts, now, "all"
+            raise HTTPException(status_code=400, detail="未知 preset")
+        return now - span, now, preset
+
+    def _coverage_window_for_day(
+        date: str, day_samples: list, today: str, now: float,
+        start_ts: float, end_ts: float,
+    ) -> tuple[float, float, bool]:
+        """
+        某自然日（或"今天到 now"）的监控时间窗，**与请求范围 [start_ts, end_ts] 求交**。
+        返回 (窗口秒, 有效秒=窗口-缺口秒, 是否完整)。监测开始前 / 未来时段不计（§59-58）。
+        口径与 _day_quality 同源：窗口 = 首样本->末样本（今天到 min(now, 末+2 间隔)），
+        过去无 live 但有 daily 行 -> 24h 估算；再与 [start_ts, end_ts] 取交集。
+        """
+        win = None  # (window_start, window_end)
+        if day_samples:
+            first = day_samples[0]["timestamp"]
+            last = day_samples[-1]["timestamp"]
+            w_end = min(now, last + collector.interval * 2) if date == today else last
+            win = (first, w_end)
+        elif date < today:
+            # 过去自然日（live 已清理）但有 daily 行：整日 24h 估算
+            day0 = datetime.strptime(date, "%Y-%m-%d").timestamp()
+            win = (day0, day0 + 86400.0)
+        if win is None:
+            return 0.0, 0.0, False
+        # 与请求范围求交（未来时段 / 监测开始前不计）
+        ws = max(win[0], start_ts)
+        we = min(win[1], end_ts, now)
+        if we <= ws:
+            return 0.0, 0.0, False
+        window = we - ws
+        # 缺口秒：用 [ws, 次日00:00) 收窄的当日统计，再按窗口占比粗估（小时桶见 trend）
+        gap_stats = db.get_gap_stats(date, start_ts=ws)
+        in_window = min(gap_stats["total_gap_seconds"], window) if window > 0 else 0.0
+        valid = max(0.0, window - in_window)
+        full = (date < today) and (we - ws) >= 86400.0 - 1.0
+        return window, valid, full
+
     @app.get("/api/daily")
     async def api_daily(days: int = Query(30, ge=1, le=3650), all: bool = False,
-                        month: bool = False) -> dict:
+                        month: bool = False,
+                        start_date: str | None = None,
+                        end_date: str | None = None) -> dict:
         """
         最近 N 个自然日的统计（日期升序）；all=true 时返回全部历史（无上限）；
-        month=true 时只返回**当前自然月**（本机日期前缀 YYYY-MM）。
+        month=true 时只返回**当前自然月**（本机日期前缀 YYYY-MM）；
+        start_date/end_date（'YYYY-MM-DD'，**服务器本机日历日**）给出自定义
+        闭区间时按区间过滤（优先级最高，其余参数忽略）。
 
         只返回实际有数据的天（无使用量的天没有行，空档由前端补齐）；
         每行含原始字段 + compute_tokens / logical_tokens 派生字段
         + Phase 11 数据质量字段（monitoring_coverage_percent / gap_count /
         possible_token_loss）。
 
+        响应附 `range` 元数据：{mode, start_date, end_date, today}。
+        mode ∈ "recent" | "all" | "month" | "custom"；start/end 为实际返回
+        窗口的闭区间（recent 模式 end = 今天，start = 今天-(days-1)），
+        供前端补全缺失日、标注"今天"、渲染自定义范围标签。
+
         AUDIT-1.1.1 BUG-1111-005：month 过滤移到服务端——此前前端取 31 天再按
         浏览器本地 'YYYY-MM' 前缀过滤，日期来源与 daily_usage 归集日期分离
         （跨月/时钟边界下"本月"可能漏行），且仅在页面加载时取一次快照。现在与
         /api/summary 的 month_key 同源（同一 collector.clock、同一 local_date 前缀）。
+        自定义范围（1.1.2）：起止与 all 同一 local_date 日历口径——服务器本机
+        日期，前端不再用浏览器时区推算窗口；非法格式 / 起>止 / 止>今天 / 跨度
+        >3650 天 → 400。
         """
+        now = collector.clock.now()
+        today = local_date(now)
+        start_s = end_s = None
+        if start_date is not None or end_date is not None:
+            start_s = _parse_calendar_date(start_date)
+            end_s = _parse_calendar_date(end_date)
+            if start_date is None or end_date is None or start_s is None or end_s is None:
+                raise HTTPException(status_code=400, detail="start_date 与 end_date 必须同时提供且为 YYYY-MM-DD 日期")
+            if start_s > end_s:
+                raise HTTPException(status_code=400, detail="start_date 不能晚于 end_date")
+            if end_s > today:
+                raise HTTPException(status_code=400, detail="end_date 不能晚于今天")
+            span = (datetime.strptime(end_s, "%Y-%m-%d") - datetime.strptime(start_s, "%Y-%m-%d")).days
+            if span + 1 > 3650:
+                raise HTTPException(status_code=400, detail="时间范围最多 3650 天")
         all_rows = db.get_daily_usage()
-        if all:
+        mode = "recent"
+        if start_s:
+            rows = [r for r in all_rows if start_s <= r["date"] <= end_s]
+            mode = "custom"
+        elif all:
             rows = all_rows
+            mode = "all"
+            start_s, end_s = (all_rows[0]["date"], today) if all_rows else (today, today)
         elif month:
-            month_key = local_date(collector.clock.now())[:7]
+            month_key = today[:7]
             rows = [r for r in all_rows if r["date"].startswith(month_key)]
+            mode = "month"
+            start_s, end_s = today[:7] + "-01", today
         else:
-            cutoff = local_date(collector.clock.now() - (days - 1) * 86400)
+            cutoff = local_date(now - (days - 1) * 86400)
             rows = [r for r in all_rows if r["date"] >= cutoff]
+            start_s, end_s = cutoff, today
         # AUDIT-DB-003：live 样本一次取全、按日分组（原实现在循环内每天全量扫一次）
         try:
             all_live = db.get_live_samples(hours=None)
@@ -2089,7 +3530,298 @@ def build_app(
             row = _with_derived(r)
             row.update(_day_quality(r["date"], live_by_date.get(r["date"], [])))
             out.append(row)
-        return {"days": out}
+        return {
+            "days": out,
+            "range": {
+                "mode": mode, "start_date": start_s, "end_date": end_s, "today": today,
+                # 服务器当前时刻（供前端渲染"今天 · 截至 HH:MM"部分日标注，
+                # 与 local_date 同一时钟，浏览器时区不参与"今天"判定）
+                "server_now_iso": datetime.fromtimestamp(now).strftime("%Y-%m-%d %H:%M"),
+                "server_now_hhmm": datetime.fromtimestamp(now).strftime("%H:%M"),
+            },
+        }
+
+    def _range_coverage_window(gap_stats: dict, date: str, today: str,
+                               day_samples: list, now: float) -> tuple[float, bool] | None:
+        """
+        与 _day_quality 同口径的覆盖窗口（秒）：
+        - 当日有 live 样本：首样本 → 末样本（今天到 min(now, 末样本+2 间隔)）；
+        - 过去自然日（live 已清理）但 daily 行存在：按 24h 估算（监控当天运行过）；
+        - 今天但无 live 样本：窗 0（尚未积累可观测时间）。
+        返回 (窗口秒, 窗口是否完整一天)；无窗口时返回 None。
+        """
+        if day_samples:
+            first = day_samples[0]["timestamp"]
+            last = day_samples[-1]["timestamp"]
+            if date == today:
+                window_end = min(now, last + collector.interval * 2)
+            else:
+                window_end = last
+            window = max(0.0, window_end - first)
+            return window, (date < today)
+        if date < today:
+            return 86400.0, True
+        if date == today:
+            return 0.0, False
+        return None
+
+    @app.get("/api/range-stats")
+    async def api_range_stats(start_date: str | None = None,
+                              end_date: str | None = None) -> dict:
+        """
+        自定义范围的**区间级**数据质量统计（1.1.2，供使用汇总的采集覆盖区）。
+
+        - 采集覆盖率 = Σ(窗口内有效时间) / Σ(窗口总时间) × 100——窗口按日累计
+          后**加权**平均（不是逐日覆盖率的算术平均），口径与 /api/daily 的
+          monitoring_coverage_percent 完全同源（_day_quality 的窗口规则）。
+        - 采集缺口 = 范围内（窗口内）的缺口时长（秒）。
+        - 范围缺口条数 / 可能存在 Token 丢失 = 范围内按日缺口统计的聚合。
+        - 有效数据天数 = 有 daily 行的天数（日均 Token 的分母口径）。
+        - 无数据天数 = 范围日历天数 - 有效数据天数（未开始监测 / 无有效采集）。
+
+        非法参数 400（与 /api/daily 自定义范围同校验）。
+        """
+        if start_date is None or end_date is None:
+            raise HTTPException(status_code=400, detail="start_date 与 end_date 必须同时提供")
+        start_s = _parse_calendar_date(start_date)
+        end_s = _parse_calendar_date(end_date)
+        if start_s is None or end_s is None:
+            raise HTTPException(status_code=400, detail="start_date 与 end_date 必须为 YYYY-MM-DD 日期")
+        now = collector.clock.now()
+        today = local_date(now)
+        if start_s > end_s:
+            raise HTTPException(status_code=400, detail="start_date 不能晚于 end_date")
+        if end_s > today:
+            raise HTTPException(status_code=400, detail="end_date 不能晚于今天")
+        cal_days = (datetime.strptime(end_s, "%Y-%m-%d") - datetime.strptime(start_s, "%Y-%m-%d")).days + 1
+        if cal_days > 3650:
+            raise HTTPException(status_code=400, detail="时间范围最多 3650 天")
+        all_rows = db.get_daily_usage()
+        rows = [r for r in all_rows if start_s <= r["date"] <= end_s]
+        try:
+            all_live = db.get_live_samples(hours=None)
+        except Exception:
+            all_live = []
+        live_by_date: dict[str, list] = {}
+        for s in all_live:
+            live_by_date.setdefault(local_date(s["timestamp"]), []).append(s)
+        total_window = 0.0
+        valid_window = 0.0
+        gap_seconds = 0.0
+        gap_count = 0
+        possible_loss = False
+        for r in rows:
+            date = r["date"]
+            gap_stats = db.get_gap_stats(date)
+            win = _range_coverage_window(gap_stats, date, today,
+                                         live_by_date.get(date, []), now)
+            if win:
+                window, _full = win
+                total_window += window
+                in_window = min(gap_stats["total_gap_seconds"], window) if window > 0 else 0.0
+                valid_window += max(0.0, window - in_window)
+                gap_seconds += in_window
+            gap_count += gap_stats["gap_count"]
+            if gap_stats["possible_token_loss"]:
+                possible_loss = True
+        valid_days = len(rows)
+        no_data_days = max(0, cal_days - valid_days)
+        coverage = None
+        if total_window > 0:
+            coverage = round(max(0.0, 100.0 * valid_window / total_window), 2)
+        return {
+            "coverage_percent": coverage,
+            "gap_seconds": round(gap_seconds, 1),
+            "gap_count": gap_count,
+            "possible_token_loss": possible_loss,
+            "valid_days": valid_days,
+            "no_data_days": no_data_days,
+            "calendar_days": cal_days,
+        }
+
+    @app.get("/api/today-hourly")
+    async def api_today_hourly() -> dict:
+        """
+        今日按小时聚合的 Token 用量（1.1.2，供使用趋势的"小时"视图）。
+
+        数据源为 live_samples（48h 保留）；小时桶**服务器本机时间**
+        （local_date 同口径）。只返回有样本的小时桶（0-23），前端按缺失
+        小时不画值（空 ≠ 0）。含 today（YYYY-MM-DD）供前端标注。
+        """
+        now = collector.clock.now()
+        today = local_date(now)
+        try:
+            samples = db.get_live_samples(hours=None)
+        except Exception:
+            samples = []
+        # live_samples 存的是本轮 delta（prompt/cached/output）；
+        # logical = prompt + cached + output，compute = prompt + output
+        buckets: dict[int, dict] = {}
+        for s in samples:
+            if local_date(s["timestamp"]) != today:
+                continue
+            hour = datetime.fromtimestamp(s["timestamp"]).hour
+            b = buckets.get(hour)
+            if b is None:
+                b = buckets[hour] = {"hour": hour, "logical_tokens": 0,
+                                     "compute_tokens": 0, "cached_tokens": 0,
+                                     "prompt_tokens": 0, "output_tokens": 0}
+            p = int(s.get("prompt_delta") or 0)
+            c = int(s.get("cached_delta") or 0)
+            o = int(s.get("output_delta") or 0)
+            b["prompt_tokens"] += p
+            b["cached_tokens"] += c
+            b["output_tokens"] += o
+            b["compute_tokens"] += p + o
+            b["logical_tokens"] += p + c + o
+        out = [buckets[h] for h in sorted(buckets)]
+        return {"date": today, "hours": out}
+
+    @app.get("/api/usage-summary")
+    async def api_usage_summary(days: int = Query(30, ge=1, le=3650), all: bool = False,
+                                month: bool = False,
+                                start_date: str | None = None,
+                                end_date: str | None = None) -> dict:
+        """
+        使用汇总块的**区间级**聚合（1.1.2）——/api/daily 同参数、同窗口，
+        一次请求给出汇总卡全部数字，前端不再自行求和：
+
+        - totals：Prompt / 缓存复用 / 生成 / 实际计算 / Token 总量（区间求和）；
+        - cache_reuse_rate_percent：缓存复用 / (Prompt + 缓存复用) * 100
+          （分母 0 -> null；术语=缓存复用率，**不是**缓存命中率）；
+        - daily_avg_logical：Token 总量 / 有效数据天数（无有效天 -> null）；
+        - peak_day：区间内 Token 总量最大的日子 {date, logical_tokens}（无 -> null）；
+        - coverage_percent：采集覆盖率 = Σ窗口内有效时间 / Σ窗口总时间 * 100
+          （**加权**，非逐日算术平均；无窗口 -> null）；
+        - gap_seconds / gap_count / possible_token_loss：区间内采集缺口聚合；
+        - valid_days / calendar_days / no_data_days。
+
+        参数校验与 /api/daily 自定义范围一致（非法 400）。
+        """
+        now = collector.clock.now()
+        today = local_date(now)
+        # —— 窗口选择：与 /api/daily 完全同构 ——
+        start_s = end_s = None
+        if start_date is not None or end_date is not None:
+            start_s = _parse_calendar_date(start_date)
+            end_s = _parse_calendar_date(end_date)
+            if start_date is None or end_date is None or start_s is None or end_s is None:
+                raise HTTPException(status_code=400, detail="start_date 与 end_date 必须同时提供且为 YYYY-MM-DD 日期")
+            if start_s > end_s:
+                raise HTTPException(status_code=400, detail="start_date 不能晚于 end_date")
+            if end_s > today:
+                raise HTTPException(status_code=400, detail="end_date 不能晚于今天")
+            if (datetime.strptime(end_s, "%Y-%m-%d") - datetime.strptime(start_s, "%Y-%m-%d")).days + 1 > 3650:
+                raise HTTPException(status_code=400, detail="时间范围最多 3650 天")
+        all_rows = db.get_daily_usage()
+        if start_s:
+            rows = [r for r in all_rows if start_s <= r["date"] <= end_s]
+        elif all:
+            rows = all_rows
+            start_s, end_s = (all_rows[0]["date"], today) if all_rows else (today, today)
+        elif month:
+            month_key = today[:7]
+            rows = [r for r in all_rows if r["date"].startswith(month_key)]
+            start_s, end_s = today[:7] + "-01", today
+        else:
+            cutoff = local_date(now - (days - 1) * 86400)
+            rows = [r for r in all_rows if r["date"] >= cutoff]
+            start_s, end_s = cutoff, today
+        # —— Token 汇总（区间求和）——
+        prompt = sum(r["prompt_tokens"] or 0 for r in rows)
+        cached = sum(r["cached_tokens"] or 0 for r in rows)
+        output = sum(r["output_tokens"] or 0 for r in rows)
+        logical = prompt + cached + output
+        compute = prompt + output
+        reuse_denom = prompt + cached
+        reuse_rate = round(cached / reuse_denom * 100.0, 2) if reuse_denom > 0 else None
+        valid_days = len(rows)
+        daily_avg = round(logical / valid_days) if valid_days > 0 else None
+        peak = None
+        if rows:
+            p = max(rows, key=lambda r: (r["prompt_tokens"] or 0) + (r["cached_tokens"] or 0) + (r["output_tokens"] or 0))
+            peak = {"date": p["date"],
+                    "logical_tokens": (p["prompt_tokens"] or 0) + (p["cached_tokens"] or 0) + (p["output_tokens"] or 0)}
+        # —— 采集覆盖（与 /api/range-stats 同口径的加权窗口）——
+        try:
+            all_live = db.get_live_samples(hours=None)
+        except Exception:
+            all_live = []
+        live_by_date: dict[str, list] = {}
+        for s in all_live:
+            live_by_date.setdefault(local_date(s["timestamp"]), []).append(s)
+        total_window = 0.0
+        valid_window = 0.0
+        gap_seconds = 0.0
+        gap_count = 0
+        possible_loss = False
+        for r in rows:
+            date = r["date"]
+            gap_stats = db.get_gap_stats(date)
+            win = _range_coverage_window(gap_stats, date, today,
+                                         live_by_date.get(date, []), now)
+            if win:
+                window, _full = win
+                total_window += window
+                in_window = min(gap_stats["total_gap_seconds"], window) if window > 0 else 0.0
+                valid_window += max(0.0, window - in_window)
+                gap_seconds += in_window
+            gap_count += gap_stats["gap_count"]
+            if gap_stats["possible_token_loss"]:
+                possible_loss = True
+        cal_days = max(1, (datetime.strptime(end_s, "%Y-%m-%d") - datetime.strptime(start_s, "%Y-%m-%d")).days + 1)
+        coverage = None
+        if total_window > 0:
+            coverage = round(max(0.0, 100.0 * valid_window / total_window), 2)
+        return {
+            "totals": {"prompt_tokens": prompt, "cached_tokens": cached, "output_tokens": output,
+                       "compute_tokens": compute, "logical_tokens": logical},
+            "cache_reuse_rate_percent": reuse_rate,
+            "daily_avg_logical": daily_avg,
+            "peak_day": peak,
+            "coverage_percent": coverage,
+            "gap_seconds": round(gap_seconds, 1),
+            "gap_count": gap_count,
+            "possible_token_loss": possible_loss,
+            "valid_days": valid_days,
+            "calendar_days": cal_days,
+            "no_data_days": max(0, cal_days - valid_days),
+        }
+
+    @app.get("/api/throughput")
+    async def api_throughput(minutes: int = Query(60, ge=15, le=1440)) -> dict:
+        """
+        Token 吞吐历史窗口（Round 5 §35-§48）。
+
+        - minutes：15 / 60 / 360 / 1440（15分钟/1小时/6小时/24小时），钳到 [15,1440]；
+          live_samples 保留时长不足 24h 时，available_minutes 反映真实可用窗口
+          （§168-§169：不假装 24h 完整）。
+        - samples：窗口内逐样本（时间戳/prompt_tps/decode_tps/requests_processing/
+          requests_deferred/prompt_delta/output_delta/prompt_seconds/predicted_seconds/
+          busy_slots），超过 2000 点做 bucket 降采样（_downsample_throughput）。
+        - window_avg：窗口加权平均吞吐（_throughput_window_avg，Δtoken/Δseconds，
+          不是逐样本 TPS 简单平均）。
+        - 采集缺口（Monitoring Gap）由前端按 timestamp 间隔 > poll*3 判断线
+          （§44-§45），这里原样保留 null（connectNulls=false）。
+        """
+        capped = max(15, min(1440, minutes))
+        samples = db.get_live_samples(hours=capped / 60.0)
+        # 真实可用窗口：live 保留上限内、且窗口起点之后是否有数据
+        now = time.time()
+        oldest = samples[0]["timestamp"] if samples else now
+        available_minutes = max(1, int(round((now - oldest) / 60)))
+        window = capped if capped <= available_minutes else max(15, available_minutes)
+        # 加权平均在**原始**样本上算（精确），降采样只用于画图
+        avg = _throughput_window_avg(samples)
+        plot = _downsample_throughput(samples)
+        return {
+            "minutes": capped,
+            "available_minutes": available_minutes,
+            "window_minutes": window,
+            "window_avg": avg,
+            "samples": plot,
+            "last_activity_ts": (samples[-1]["timestamp"] if samples else None),
+        }
 
     @app.get("/api/live")
     async def api_live(minutes: int = Query(60, ge=1, le=2880)) -> dict:
@@ -2097,7 +3829,8 @@ def build_app(
         最近 N 分钟的实时采样（每采集一轮一条）。
 
         含 prompt/cached/output delta、prompt_tps、decode_tps、
-        requests_processing、requests_deferred、context_max、mtp_accept_rate。
+        requests_processing、requests_deferred、context_max、mtp_accept_rate、
+        prompt_seconds/predicted_seconds（v6）。
         上限 2880（48h，live_samples 保留时长）。
         """
         samples = db.get_live_samples(hours=minutes / 60)
@@ -2164,6 +3897,86 @@ def build_app(
                 "accept_rate": accepted / draft * 100.0 if draft > 0 else None,
             })
         return {"days": days_out}
+
+    @app.get("/api/mtp/range")
+    async def api_mtp_range(
+        days: int | None = Query(None, ge=1, le=365),
+        all_: bool = Query(False, alias="all"),
+    ) -> dict:
+        """
+        MTP 区间聚合（Round 5 §82-§109）：今天/7天/30天/全部。
+
+        与 /api/mtp（仅今日）同源（daily_usage + mtp_position_daily），但按区间
+        求和，且一次性驱动 MTP Summary + 趋势 + 按位置三块（§84：范围控制整个
+        Section，避免"Summary 今天 / Chart 4 天 / Position 又是今天"的混乱）。
+
+        - days：最近 N 个自然日；all=true：全部历史（date <= 今天，升序）；
+          都不传 = 今天（days=1）。
+        - summary（区间求和）：
+            draft_tokens / accepted_tokens / verification_steps（draft_sequences）
+            accept_rate = accepted/draft*100（draft<=0 -> None，§94-§95）
+            avg_draft_length = draft_tokens/verification_steps（steps<=0 -> None，§87-§88）
+            avg_accepted_length = accepted_tokens/verification_steps（§89）
+        - positions：区间内各 Draft 位置的已接受 Token 求和（§109）。**只有 count**，
+          无 per-position 分母 -> 前端禁止算分位置接受率（§104-§106）。
+        - days_out：逐日 {date, draft, accepted, accept_rate}（供趋势折线，缺失日为
+          accept_rate=null -> 前端 null 断线/留日期位）。
+        """
+        now = collector.clock.now()
+        all_rows = db.get_daily_usage()
+        if all_:
+            date_list = sorted(r["date"] for r in all_rows if r["date"] <= local_date(now))
+        else:
+            d = 1 if days is None else days
+            date_list = _recent_dates(d, now=now)
+        rows = {r["date"]: r for r in all_rows}
+
+        draft = 0
+        accepted = 0
+        steps = 0
+        days_out = []
+        for date in date_list:
+            row = rows.get(date) or {}
+            dd = row.get("draft_tokens", 0) or 0
+            acc = row.get("accepted_tokens", 0) or 0
+            st = row.get("draft_sequences", 0) or 0
+            draft += dd
+            accepted += acc
+            steps += st
+            days_out.append({
+                "date": date,
+                "draft": dd,
+                "accepted": acc,
+                "accept_rate": acc / dd * 100.0 if dd > 0 else None,
+            })
+
+        # 按位置求和（区间内出现过的所有 position；数值排序优先）
+        pos_sum: dict[str, int] = {}
+        for date in date_list:
+            for pos, val in db.get_mtp_position_daily(date).items():
+                pos_sum[pos] = pos_sum.get(pos, 0) + val
+        ordered = sorted(
+            pos_sum.items(),
+            key=lambda kv: (0, int(kv[0])) if kv[0].isdigit() else (1, kv[0]),
+        )
+        positions = [
+            {"position": pos, "accepted": val, "accepted_tokens": val}
+            for pos, val in ordered
+        ]
+
+        return {
+            "range": "all" if all_ else ("today" if (days in (None, 1)) else str(days)),
+            "summary": {
+                "draft_tokens": draft,
+                "accepted_tokens": accepted,
+                "verification_steps": steps,
+                "accept_rate": accepted / draft * 100.0 if draft > 0 else None,
+                "avg_draft_length": draft / steps if steps > 0 else None,
+                "avg_accepted_length": accepted / steps if steps > 0 else None,
+            },
+            "days": days_out,
+            "positions": positions,
+        }
 
     return app
 

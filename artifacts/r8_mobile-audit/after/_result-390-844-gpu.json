@@ -1,0 +1,56 @@
+{
+ "w": 390,
+ "h": 844,
+ "page": "gpu",
+ "probe": {
+  "innerW": 390,
+  "innerH": 844,
+  "docScrollW": 390,
+  "docHScroll": false,
+  "contentScrollH": 6581,
+  "contentScrollW": 390,
+  "contentHScroll": false,
+  "overCount": 2,
+  "over": [
+   {
+    "id": "",
+    "cls": "",
+    "w": 73,
+    "r": 404,
+    "scr": 0,
+    "tag": "button"
+   },
+   {
+    "id": "",
+    "cls": "check-chip on",
+    "w": 225,
+    "r": 401,
+    "scr": 0,
+    "tag": "label"
+   }
+  ],
+  "nestedScroll": [],
+  "mnav": {
+   "h": 61,
+   "top": 783,
+   "w": 390
+  },
+  "mnavItemH": [
+   60,
+   60,
+   60,
+   60,
+   60
+  ],
+  "contentPadBottom": "0px",
+  "chartInstances": 5,
+  "pageH": 6581
+ },
+ "events": [],
+ "sizes": {
+  "top": 128105,
+  "mid": 67235,
+  "bottom": 69568,
+  "full": 170812
+ }
+}

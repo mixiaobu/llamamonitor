@@ -47,6 +47,9 @@
     close: '<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"',
 
     /* ---- 其他 ---- */
+    /* 日历（1.1.2：用量页自定义时间范围入口） */
+    calendar:
+      '<rect x="4" y="5.5" width="16" height="15" rx="2"/><path d="M4 10h16M8.5 3.5v4M15.5 3.5v4"/>',
     download: '<path d="M12 4v11M7.5 11l4.5 4.5L16.5 11"/><path d="M4.5 19.5h15"/>',
     refresh: '<path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v4h-4"/>',
     open: '<path d="M14 5h5v5"/><path d="M19 5l-8 8"/><path d="M18 13.5V19H5V6h5.5"/>',

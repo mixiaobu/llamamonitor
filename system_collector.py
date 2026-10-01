@@ -135,11 +135,15 @@ class SystemSample:
     """一条系统采样点（system_samples 行 + UI 实时展示）。None = 不可用（绝不存 0）。"""
 
     timestamp: float
+    # Round-3 系统页：整机 CPU 利用率 = **逐逻辑核均值**（psutil.cpu_percent(None)
+    # 在双路/多处理器组 Windows 上只读 processor group 0，会 ~2× 高估——见 sys_cpu_raw.py
+    # 实测 AGG 恒为 per-core mean 的 2 倍）。per-core 缺失时回退到聚合值（单路机一致）。
     cpu_usage_percent: float | None = None
-    # 1.1.3：逐逻辑核利用率（live-only，不进 DB——schema 保持 5）。
+    # 1.1.3：逐逻辑核利用率（live-only，不进 DB）。
     # None = 尚未 warmup / 不可用；列表长度 = 逻辑核数。
     cpu_per_core_percent: list[float] | None = None
-    cpu_frequency_mhz: float | None = None
+    cpu_frequency_mhz: float | None = None       # 当前频率（psutil.cpu_freq.current，实时）
+    cpu_base_frequency_mhz: float | None = None  # 基准/标称频率（型号解析，静态）
     cpu_temperature_c: float | None = None       # 来自高级传感器（可空）
     cpu_package_power_w: float | None = None     # 来自高级传感器（可空）
     memory_used_bytes: int | None = None
@@ -149,6 +153,10 @@ class SystemSample:
     disk_write_bps: float | None = None
     network_rx_bps: float | None = None
     network_tx_bps: float | None = None
+    # Round-3（§94-§102）：当前网络速率对应的接口名；None = 全接口合计（未识别默认接口）。
+    # live-only（不进 DB，与 cpu_per_core_percent 同模式——历史 schema 保持稳定，
+    # 历史曲线由 rate 值本身反映默认接口口径）。
+    network_interface: str | None = None
     monitored_component_power_w: float | None = None  # CPU+GPU 已监测组件合计（非墙插）
 
     def to_row(self) -> dict:
@@ -165,6 +173,7 @@ class SystemSample:
             "disk_write_bps": self.disk_write_bps,
             "network_rx_bps": self.network_rx_bps,
             "network_tx_bps": self.network_tx_bps,
+            # network_interface 是 live-only（不在 DB）——历史曲线由 rate 值本身反映默认接口口径
             "monitored_component_power_w": self.monitored_component_power_w,
         }
 
@@ -194,7 +203,9 @@ class SystemCollector:
         self.enabled = config.system.enabled
         # ---- 速率基线（monotonic 配对）----
         self._disk_prev: tuple[float, float] | None = None   # (mono, read_bytes, write_bytes) 用三元
-        self._net_prev: tuple[float, float, float] | None = None  # (mono, rx, tx)
+        self._net_prev: tuple[float, float, float] | None = None  # (mono, rx, tx) 全接口合计
+        self._net_per_prev: dict[str, tuple[float, float, float]] = {}  # Round-3：每接口 (mono, rx, tx)
+        self._net_adapters: dict[str, dict] = {}  # Round-3：每接口当前速率 {name:{rx_bps,tx_bps}}
         self._cpu_warmed = False          # psutil.cpu_percent 首次 warmup 标志
         # ---- 能耗基线 ----
         self._cpu_power_prev: tuple[float, float] | None = None  # (mono, wall, power_w)
@@ -236,6 +247,8 @@ class SystemCollector:
         """
         inv: dict[str, Any] = {
             "os": None, "computer_name": None, "cpu_model": None,
+            "cpu_model_raw": None, "cpu_base_frequency_mhz": None, "cpu_sockets": None,
+            "architecture": None, "os_build": None, "os_display": None,
             "physical_cores": None, "logical_cpus": None,
             "installed_ram_bytes": None,
             "motherboard_manufacturer": None, "motherboard_model": None,
@@ -244,7 +257,19 @@ class SystemCollector:
         }
         inv["os"] = _os_description()
         inv["computer_name"] = _safe(lambda: __import__("platform").node())
-        inv["cpu_model"] = _safe(lambda: (psutil.cpu_freq() and "") or _cpu_model())
+        cpu_model_raw = _safe(lambda: (psutil.cpu_freq() and "") or _cpu_model())
+        inv["cpu_model_raw"] = cpu_model_raw
+        inv["cpu_model"] = _clean_cpu_model(cpu_model_raw)
+        # 基准频率：从型号 "@2.70GHz" 解析（静态标称值，非实时）。解析失败 -> None（不猜）。
+        inv["cpu_base_frequency_mhz"] = _parse_base_freq_mhz(cpu_model_raw)
+        # 架构（§158）：AMD64 / x64。
+        inv["architecture"] = _arch_label()
+        # OS 版本（§157/§159）：os_display = "Windows 11"；os_build = "26200.9457"。
+        _osv = _os_version_parts()
+        inv["os_display"] = _osv.get("display")
+        inv["os_build"] = _osv.get("build")
+        # CPU 插槽数（§161）：Windows 用 Win32_Processor 实例数（多路可靠）；非 Windows None。
+        inv["cpu_sockets"] = _cpu_socket_count()
         inv["logical_cpus"] = _safe(psutil.cpu_count, logical=True)
         inv["physical_cores"] = _safe(psutil.cpu_count, logical=False)
         # 1.1.3：Heat Grid 视图元数据——逻辑核到物理核的分组（cpu_affinity），
@@ -403,7 +428,10 @@ class SystemCollector:
         vm = _safe(psutil.virtual_memory)
         dio = _safe(psutil.disk_io_counters)
         nio = _safe(psutil.net_io_counters)
-        return (usage, per_core, freq, vm, dio, nio)
+        # Round-3：per-adapter counters（供默认接口速率 + 接口选择器即时速率；
+        # 与聚合 nio 同一采样窗口，counter 一致）。
+        pernic = _safe(psutil.net_io_counters, pernic=True)
+        return (usage, per_core, freq, vm, dio, nio, pernic)
 
     def poll_once(self) -> SystemSample | None:
         """
@@ -445,19 +473,30 @@ class SystemCollector:
 
     def _apply_sample(self, sample: SystemSample, raw: tuple, now_mono: float) -> None:
         """把原始 psutil 值填入 sample（速率用 monotonic；counter reset 安全）。"""
-        usage, per_core, freq, vm, dio, nio = raw
+        usage, per_core, freq, vm, dio, nio, pernic = raw
 
-        # CPU 利用率（interval=None 非阻塞；首次 warmup：本条不写 DB、不作为有效利用率）
-        if usage is not None:
-            if not self._cpu_warmed:
-                # 首次：只建立基线（per_core 同窗口，一并丢弃）
-                self._cpu_warmed = True
-            else:
+        # CPU 利用率（interval=None 非阻塞；首次 warmup：本条不写 DB、不作为有效利用率）。
+        # Round-3 系统页（§6/§10/§57/§58）：整机 CPU 利用率 = **逐逻辑核均值**。
+        # psutil.cpu_percent(None) 在多处理器组（双路 Xeon）Windows 上只读
+        # processor group 0，实测恒为 per-core mean 的 ~2 倍（sys_cpu_raw.py）——
+        # 这正是"当前 3% / 历史 100%"异常采集的根因。per-core 缺失（单路/无 percpu）
+        # 时回退到聚合值（单路机两者一致）。
+        if not self._cpu_warmed:
+            # 首次：只建立基线（per_core 同窗口，一并丢弃）
+            self._cpu_warmed = True
+        else:
+            if per_core is not None and len(per_core) > 0:
+                pc = [float(x) for x in per_core]
+                sample.cpu_per_core_percent = pc
+                sample.cpu_usage_percent = sum(pc) / len(pc)
+            elif usage is not None:
                 sample.cpu_usage_percent = usage
-                if per_core is not None:
-                    sample.cpu_per_core_percent = [float(x) for x in per_core]
         if freq is not None and freq.current is not None:
             sample.cpu_frequency_mhz = freq.current
+        # 基准/标称频率（静态，从库存型号解析；供 CPU 区"当前频率 + 基准频率"次值）
+        base = (self.inventory or {}).get("cpu_base_frequency_mhz")
+        if base is not None:
+            sample.cpu_base_frequency_mhz = float(base)
 
         # 内存
         if vm is not None:
@@ -474,24 +513,113 @@ class SystemCollector:
                 sample.disk_write_bps = _counter_rate(prev_write, dio.write_bytes, dt)
             self._disk_prev = (now_mono, dio.read_bytes, dio.write_bytes)
 
-        # 网络 IO（累计 counter -> 速率；monotonic）
+        # 网络 IO（累计 counter -> 速率；monotonic）。
+        # Round-3 系统页（§94-§102）：默认速率 = 拥有默认路由的主接口（WLAN/以太网等）。
+        # 盲目相加所有 NIC 会让 WireGuard/VPN 隧道流量在"隧道+物理网卡"两处各计一次
+        # （双重统计）。无法可靠识别默认接口时回退全接口合计（network_interface=None，
+        # UI 显示"接口合计"并提示可能含虚拟网卡）。每轮同时算出所有接口的当前速率
+        # （self._net_adapters），供 /api/system/status network.adapters + 接口选择器。
+        defnic = self._default_network_interface()
         if nio is not None and nio.bytes_recv is not None and nio.bytes_sent is not None:
-            if self._net_prev is not None:
-                prev_mono, prev_rx, prev_tx = self._net_prev
-                dt = now_mono - prev_mono
-                sample.network_rx_bps = _counter_rate(prev_rx, nio.bytes_recv, dt)
-                sample.network_tx_bps = _counter_rate(prev_tx, nio.bytes_sent, dt)
+            # 所有接口当前速率（per-adapter，同窗口 counter delta）
+            adapters: dict[str, dict] = {}
+            if pernic:
+                for name, cc in pernic.items():
+                    if cc is None or getattr(cc, "bytes_recv", None) is None:
+                        continue
+                    prev = self._net_per_prev.get(name)
+                    rx = tx = None
+                    if prev is not None:
+                        dt = now_mono - prev[0]
+                        rx = _counter_rate(prev[1], cc.bytes_recv, dt)
+                        tx = _counter_rate(prev[2], cc.bytes_sent, dt)
+                    adapters[name] = {"rx_bps": rx, "tx_bps": tx}
+                self._net_per_prev = {
+                    name: (now_mono, cc.bytes_recv, cc.bytes_sent)
+                    for name, cc in pernic.items()
+                    if cc is not None and getattr(cc, "bytes_recv", None) is not None
+                }
+            self._net_adapters = adapters
+            # 默认接口的速率作为页面主值（None -> 全接口合计，回退）
+            if defnic is not None and defnic in adapters:
+                sample.network_rx_bps = adapters[defnic]["rx_bps"]
+                sample.network_tx_bps = adapters[defnic]["tx_bps"]
+                sample.network_interface = defnic
+            else:
+                if self._net_prev is not None:
+                    prev_mono, prev_rx, prev_tx = self._net_prev
+                    dt = now_mono - prev_mono
+                    sample.network_rx_bps = _counter_rate(prev_rx, nio.bytes_recv, dt)
+                    sample.network_tx_bps = _counter_rate(prev_tx, nio.bytes_sent, dt)
+                sample.network_interface = None
             self._net_prev = (now_mono, nio.bytes_recv, nio.bytes_sent)
+        else:
+            sample.network_interface = defnic
 
         # 高级传感器（provider 注入；None = 不可用）
         sample.cpu_temperature_c = self.advanced_cpu_temperature_c
         sample.cpu_package_power_w = self.advanced_cpu_power_w
 
-        # 已监测组件功耗 = CPU Package Power + 全部 GPU Power（任一缺失 -> None，不显示假值）
-        if sample.cpu_package_power_w is not None and self.gpu_power_total_w is not None:
-            sample.monitored_component_power_w = (
-                sample.cpu_package_power_w + self.gpu_power_total_w
-            )
+        # 已监测组件功耗 = 所有可读取（非 None）组件功耗之和。
+        # 1.1.4 精修（§28/§29）：null != 0 —— None 表示"该组件不可读取"，
+        # 不参与求和（CPU Package 不可用但 GPU 有值时应显示 GPU 的 W，而非 None）；
+        # 真实 0 是有效读数（保留）。全部 None 时才为 None（UI 显示 --）。
+        _parts = [sample.cpu_package_power_w, self.gpu_power_total_w]
+        _parts = [p for p in _parts if p is not None]
+        sample.monitored_component_power_w = float(sum(_parts)) if _parts else None
+
+    # ---------- 网络接口（Round-3 §94-§102：避免盲目全接口相加双算虚拟网卡） ----------
+
+    _DEFAULT_IF_CACHE: float = 0.0
+    _DEFAULT_IF_NAME: str | None = None
+
+    def _default_network_interface(self) -> str | None:
+        """拥有默认 IPv4 路由的主接口名（缓存 60s，避免每轮起 PowerShell）。
+        找不到 -> None（UI 显示"接口合计"并提示可能含虚拟网卡流量）。"""
+        now = self.clock.monotonic()
+        if self._DEFAULT_IF_NAME is not None and (now - self._DEFAULT_IF_CACHE) < 60.0:
+            return self._DEFAULT_IF_NAME
+        name = None
+        try:
+            # 默认路由：解析默认 IPv4 路由对应的接口名（Windows Get-NetRoute / 其它平台 route）
+            name = _default_route_interface()
+        except Exception:
+            name = None
+        self._DEFAULT_IF_NAME = name
+        self._DEFAULT_IF_CACHE = now
+        return name
+
+    def adapter_rates(self) -> dict[str, dict]:
+        """所有接口当前速率（每轮 poll 计算并缓存）：{name: {rx_bps, tx_bps}}。
+        供 /api/system/status network.adapters（接口选择器即时显示所选接口的速率）。"""
+        return self._net_adapters
+
+    def network_interfaces(self) -> list[dict]:
+        """接口列表（供 /api/system/network-interfaces 与选择器）：
+        [{name, kind, is_default, speed_mbps, is_virtual, errin, errout, dropin, dropout}]。
+        只列出"有流量意义"的接口（排除纯 Loopback 与全 0 的死接口由前端/调用方判断，
+        这里给原始信息 + 默认标记）。"""
+        pernic = _safe(psutil.net_io_counters, pernic=True) or {}
+        stats = _safe(psutil.net_if_stats) or {}
+        addrs = _safe(psutil.net_if_addrs) or {}
+        default_name = self._default_network_interface()
+        out: list[dict] = []
+        for name in pernic.keys():
+            c = pernic[name]
+            st = stats.get(name)
+            kind = _if_kind(name, st)
+            out.append({
+                "name": name,
+                "kind": kind,
+                "is_default": (name == default_name),
+                "speed_mbps": getattr(st, "speed", None),
+                "is_virtual": _is_virtual_if(name),
+                "errin": getattr(c, "errin", None),
+                "errout": getattr(c, "errout", None),
+                "dropin": getattr(c, "dropin", None),
+                "dropout": getattr(c, "dropout", None),
+            })
+        return out
 
     def _finish_sample(self, sample: SystemSample, now_wall: float, now_mono: float,
                        was_warmed: bool) -> None:
@@ -663,3 +791,174 @@ def _cim_query() -> dict:
     except Exception:
         pass
     return out
+
+
+# ---------- Round-3 系统页：硬件信息辅助（低频，启动/手动刷新时调用） ----------
+
+import re as _re
+
+def _clean_cpu_model(raw: str | None) -> str | None:
+    """把 'Intel(R) Xeon(R) Platinum 8168 CPU @ 2.70GHz' 清理为展示用型号（视觉，不改 raw 后台值）。
+    规则：去掉 (R) 商标括号、结尾 'CPU @ x.xGHz'（频率单列展示）。无法解析时原样返回。"""
+    if not raw:
+        return raw
+    s = raw.strip()
+    # 去 "@ 2.70GHz" 尾巴（含大小写）
+    s = _re.sub(r"\s*@\s*[\d.]+\s*GHz\s*$", "", s, flags=_re.I)
+    # 去 "CPU" 尾巴（若 @ 已被去掉后还剩 "CPU"）
+    s = _re.sub(r"\s+CPU\s*$", "", s, flags=_re.I)
+    # 去 (R) 商标
+    s = s.replace("(R)", "").replace("(r)", "")
+    # 折叠多余空格
+    s = _re.sub(r"\s+", " ", s).strip(" -–")
+    return s or raw
+
+
+def _parse_base_freq_mhz(raw: str | None) -> float | None:
+    """从型号字符串解析基准/标称频率（'@ 2.70GHz' -> 2700.0）。解析失败 -> None（不猜）。"""
+    if not raw:
+        return None
+    m = _re.search(r"@?\s*([\d.]+)\s*GHz", raw, _re.I)
+    if m:
+        try:
+            return float(m.group(1)) * 1000.0
+        except (ValueError, TypeError):
+            return None
+    m = _re.search(r"([\d]{3,5})\s*MHz", raw, _re.I)
+    if m:
+        try:
+            return float(m.group(1))
+        except (ValueError, TypeError):
+            return None
+    return None
+
+
+def _arch_label() -> str | None:
+    """架构展示（§158）：AMD64/x86_64 -> x64；aarch64 -> arm64；i686/x86 -> x86。"""
+    try:
+        import platform
+        m = platform.machine() or ""
+    except Exception:
+        return None
+    m = m.lower()
+    if m in ("amd64", "x86_64"):
+        return "x64"
+    if m in ("aarch64", "arm64"):
+        return "arm64"
+    if m in ("i386", "i686", "x86"):
+        return "x86"
+    return m or None
+
+
+def _os_version_parts() -> dict:
+    """OS 版本（§157/§159）：
+    - display = 'Windows 11'（由 platform 主版本映射，不用 'Windows-11' 带连字符的 raw）；
+    - build   = '26200.9457'（registry CurrentBuild + UBR；无则仅 CurrentBuild）。
+    非 Windows 返回 {'display': platform.platform(terse), 'build': None}。
+    任何失败字段 -> None（不猜）。"""
+    out: dict[str, str | None] = {"display": None, "build": None}
+    try:
+        import platform
+        system = platform.system() or ""
+        if system != "Windows":
+            out["display"] = platform.platform(terse=True) or None
+            return out
+        # Windows N -> "Windows {name}"
+        major = platform.release()  # '10'
+        name = {
+            "10": "10", "11": "11",
+            "9": "9", "8.1": "8.1", "8": "8",
+            "7": "7", "6.3": "8.1", "6.2": "8", "6.1": "7", "6.0": "Vista",
+        }.get(str(major), str(major) or None)
+        out["display"] = ("Windows " + name) if name else None
+        # build：读注册表（低频，仅启动/刷新时）
+        try:
+            import winreg
+            k = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+                               r"SOFTWARE\Microsoft\Windows NT\CurrentVersion")
+            def rd(n):
+                try:
+                    return winreg.QueryValueEx(k, n)[0]
+                except Exception:
+                    return None
+            cb = rd("CurrentBuild")
+            ubr = rd("UBR")
+            if cb is not None:
+                out["build"] = (str(cb) + "." + str(ubr)) if ubr not in (None, "") else str(cb)
+        except Exception:
+            pass
+    except Exception:
+        pass
+    return out
+
+
+def _cpu_socket_count() -> int | None:
+    """CPU 插槽/Package 数（§161，多路）：Windows 用 Win32_Processor 实例数；
+    其它平台 / 失败 -> None（不猜，UI 隐藏该项）。"""
+    if not _IS_WINDOWS:
+        return None
+    try:
+        import subprocess
+        out = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", "@(Get-CimInstance Win32_Processor).Count"],
+            capture_output=True, text=True, timeout=8,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        ).stdout.strip()
+        n = int(out)
+        return n if n >= 1 else None
+    except Exception:
+        return None
+
+
+def _default_route_interface() -> str | None:
+    """拥有默认 IPv4 路由的接口名（Windows：Get-NetRoute）。找不到 -> None。"""
+    if _IS_WINDOWS:
+        try:
+            import subprocess
+            out = subprocess.run(
+                ["powershell", "-NoProfile", "-Command",
+                 "(Get-NetRoute -DestinationPrefix 0.0.0.0/0 -ErrorAction SilentlyContinue "
+                 "| Select-Object -First 1).InterfaceAlias"],
+                capture_output=True, text=True, timeout=8,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            ).stdout.strip()
+            return out or None
+        except Exception:
+            return None
+    # 其它平台：route get default / ip route
+    try:
+        import subprocess
+        out = subprocess.run(["sh", "-c", "ip route get default 2>/dev/null || route get default 2>/dev/null"],
+                             capture_output=True, text=True, timeout=4).stdout
+        m = _re.search(r"dev\s+(\S+)", out) or _re.search(r"interface:\s+(\S+)", out)
+        return m.group(1) if m else None
+    except Exception:
+        return None
+
+
+def _is_virtual_if(name: str) -> bool:
+    """接口是否虚拟（WireGuard/VPN/TUN/虚拟交换机/Loopback）。名称启发式（不依赖 is_virtual 属性）。"""
+    n = (name or "").lower()
+    if "loopback" in n or n == "lo":
+        return True
+    for tag in ("wireguard", "tunnel", "vpn", "vethernet", "virtual", "virtualbox",
+                "hamachi", "tap", "tun", "docker", "hyper-v", "hyper_v", "wsl",
+                "bluetooth", "host network", "default switch"):
+        if tag in n:
+            return True
+    # WireGuard 适配器常用数字命名（000005 之类）——保守：纯 6 位数字视为隧道
+    if _re.fullmatch(r"\d{6}", (name or "").strip()):
+        return True
+    return False
+
+
+def _if_kind(name: str, st) -> str:
+    """接口类型展示标签：WLAN / Ethernet / VPN·虚拟 / 其它。仅用于选择器标注。"""
+    n = (name or "").lower()
+    if "wlan" in n or "wi-fi" in n or "wifi" in n or "wi fi" in n:
+        return "Wi-Fi"
+    if "以太网" in name or "ethernet" in n or "ethernet" in n:
+        return "以太网"
+    if _is_virtual_if(name):
+        return "虚拟/VPN"
+    return "其它"

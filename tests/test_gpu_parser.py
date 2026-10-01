@@ -36,6 +36,7 @@ from gpu_collector import (
     find_nvidia_smi,
     parse_nvidia_smi_csv,
     parse_nvidia_smi_ecc_csv,
+    parse_nvidia_smi_ecc_detail,
     parse_nvidia_smi_processes,
     _NVM_COLUMNS,
     _parse_throttle_reasons,
@@ -267,6 +268,90 @@ class SlowHealthParserTests(unittest.TestCase):
 
     def test_processes_empty(self):
         self.assertEqual(parse_nvidia_smi_processes(""), [])
+
+    def test_ecc_detail_retired_pages(self):
+        # Round-4：`nvidia-smi -q -d ECC` 文本里的 Retired Pages / Remapped Rows。
+        # 真实 580.88 V100 输出（Retired Pages 段在 ECC Errors 之后）
+        text = (
+            "==============NVSMI LOG==============\n"
+            "GPU 00000000:D8:00.0\n"
+            "    ECC Mode\n"
+            "        Current                           : Enabled\n"
+            "        Pending                           : Enabled\n"
+            "    ECC Errors\n"
+            "        Volatile\n"
+            "            Single Bit\n"
+            "                Device Memory             : 0\n"
+            "                Total                     : 0\n"
+            "        Aggregate\n"
+            "            Single Bit\n"
+            "                Device Memory             : 0\n"
+            "                Total                     : 0\n"
+            "    Retired Pages\n"
+            "        Single Bit ECC                    : 0\n"
+            "        Double Bit ECC                    : 3\n"
+            "        Pending Page Blacklist            : No\n"
+            "    Remapped Rows\n"
+            "        Correctable Error                 : 1\n"
+            "        Uncorrectable Error               : 2\n"
+            "        Pending                           : No\n"
+            "        Remapping Failure Occurred        : No\n"
+            "        Bank Conflict Retired Pages       : 0\n"
+        )
+        out = parse_nvidia_smi_ecc_detail(text)
+        self.assertEqual(out["retired_pages_single_bit"], 0)
+        self.assertEqual(out["retired_pages_double_bit"], 3)
+        self.assertFalse(out["retired_pages_pending"])
+        # Remapped Rows 分段格式：驱动不给总值 -> 合计 Correctable + Uncorrectable
+        self.assertEqual(out["remapped_rows"], 3)
+
+    def test_ecc_detail_remapped_single_line(self):
+        # 旧版单行格式：Remapped Rows : 5（直接取值）
+        text = (
+            "    Remapped Rows        : 5\n"
+            "        Pending Page Blacklist            : No\n"
+        )
+        out = parse_nvidia_smi_ecc_detail(text)
+        self.assertEqual(out["remapped_rows"], 5)
+
+    def test_ecc_detail_remapped_na(self):
+        # Remapped Rows : N/A（设备不支持）-> None
+        text = "    Remapped Rows        : N/A\n"
+        out = parse_nvidia_smi_ecc_detail(text)
+        self.assertIsNone(out["remapped_rows"])
+
+    def test_ecc_detail_no_retired_section(self):
+        # T400（无 ECC）：-q -d ECC 文本里没有 Retired Pages / Remapped Rows 段
+        text = (
+            "==============NVSMI LOG==============\n"
+            "GPU 00000000:AF:00.0\n"
+            "    ECC Mode\n"
+            "        Current                           : N/A\n"
+            "        Pending                           : N/A\n"
+            "    ECC Errors\n"
+            "        Volatile\n"
+            "            SRAM Correctable              : N/A\n"
+            "            SRAM Uncorrectable            : N/A\n"
+        )
+        out = parse_nvidia_smi_ecc_detail(text)
+        self.assertIsNone(out["retired_pages_single_bit"])
+        self.assertIsNone(out["retired_pages_double_bit"])
+        self.assertIsNone(out["retired_pages_pending"])
+        self.assertIsNone(out["remapped_rows"])
+
+    def test_ecc_detail_pending_yes(self):
+        text = (
+            "    Retired Pages\n"
+            "        Single Bit ECC                    : 1\n"
+            "        Double Bit ECC                    : 0\n"
+            "        Pending Page Blacklist            : Yes\n"
+            "    Remapped Rows\n"
+            "        Correctable Error                 : N/A\n"
+        )
+        out = parse_nvidia_smi_ecc_detail(text)
+        self.assertEqual(out["retired_pages_single_bit"], 1)
+        self.assertTrue(out["retired_pages_pending"])
+        self.assertIsNone(out["remapped_rows"])  # N/A -> None（仅设备支持时是数字）
 
 
 class FindNvidiaSmiTests(unittest.TestCase):

@@ -1,0 +1,39 @@
+{
+ "w": 932,
+ "h": 430,
+ "page": "performance",
+ "probe": {
+  "innerW": 932,
+  "innerH": 430,
+  "docScrollW": 932,
+  "docHScroll": false,
+  "contentScrollH": 2947,
+  "contentScrollW": 932,
+  "contentHScroll": false,
+  "overCount": 0,
+  "over": [],
+  "nestedScroll": [],
+  "mnav": {
+   "h": 61,
+   "top": 369,
+   "w": 932
+  },
+  "mnavItemH": [
+   60,
+   60,
+   60,
+   60,
+   60
+  ],
+  "contentPadBottom": "0px",
+  "chartInstances": 3,
+  "pageH": 2947
+ },
+ "events": [],
+ "sizes": {
+  "top": 66420,
+  "mid": 73334,
+  "bottom": 83491,
+  "full": 102626
+ }
+}

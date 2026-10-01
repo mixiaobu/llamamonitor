@@ -1,0 +1,6 @@
+﻿ovr_requests: 1
+other_apis: {"/api/status": 1}
+DOM: {"badge": "����", "ctx": "262.14K", "slots": "1", "modal": "�Ӿ� �� ��Ƶ", "attHidden": false, "attItems": 2, "attMore": "", "tLog": "5.45M", "tComp": "191.87K", "tRate": "97.9%", "pTps": "0 t/s", "dTps": "0 t/s", "reqP": "0", "reqD": "0", "mtp": "59.0%", "cc": "0 / 1 Slot", "hCpu": "5%", "hMem": "50%", "hPow": "41 W", "hUptime": "1��13Сʱ", "gpuState": "2 �� GPU", "gpuCards": 2, "cov": "99.0%", "gaps": "55 ��", "risk": "����֪����", "db": "����", "dbHint": "WAL ������", "lastS": "�ո�"}
+CONSOLE_WARN_ERR:
+EXCEPTIONS:
+  (none)

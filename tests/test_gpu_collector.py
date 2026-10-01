@@ -30,6 +30,7 @@ from config import AppConfig
 from db import Database
 from gpu_collector import GpuCollector, GpuSnapshot, parse_nvidia_smi_csv, find_nvidia_smi
 from configutil import make_config
+from clock import FakeClock
 
 T0 = 1_700_000_000.0
 
@@ -41,6 +42,11 @@ ROW_B = ("1, GPU-E2, Test GPU B, 200, 4096, 60, 61, 56, 300.0, 350.0, 61, "
          "1800, 9501, P8, 3, 16, 3, 16, 550.55, 0x0")
 
 
+# Round-4：静态字段 query 的假输出。列序 = NVSMI_STATIC_QUERY
+# （uuid, pci.bus_id, compute_mode, persistence_mode）；fake runner 必须路由它，否则会吃掉 fast 行。
+STATIC_ROW = "GPU-E1, 00000000:AF:00.0, Default, [N/A]\n"
+
+
 def _snap(text: str, now: float) -> list[GpuSnapshot]:
     return parse_nvidia_smi_csv(text, now=now)
 
@@ -49,6 +55,11 @@ def _make_collector(cfg: AppConfig, db: Database, text: str = ROW_A, now: float 
     """构造一个用固定 runner 的 GpuCollector。"""
 
     async def runner(args, timeout):
+        joined = " ".join(args)
+        if "pci.bus_id" in joined:          # Round-4 静态字段 query（不路由会吃掉 fast 行）
+            return 0, STATIC_ROW
+        if "-d" in args:                    # Round-4 ECC 文本细分（-q -d ECC）
+            return 0, ""
         return 0, text
 
     return GpuCollector(cfg, db, runner=runner, timeout_seconds=3.0)
@@ -228,6 +239,10 @@ class StateMachineTests(unittest.TestCase):
         calls = {"n": 0}
 
         async def runner(args, timeout):
+            if "pci.bus_id" in " ".join(args):   # Round-4 静态 query 独立路由
+                return 0, STATIC_ROW
+            if "-d" in args:                     # Round-4 ECC 文本细分
+                return 0, ""
             calls["n"] += 1
             if calls["n"] == 1:
                 return 1, "error: something"
@@ -285,6 +300,10 @@ class StateMachineTests(unittest.TestCase):
                 return 0, ""
             if "ecc.mode.current" in " ".join(args):
                 return 0, "GPU-E1, N/A, N/A, N/A, N/A, N/A, N/A, N/A, N/A, N/A\n"
+            if "pci.bus_id" in " ".join(args):   # Round-4 静态 query
+                return 0, STATIC_ROW
+            if "-d" in args:                     # Round-4 ECC 文本细分
+                return 0, ""
             return 0, next(rows, row_na_driver)
 
         c = GpuCollector(self.cfg, self.db, runner=runner)
@@ -301,6 +320,8 @@ class StateMachineTests(unittest.TestCase):
         state = {"ok": True}
 
         async def runner(args, timeout):
+            if "pci.bus_id" in " ".join(args):   # 静态 query 独立路由（不污染翻转日志计数）
+                return 0, STATIC_ROW
             return (0, ROW_A) if state["ok"] else (1, "err")
 
         c = GpuCollector(self.cfg, self.db, runner=runner)
@@ -436,6 +457,10 @@ class AuditRegressionTests(unittest.TestCase):
                 return 0, ""  # 无进程
             if "ecc.mode.current" in joined:
                 return 0, "GPU-R1, N/A, N/A, N/A, N/A, N/A, N/A, N/A, N/A, N/A\n"  # 不支持 ECC
+            if "pci.bus_id" in joined:   # Round-4 静态 query（独立路由，不吃 fast 行）
+                return 0, STATIC_ROW
+            if "-d" in args:             # Round-4 ECC 文本细分
+                return 0, ""
             # 1.1.0：20 列 fast query（power.draw 在列 8）
             row = ("0, GPU-R1, X, 100, 2048, 50, 60, [N/A], %.1f, 350.0, 60, "
                    "1700, 9501, P8, 3, 16, 3, 16, 550.55, 0x0") % powers[0]
@@ -465,6 +490,123 @@ class AuditRegressionTests(unittest.TestCase):
         # 全链路断言：DB 中的能量 = 完整 10s 区间（失败轮次不丢段）
         e_db = sum(r["energy_wh"] for r in self.db.get_gpu_daily())
         self.assertAlmostEqual(e_db, (280.0 + 320.0) / 2.0 * 10.0 / 3600.0, places=6)
+
+
+class Round4CollectorTests(unittest.TestCase):
+    """Round-4 GPU 页：静态字段 query（PCI Bus ID/Compute/Persistence）
+    + ECC 健康事件（计数增加 -> monitor_events，冷却 30 分钟）。"""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.cfg = make_config()
+        self.cfg.gpu.poll_interval_seconds = 5.0
+        self.db = Database(Path(self._tmp.name) / "r4.db", wal=False)
+
+    def tearDown(self):
+        self.db.close()
+        self._tmp.cleanup()
+
+    def _run(self, fn):
+        return asyncio.run(fn())
+
+    def test_static_query_populates_gpu_static(self):
+        """静态 query（首轮 slow health）-> gpu_static[uuid] 填充 PCI Bus ID / Compute Mode；
+        persistence [N/A] -> None。"""
+        clock = FakeClock(start_wall=T0, start_mono=T0)
+
+        async def runner(args, timeout):
+            joined = " ".join(args)
+            if "--query-compute-apps" in joined:
+                return 0, ""
+            if "ecc.mode.current" in joined:
+                return 0, "GPU-E1, N/A, N/A, N/A, N/A, N/A, N/A, N/A, N/A, N/A\n"
+            if "pci.bus_id" in joined:
+                return 0, STATIC_ROW
+            if "-d" in args:
+                return 0, ""
+            return 0, ROW_A
+
+        c = GpuCollector(self.cfg, self.db, runner=runner, clock=clock)
+        with mock.patch("gpu_collector.find_nvidia_smi", return_value=Path("/fake/nvidia-smi")):
+            self._run(c.poll_once)
+        self.assertIn("GPU-E1", c.gpu_static)
+        self.assertEqual(c.gpu_static["GPU-E1"]["pci_bus_id"], "00000000:AF:00.0")
+        self.assertEqual(c.gpu_static["GPU-E1"]["compute_mode"], "Default")
+        self.assertIsNone(c.gpu_static["GPU-E1"]["persistence_mode"])  # [N/A] -> None
+
+    def test_ecc_corrected_increase_records_event(self):
+        """§64-66：可纠正 ECC 累计计数增加 -> monitor_events 一条（gpu_ecc_corrected_increased）；
+        首轮只记基线不产生事件；冷却 30 分钟内不重复。"""
+        from clock import FakeClock
+
+        clock = FakeClock(start_wall=T0, start_mono=T0)
+        state = {"ca_sram": 0}
+
+        async def runner(args, timeout):
+            joined = " ".join(args)
+            if "--query-compute-apps" in joined:
+                return 0, ""
+            if "ecc.mode.current" in joined:
+                # corrected_aggregate = ca_sram + ca_dram（用 ca_sram 驱动）
+                return 0, "GPU-E1, Enabled, 0, 0, %d, 0, 0, 0, 0, 0\n" % state["ca_sram"]
+            if "pci.bus_id" in joined:
+                return 0, STATIC_ROW
+            if "-d" in args:
+                return 0, ""
+            return 0, ROW_A
+
+        c = GpuCollector(self.cfg, self.db, runner=runner, clock=clock)
+        with mock.patch("gpu_collector.find_nvidia_smi", return_value=Path("/fake/nvidia-smi")):
+            # 轮 1：ECC 计数 0 -> 记基线，无事件
+            self._run(c.poll_once)
+            self.assertEqual([e["event_type"] for e in self.db.get_events(limit=50)
+                              if e["event_type"].startswith("gpu_ecc")], [])
+            clock.advance(1900)  # > 冷却 1800 + > slow 60
+            state["ca_sram"] = 5  # 计数增加
+            self._run(c.poll_once)
+            evts = [e for e in self.db.get_events(limit=50)
+                    if e["event_type"] == "gpu_ecc_corrected_increased"]
+            self.assertEqual(len(evts), 1)
+            det = evts[0]["details"]  # get_events 已把 details_json 解析为 dict
+            self.assertEqual(det["previous"], 0)
+            self.assertEqual(det["current"], 5)
+            self.assertEqual(det["delta"], 5)
+            self.assertEqual(evts[0]["source"], "gpu")
+
+    def test_ecc_event_cooldown_suppresses_rapid_repeat(self):
+        """冷却期内（<30 分钟）计数再次增加不重复记事件（不刷屏）。"""
+        from clock import FakeClock
+
+        clock = FakeClock(start_wall=T0, start_mono=T0)
+        state = {"ca_sram": 0}
+
+        async def runner(args, timeout):
+            joined = " ".join(args)
+            if "--query-compute-apps" in joined:
+                return 0, ""
+            if "ecc.mode.current" in joined:
+                return 0, "GPU-E1, Enabled, 0, 0, %d, 0, 0, 0, 0, 0\n" % state["ca_sram"]
+            if "pci.bus_id" in joined:
+                return 0, STATIC_ROW
+            if "-d" in args:
+                return 0, ""
+            return 0, ROW_A
+
+        c = GpuCollector(self.cfg, self.db, runner=runner, clock=clock)
+        with mock.patch("gpu_collector.find_nvidia_smi", return_value=Path("/fake/nvidia-smi")):
+            self._run(c.poll_once)          # 基线 0
+            clock.advance(1900)
+            state["ca_sram"] = 5
+            self._run(c.poll_once)          # 事件 1（0 -> 5）
+            clock.advance(1900)
+            state["ca_sram"] = 9
+            self._run(c.poll_once)          # 冷却已过，事件 2（5 -> 9）
+            clock.advance(30)               # 仅 30s（< 冷却 1800）
+            state["ca_sram"] = 12
+            self._run(c.poll_once)          # 冷却期内 -> 不记事件
+            evts = [e for e in self.db.get_events(limit=50)
+                    if e["event_type"] == "gpu_ecc_corrected_increased"]
+            self.assertEqual(len(evts), 2)
 
 
 if __name__ == "__main__":

@@ -86,8 +86,24 @@ NVSMI_PROCS_QUERY = [
     "--format=csv,noheader,nounits",
 ]
 
+# Round-4 GPU 页：静态字段 query（启动一次 + 300s 兜底刷新）。
+# pci.bus_id 是 GPU 的稳定总线位置（UI 高级信息）；compute_mode /
+# persistence_mode 部分驱动返回 [N/A]（解析成 None -> UI 不显示该行）。
+# 注意：nvidia-smi 580 的 compute-apps 不支持 type 字段（实测报
+# "Field \"type\" is not a valid field"），进程类型不可靠 -> 不加列。
+NVSMI_STATIC_QUERY = [
+    "--query-gpu=uuid,pci.bus_id,compute_mode,persistence_mode",
+    "--format=csv,noheader",
+]
+STATIC_QUERY_INTERVAL = 300.0
+
 # slow query 周期（秒）：ECC/Remapped Rows 是低频指标，绝不随 fast query 每 5s 查询
 SLOW_QUERY_INTERVAL = 60.0
+
+# ECC 健康事件（§64-66）：可纠正/不可纠正错误计数、退役页相对上次**增加**时
+# 记一条 monitor_events（source=gpu；历史页以后消费，本轮不改历史页）。
+# 冷却 30 分钟：持续出错时（如坏页不断重试）不刷屏，与状态翻转日志同精神。
+ECC_EVENT_COOLDOWN_SECONDS = 1800.0
 
 # nvidia-smi Throttle Reasons 位掩码 -> 名称（文档化位表；0x0 = "Not Active"）
 _THROTTLE_REASON_BITS = {
@@ -195,8 +211,10 @@ class GpuSnapshot:
     ecc_corrected_aggregate: int | None = None
     ecc_uncorrected_volatile: int | None = None
     ecc_uncorrected_aggregate: int | None = None
-    retired_pages: int | None = None                 # 退役页（-q 文本；不可解析 -> None）
-    remapped_rows: int | None = None                 # 重映射行（不可解析 -> None）
+    retired_pages_single_bit: int | None = None      # 单比特 ECC 退役页（-q 文本细分）
+    retired_pages_double_bit: int | None = None      # 双比特 ECC 退役页
+    retired_pages_pending: bool | None = None        # 待处理退役页（No -> False）
+    remapped_rows: int | None = None                 # 重映射行（N/A -> None；仅设备支持时显示）
 
     def to_row(self) -> dict:
         """gpu_samples 行（与 db.save_gpu_samples 的 INSERT 列一致）。"""
@@ -350,6 +368,84 @@ def _sum_ecc_pair(a: int | None, b: int | None) -> int | None:
     return (a or 0) + (b or 0)
 
 
+# 别名（ECC 健康事件用）：退役页 单/双比特 合计；两者都缺失 -> None（不产生事件）
+_ecc_sum = _sum_ecc_pair
+
+
+def parse_nvidia_smi_ecc_detail(text: str) -> dict:
+    """
+    解析 `nvidia-smi -q -d ECC` 文本里的 Retired Pages / Remapped Rows。
+
+    Retired Pages 结构（各驱动一致）：
+        Retired Pages
+            Single Bit ECC                    : 0
+            Double Bit ECC                    : 0
+            Pending Page Blacklist            : No
+    Remapped Rows 两种格式：
+      - 旧版单行：  Remapped Rows : N/A（N/A -> None，仅设备支持时是数字）
+      - 新版分段：  Remapped Rows（无值标题）后跟
+                    Correctable Error : 0 / Uncorrectable Error : 0
+                    -> 合计 = 两者之和（该驱动不直接给总值）
+    返回 {retired_pages_single_bit, retired_pages_double_bit,
+    retired_pages_pending, remapped_rows}；字段缺失 -> None（UI 只显真值）。
+    纯文本解析，不抛异常。
+    """
+    out: dict = {
+        "retired_pages_single_bit": None,
+        "retired_pages_double_bit": None,
+        "retired_pages_pending": None,
+        "remapped_rows": None,
+    }
+    in_remapped = False
+    remapped_corr = None
+    remapped_uncorr = None
+    try:
+        for raw in text.splitlines():
+            line = raw.strip()
+            if not line:
+                continue
+            key, sep, val = line.partition(":")
+            key = key.strip().lower()
+            val = val.strip()
+            if key == "remapped rows":
+                # 单行格式（带值）：直接取；分段格式（无值标题）：进入段
+                if sep:
+                    out["remapped_rows"] = _parse_int(val)
+                    in_remapped = False
+                else:
+                    in_remapped = True
+                continue
+            if key == "single bit ecc" and sep:
+                n = _parse_int(val)
+                if n is not None:
+                    out["retired_pages_single_bit"] = n
+                continue
+            if key == "double bit ecc" and sep:
+                n = _parse_int(val)
+                if n is not None:
+                    out["retired_pages_double_bit"] = n
+                continue
+            if key == "pending page blacklist" and sep:
+                out["retired_pages_pending"] = val.lower() not in ("no", "n/a", "")
+                continue
+            if in_remapped and sep:
+                n = _parse_int(val)
+                if key == "correctable error" and n is not None:
+                    remapped_corr = n
+                elif key == "uncorrectable error" and n is not None:
+                    remapped_uncorr = n
+                continue
+            # 进入其他大标题段（ECC Mode / ECC Errors / Temperature）-> 离开 Remapped 段
+            if key in ("ecc mode", "ecc errors", "temperature"):
+                in_remapped = False
+    except Exception:
+        pass
+    # 分段格式合计（驱动不给总值时）
+    if out["remapped_rows"] is None and (remapped_corr is not None or remapped_uncorr is not None):
+        out["remapped_rows"] = (remapped_corr or 0) + (remapped_uncorr or 0)
+    return out
+
+
 def parse_nvidia_smi_processes(text: str) -> list[dict]:
     """
     解析 `--query-compute-apps=pid,process_name,gpu_uuid,used_memory`（只读）。
@@ -415,6 +511,12 @@ class GpuCollector:
         self.driver_version: str | None = None
         self.latest: list[GpuSnapshot] = []          # 最近一轮快照（组件功耗合计用）
         self.latest_throttle: dict[str, list[str]] = {}  # uuid -> throttle reasons
+        # Round-4 GPU 页：静态字段缓存（PCI Bus ID / Compute Mode / Persistence；
+        # 启动 + 300s 兜底刷新；供 /api/gpu/status 的高级信息展示）
+        self.gpu_static: dict[str, dict] = {}
+        self._last_static_mono: float | None = None
+        # ECC 健康事件去重/冷却（§64-66）：uuid -> {key: (last_value, last_event_mono)}
+        self._ecc_event_state: dict[str, dict] = {}
 
     # ---------- 能耗（Phase 11：monotonic 间隔 + 精确午夜分割） ----------
 
@@ -586,6 +688,66 @@ class GpuCollector:
             return True
         return (mono - self._last_slow_mono) >= SLOW_QUERY_INTERVAL
 
+    def _static_query_due(self, mono: float) -> bool:
+        """静态字段查询节流：首轮必查，之后每 300s 兜底一次（§180）。"""
+        if self._last_static_mono is None:
+            return True
+        return (mono - self._last_static_mono) >= STATIC_QUERY_INTERVAL
+
+    def _check_ecc_events(self) -> None:
+        """
+        ECC 健康事件（§64-66）：可纠正/不可纠正错误计数、退役页（单/双比特合计）
+        相对上次 slow health **增加**时，写一条 monitor_events（source=gpu）。
+
+        - 只记增加，不减（计数重置/驱动重启时不产生事件）；
+        - 每个 (uuid, key) 冷却 ECC_EVENT_COOLDOWN_SECONDS：坏页持续重试时不刷屏；
+        - 失败只 WARNING，不影响 fast telemetry 与 slow 缓存本身。
+        """
+        if self.db is None:
+            return
+        mono = self.clock.monotonic()
+        for uuid, health in self.slow_health.items():
+            if health.get("ecc_enabled") is not True:
+                continue
+            candidates = [
+                ("ecc_uncorrected", "不可纠正 ECC 错误增加",
+                 health.get("ecc_uncorrected_aggregate"), "error"),
+                ("ecc_corrected", "可纠正 ECC 错误增加",
+                 health.get("ecc_corrected_aggregate"), "warning"),
+                ("retired_pages", "退役页增加",
+                 _ecc_sum(health.get("retired_pages_single_bit"), health.get("retired_pages_double_bit")), "warning"),
+            ]
+            state = self._ecc_event_state.setdefault(uuid, {})
+            for key, label, value, severity in candidates:
+                if value is None:
+                    continue
+                prev = state.get(key)
+                if prev is None:
+                    state[key] = (value, mono)  # 首次只记基线，不产生事件
+                    continue
+                last_value, last_mono = prev
+                if value > last_value and (mono - last_mono) >= ECC_EVENT_COOLDOWN_SECONDS:
+                    try:
+                        self.db.record_event(
+                            event_type=f"gpu_{key}_increased",
+                            severity=severity,
+                            source="gpu",
+                            details={
+                                "gpu_uuid": uuid,
+                                "label": label,
+                                "previous": last_value,
+                                "current": value,
+                                "delta": value - last_value,
+                            },
+                            now=self.clock.now(),
+                        )
+                    except Exception as exc:
+                        logger.warning("写入 GPU ECC 事件失败: %r", exc)
+                    state[key] = (value, mono)
+                else:
+                    # 未增加 / 冷却期内 / 计数重置：只更新跟踪值，冷却起点不动
+                    state[key] = (value, last_mono)
+
     def _merge_slow_health(self, snap: GpuSnapshot) -> None:
         """把 slow health 缓存（ECC 等）合并进本轮快照。
 
@@ -600,14 +762,16 @@ class GpuCollector:
         snap.ecc_corrected_aggregate = health.get("ecc_corrected_aggregate")
         snap.ecc_uncorrected_volatile = health.get("ecc_uncorrected_volatile")
         snap.ecc_uncorrected_aggregate = health.get("ecc_uncorrected_aggregate")
-        snap.retired_pages = health.get("retired_pages")
+        snap.retired_pages_single_bit = health.get("retired_pages_single_bit")
+        snap.retired_pages_double_bit = health.get("retired_pages_double_bit")
+        snap.retired_pages_pending = health.get("retired_pages_pending")
         snap.remapped_rows = health.get("remapped_rows")
 
     async def _run_slow_health(self) -> None:
         """
-        一轮 slow health 查询（ECC CSV + 进程）。任何一步失败都保持上一轮缓存
-        （ECC 是低频指标：单次查询失败不丢状态，也不影响 fast telemetry）。
-        绝不抛异常。
+        一轮 slow health 查询（ECC CSV + ECC 文本细分 + 静态字段 + 进程）。
+        任何一步失败都保持上一轮缓存（低频指标：单次查询失败不丢状态，
+        也不影响 fast telemetry）。绝不抛异常。
         """
         mono = self.clock.monotonic()
         wall = self.clock.now()
@@ -616,7 +780,7 @@ class GpuCollector:
         smi = find_nvidia_smi()
         if smi is None:
             return
-        # 1) ECC CSV 查询（可机器解析的计数）
+        # 1) ECC CSV 查询（可机器解析的错误计数）
         try:
             code, text = await self.runner([str(smi), *NVSMI_ECC_QUERY], self.timeout)
             if code == 0:
@@ -637,18 +801,63 @@ class GpuCollector:
                         "ecc_corrected_aggregate": corrected_a,
                         "ecc_uncorrected_volatile": uncorrected_v,
                         "ecc_uncorrected_aggregate": uncorrected_a,
-                        "retired_pages": prev.get("retired_pages"),
+                        "retired_pages_single_bit": prev.get("retired_pages_single_bit"),
+                        "retired_pages_double_bit": prev.get("retired_pages_double_bit"),
+                        "retired_pages_pending": prev.get("retired_pages_pending"),
                         "remapped_rows": prev.get("remapped_rows"),
                     }
         except Exception as exc:
             logger.warning("GPU slow ECC 查询失败（fast telemetry 不受影响）: %r", exc)
-        # 2) 进程查询（只读；WDDM 下 used_memory 常 N/A -> None）
+        # 2) ECC 文本细分（Retired Pages 单/双比特 + 待处理 / Remapped Rows；
+        #    部分驱动只出现在 -q -d ECC 文本里，解析失败不影响 CSV 部分）
+        try:
+            code, text = await self.runner([str(smi), *NVSMI_ECC_DETAIL], self.timeout)
+            if code == 0:
+                detail = parse_nvidia_smi_ecc_detail(text)
+                for uuid, health in self.slow_health.items():
+                    if health.get("ecc_enabled") is not True:
+                        continue
+                    for k in ("retired_pages_single_bit", "retired_pages_double_bit",
+                              "retired_pages_pending", "remapped_rows"):
+                        if detail.get(k) is not None:
+                            health[k] = detail[k]
+        except Exception as exc:
+            logger.warning("GPU ECC 详情查询失败（保持上一轮）: %r", exc)
+        # 3) 静态字段（PCI Bus ID / Compute Mode / Persistence Mode；300s 兜底）
+        if self._static_query_due(mono):
+            try:
+                code, text = await self.runner([str(smi), *NVSMI_STATIC_QUERY], self.timeout)
+                if code == 0:
+                    for row in _csv.reader(io.StringIO(text), skipinitialspace=True):
+                        if len(row) < 4:
+                            continue
+                        uuid = row[0].strip()
+                        if not uuid or uuid.lower() in _NA_TOKENS:
+                            continue
+                        bus_id = row[1].strip()
+                        if not bus_id or bus_id.lower() in _NA_TOKENS:
+                            bus_id = None
+                        cm = row[2].strip()
+                        compute_mode = cm if cm and cm.lower() not in _NA_TOKENS else None
+                        pm = row[3].strip()
+                        persistence = pm if pm and pm.lower() not in _NA_TOKENS else None
+                        self.gpu_static[uuid] = {
+                            "pci_bus_id": bus_id,
+                            "compute_mode": compute_mode,
+                            "persistence_mode": persistence,
+                        }
+                    self._last_static_mono = mono
+            except Exception as exc:
+                logger.warning("GPU 静态字段查询失败（保持上一轮）: %r", exc)
+        # 4) 进程查询（只读；WDDM 下 used_memory 常 N/A -> None）
         try:
             code, text = await self.runner([str(smi), *NVSMI_PROCS_QUERY], self.timeout)
             if code == 0:
                 self.processes = parse_nvidia_smi_processes(text)
         except Exception as exc:
             logger.warning("GPU 进程查询失败（保持上一轮）: %r", exc)
+        # 5) ECC 健康事件（计数相对上次**增加** -> monitor_events；冷却 30 分钟）
+        self._check_ecc_events()
 
     def _set_available(self, ok: bool, reason: str | None) -> None:
         """更新可用状态；状态翻转才写日志（不刷屏）。"""

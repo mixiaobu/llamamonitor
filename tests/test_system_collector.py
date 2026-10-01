@@ -146,15 +146,37 @@ class PollOnceTests(unittest.TestCase):
         self.assertAlmostEqual(c.latest.monitored_component_power_w, 240.0, places=4)
         db.close()
 
-    def test_component_power_none_when_gpu_missing(self):
+    def test_component_power_partial_source(self):
         c, db = _make_collector(self.tmp, self.clock)
         c.set_advanced_sensor_values(
             {"cpu_temperature_c": 60.0, "cpu_package_power_w": 90.0},
             fans=[], all_sensors=[], available=True)
         c.set_gpu_power_total(None)  # 无 GPU 数据
         c.poll_once()
-        # GPU 缺失 -> 组件合计 None（不显示假值，只 CPU 不算整机）
+        # 1.1.4 精修 §28/§29：GPU 缺失不参与求和，CPU 90W 是真实值 -> 90（不是 None）
+        self.assertAlmostEqual(c.latest.monitored_component_power_w, 90.0, places=4)
+        db.close()
+
+    def test_component_power_all_null(self):
+        c, db = _make_collector(self.tmp, self.clock)
+        c.set_advanced_sensor_values(
+            {"cpu_temperature_c": None, "cpu_package_power_w": None},
+            fans=[], all_sensors=[], available=True)
+        c.set_gpu_power_total(None)
+        c.poll_once()
+        # 全缺失 -> None（UI 显示 --；真实 0 不会变 null）
         self.assertIsNone(c.latest.monitored_component_power_w)
+        db.close()
+
+    def test_component_power_real_zero(self):
+        c, db = _make_collector(self.tmp, self.clock)
+        c.set_advanced_sensor_values(
+            {"cpu_temperature_c": None, "cpu_package_power_w": 0.0},
+            fans=[], all_sensors=[], available=True)
+        c.set_gpu_power_total(None)
+        c.poll_once()
+        # §29：真实 0 是有效读数，求和 = 0（不是 None）
+        self.assertEqual(c.latest.monitored_component_power_w, 0.0)
         db.close()
 
     def test_provider_unavailable_keeps_basic(self):
@@ -173,6 +195,40 @@ class PollOnceTests(unittest.TestCase):
     def test_disabled_poll_once_returns_none(self):
         c, db = _make_collector(self.tmp, self.clock, enabled=False)
         self.assertIsNone(c.poll_once())
+        db.close()
+
+    def test_cpu_usage_is_per_core_mean(self):
+        """Round-3 §6/§10/§57-§58：整机 CPU 利用率 = 逐逻辑核均值（双路 Xeon 上
+        psutil.cpu_percent(None) 只读 group 0，实测 ~2× per-core mean 的根因）。
+        这里 4 核：3 个 50% + 1 个 0% -> mean = 37.5（不是聚合 50*3/4 也不是 group0）。"""
+        c, db = _make_collector(self.tmp, self.clock)
+        c._cpu_warmed = True
+        c.inventory = {"cpu_base_frequency_mhz": 2700.0}
+        per_core = [50.0, 50.0, 50.0, 0.0]
+        raw = (50.0, per_core,
+               SimpleNamespace(current=2700.0),
+               SimpleNamespace(total=16 * 1024 ** 3, available=8 * 1024 ** 3, percent=50.0),
+               None, SimpleNamespace(bytes_recv=0, bytes_sent=0), None)
+        s = SystemSample(timestamp=self.clock.now())
+        c._apply_sample(s, raw, self.clock.monotonic())
+        self.assertAlmostEqual(s.cpu_usage_percent, 37.5, places=4)
+        self.assertEqual(s.cpu_per_core_percent, per_core)
+        # 基准频率从库存型号解析值传播
+        self.assertEqual(s.cpu_base_frequency_mhz, 2700.0)
+        db.close()
+
+    def test_cpu_usage_fallback_to_aggregate_when_no_percore(self):
+        """per-core 缺失（单路 / 无 percpu）时回退到聚合值（两者在单路机一致）。"""
+        c, db = _make_collector(self.tmp, self.clock)
+        c._cpu_warmed = True
+        raw = (12.0, None,
+               SimpleNamespace(current=None),
+               SimpleNamespace(total=1024, available=512, percent=50.0),
+               None, SimpleNamespace(bytes_recv=0, bytes_sent=0), None)
+        s = SystemSample(timestamp=self.clock.now())
+        c._apply_sample(s, raw, self.clock.monotonic())
+        self.assertAlmostEqual(s.cpu_usage_percent, 12.0, places=4)
+        self.assertIsNone(s.cpu_per_core_percent)
         db.close()
 
     def test_psutil_exception_is_swallowed(self):
@@ -291,6 +347,45 @@ class EnergyIntegrationTests(unittest.TestCase):
         self.assertAlmostEqual(rows.get(prev_date, 0.0), expected_total * 0.5, places=6)
         self.assertAlmostEqual(rows.get(curr_date, 0.0), expected_total * 0.5, places=6)
         db.close()
+
+
+class ModuleHelperTests(unittest.TestCase):
+    """Round-3 系统页 §157-§168 库存 helper（纯函数，无 I/O 依赖时用固定输入）。"""
+
+    def test_clean_cpu_model(self):
+        from system_collector import _clean_cpu_model
+        self.assertEqual(_clean_cpu_model("Intel(R) Xeon(R) Platinum 8168 CPU @ 2.70GHz"),
+                         "Intel Xeon Platinum 8168")
+        self.assertIsNone(_clean_cpu_model(None))
+        # 无 "@ x.xGHz"/"CPU"/"(R)" 时原样返回（视觉清理不误删）
+        self.assertEqual(_clean_cpu_model("AMD Ryzen 9 5950X 16-Core Processor"),
+                         "AMD Ryzen 9 5950X 16-Core Processor")
+        # 只去 (R) 商标
+        self.assertEqual(_clean_cpu_model("Intel(R) Core(TM) i7-12700K"),
+                         "Intel Core(TM) i7-12700K")
+
+    def test_parse_base_freq_mhz(self):
+        from system_collector import _parse_base_freq_mhz
+        self.assertEqual(_parse_base_freq_mhz("Intel(R) Xeon(R) Platinum 8168 CPU @ 2.70GHz"), 2700.0)
+        self.assertEqual(_parse_base_freq_mhz("AMD Ryzen 5 3600 @ 3.6 GHz"), 3600.0)
+        self.assertEqual(_parse_base_freq_mhz("CPU @ 3500 MHz"), 3500.0)
+        self.assertIsNone(_parse_base_freq_mhz("No freq here"))
+        self.assertIsNone(_parse_base_freq_mhz(None))
+
+    def test_is_virtual_if(self):
+        from system_collector import _is_virtual_if
+        self.assertTrue(_is_virtual_if("WireGuard 000005"))
+        self.assertTrue(_is_virtual_if("000005"))
+        self.assertTrue(_is_virtual_if("vEthernet (Default Switch)"))
+        self.assertTrue(_is_virtual_if("Loopback Pseudo-Interface 1"))
+        self.assertFalse(_is_virtual_if("WLAN"))
+        self.assertFalse(_is_virtual_if("以太网"))
+
+    def test_if_kind(self):
+        from system_collector import _if_kind
+        self.assertEqual(_if_kind("WLAN", None), "Wi-Fi")
+        self.assertEqual(_if_kind("以太网", None), "以太网")
+        self.assertEqual(_if_kind("000005", None), "虚拟/VPN")
 
 
 if __name__ == "__main__":

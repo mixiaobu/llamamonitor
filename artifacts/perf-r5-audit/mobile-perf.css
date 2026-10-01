@@ -1,0 +1,72 @@
+  /* ---------- 推理性能页（Round 5）：Mobile 响应式 ---------- */
+  /* A. 实时摘要：2 + 2 + 1（§22） */
+  .perf-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--spacing-md);
+  }
+  .perf-summary .ps-item { border-left: none; padding: var(--spacing-xs) 0; }
+  .perf-summary .ps-item:nth-child(odd) { padding-right: var(--spacing-md); }
+  .perf-summary .ps-item:nth-child(even) { padding-left: var(--spacing-md); border-left: 1px solid var(--border-subtle); }
+  .perf-summary .ps-item:nth-child(n+5) { grid-column: 1 / -1; border-left: none; padding-left: 0; }
+
+  /* C. 运行时状态：2 列（§76 Mobile 2+2+1） */
+  .runtime-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .runtime-grid .stat:last-child { grid-column: 1 / -1; }
+
+  /* D. MTP Summary：2x3（§93） */
+  .mtp-metrics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mtp-charts { grid-template-columns: 1fr; }
+  .mtp-charts .chart { height: 240px; }
+
+  /* 吞吐率图 Mobile 高度（§245） */
+  #chartTps .chart, #chartTps { height: auto; }
+  .chart-box #chartTps { height: 260px; }
+
+  /* F. 模型与运行环境：2 列 Grid（§184） */
+  .model-env-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+  /* E. Slot 监控：Mobile 转 Card（§142-§144）——复用 table→card 机制的样式，
+     但作用域限定 .slot-table，不依赖 .table-wrap.mobile-card-table。 */
+  .slot-table-wrap { overflow-x: visible; }
+  .slot-table { display: block; }
+  .slot-table thead { display: none; }
+  .slot-table tbody tr.slot-row {
+    display: block;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-card);
+    margin-bottom: var(--spacing-md);
+    break-inside: avoid;
+    background: transparent;
+  }
+  .slot-table tbody tr.slot-row:first-child { margin-top: var(--spacing-sm); }
+  .slot-table tbody tr.slot-row > td:first-child {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-weight: var(--font-weight-semibold);
+    padding: var(--spacing-sm) var(--spacing-md);
+    border-bottom: 1px solid var(--border-subtle);
+    white-space: normal;
+  }
+  .slot-table tbody tr.slot-row > td:not(:first-child) {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: var(--spacing-md);
+    padding: var(--spacing-xs) var(--spacing-md);
+    border-bottom: 1px solid var(--border-subtle);
+    white-space: normal;
+    text-align: right;
+    font-size: var(--font-size-body);
+  }
+  .slot-table tbody tr.slot-row > td:not(:first-child)::before {
+    content: attr(data-label);
+    color: var(--text-secondary);
+    font-size: var(--font-size-body);
+    flex: none;
+  }
+  /* 空闲 Slot：无任务的字段行（值 = --）淡显；详情按钮隐藏（idle 无详情） */
+  .slot-table tbody tr.slot-row.idle > td.na { color: var(--text-disabled); }
+  .slot-table tbody tr.slot-detail-row { display: block; border: none; margin-bottom: var(--spacing-md); background: transparent; }
+  .slot-table tbody tr.slot-detail-row td { border: 1px solid var(--border-subtle); border-radius: var(--radius-card-sm); }
+  .slot-table td.slot-detail-btn, .slot-table td > .slot-detail-btn { }

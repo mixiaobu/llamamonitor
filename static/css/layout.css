@@ -217,7 +217,7 @@
 /* 1.1.2：真 Mobile（≤760px）——侧边栏隐藏（导航移交底部 Bottom Navigation，
  样式见文件尾 .mobile-nav），内容全宽；底部给 Bottom Nav + safe-area 留空，
  避免最后一行被底栏遮挡。 */
-@media (max-width: 760px) {
+@media (max-width: 760px), (orientation: landscape) and (max-height: 480px) {
   .app {
     grid-template-columns: 1fr;
   }
@@ -226,7 +226,23 @@
   }
   .content-inner {
     max-width: none;
+    /* Round-8 §9：手机左右 padding 16px（原 32px 在 390 下浪费 64px，
+       320 下再降 14px）。token 驱动，不散落。
+       --page-pad 一并降到 16：descendants（settings rail 负 margin、
+       save bar padding、footer）跟随，rail 全宽背景恰好铺到视口边缘
+       且不越过 content 右缘（App 级横滚根因）。 */
+    --page-pad: var(--mobile-page-pad);
+    padding-left: var(--page-pad);
+    padding-right: var(--page-pad);
     padding-bottom: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom) + var(--spacing-2xl));
+  }
+  /* 320 小屏：16 -> 14px（§9） */
+  @media (max-width: 349px) {
+    .content-inner {
+      --page-pad: 14px;
+      padding-left: 14px;
+      padding-right: 14px;
+    }
   }
   .page-header {
     flex-direction: column;
@@ -236,10 +252,15 @@
   .page-header .ph-actions {
     width: 100%;
     justify-content: flex-start;
+    min-width: 0;
   }
   .page-header .ph-actions .seg {
     width: 100%;
+    max-width: 100%;
+    overflow-x: auto;   /* 分段控件放不下时内部横滚，不推宽页面 */
+    scrollbar-width: none;
   }
+  .page-header .ph-actions .seg::-webkit-scrollbar { display: none; }
 }
 
 /* ============ 页面（统一页面骨架） ============
@@ -349,7 +370,7 @@
 .page-overflow {
   display: none;
 }
-@media (max-width: 760px) {
+@media (max-width: 760px), (orientation: landscape) and (max-height: 480px) {
   .mobile-nav {
     position: fixed;
     left: 0;
@@ -374,7 +395,7 @@
     background: none;
     border: none;
     color: var(--text-secondary);
-    font-size: 13px;
+    font-size: 11px;   /* Round-8 §57：nav 文字 11-12px（原 13 超规格） */
     cursor: pointer;
     transition: color var(--transition-fast);
     -webkit-tap-highlight-color: transparent;
@@ -424,7 +445,7 @@
 .more-sheet {
   display: none;
 }
-@media (max-width: 760px) {
+@media (max-width: 760px), (orientation: landscape) and (max-height: 480px) {
   .sheet-scrim {
     display: block;
     position: fixed;
@@ -525,6 +546,7 @@
   align-items: center;
   gap: var(--spacing-sm);
   padding: var(--spacing-xs) var(--spacing-md);
+  min-height: 32px;               /* 1.1.4：Desktop 32-36（含 2px 边框 → 34） */
   margin-bottom: var(--section-gap);
   background: var(--bg-elevated);
   border: 1px solid var(--border-default);
@@ -533,14 +555,36 @@
   color: var(--text-secondary);
   font-size: var(--font-size-secondary);
 }
+/* 收起态：严格单行（主文案 nowrap 已保证）；展开态（.open）放开高度上限 */
+.remote-banner:not(.open) {
+  max-height: 36px;
+  overflow: hidden;
+}
 .remote-banner[hidden] {
   display: none;
+}
+@media (max-width: 760px), (orientation: landscape) and (max-height: 480px) {
+  .remote-banner { min-height: 36px; }   /* 1.1.4：Mobile 36-40 */
+  .remote-banner:not(.open) { max-height: 40px; }
+}
+/* 1.1.4 精修（§58-§60）：单行主文案可点击展开说明；close 视觉 16px / hit 44px */
+.remote-banner-main {
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  white-space: nowrap;
+}
+.remote-banner-main:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.remote-banner-detail {
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
 }
 .remote-banner-close {
   margin-left: auto;
   flex: none;
-  width: 28px;
-  height: 28px;
+  position: relative;
+  width: 24px;                   /* 视觉 16-18px 图标（✕ 16px） */
+  height: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -548,11 +592,27 @@
   border: none;
   border-radius: var(--radius-control);
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: 16px;
   cursor: pointer;
 }
-.remote-banner-close:hover {
+/* hit target 44×44（24 + 两侧 10px；视觉仍只是 16px 图标） */
+.remote-banner-close::after {
+  content: "";
+  position: absolute;
+  inset: -10px;
+}
+.remote-banner-close::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-control);
+  transition: background-color var(--transition-fast);
+  z-index: -1;
+}
+.remote-banner-close:hover::before {
   background: var(--bg-subtle-hover);
+}
+.remote-banner-close:hover {
   color: var(--text-primary);
 }
 /* Overflow Sheet 内的远程只读状态行 */
