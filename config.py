@@ -51,10 +51,20 @@ def trust_env_for(url: str) -> bool:
     - 桌面端 wait_for_ready 轮询本机 8765 120s 拿不到 200 → 自启动实例
       误判 "API 未就绪" 退出（用户开机后看不到应用）。
 
-    策略：http(s) 指向**本地/内网地址**（127.*/localhost/10.*/172.16-31.*/
-    192.168.* 及回环 IPv6）时不走代理——这些端点（llama-server 默认绑定、
-    本应用自身 API）在环回/局域网内，代理对它们只可能有害；其余地址保留
-    trust_env，代理仍然有效（如 llama-server 部署在远端且需要代理出网）。
+    策略：http(s) 指向**本地/内网地址**（0.0.0.0/127.*/localhost/10.*/
+    172.16-31.*/192.168.* 及回环 IPv6）时不走代理——这些端点（llama-server
+    默认绑定、本应用自身 API）在环回/局域网内，代理对它们只可能有害；
+    其余地址保留 trust_env，代理仍然有效（如 llama-server 部署在远端且
+    需要代理出网）。
+
+    0.0.0.0 说明（REL-1.1.4-001，1.1.4 发布后实机反馈）：web.host=0.0.0.0
+    （bind-any，让手机走局域网 IP 访问）时，bind-any 地址不是有效的客户端
+    connect 目标（Winsock 直连 0.0.0.0 报 WSAEADDRNOTAVAIL/10049；实测
+    WinINET/curl 会当作环回但 Python 原生 socket 不会）。主修复在 desktop.py
+    ——内部 HTTP 客户端改用环回地址；本函数同时把 0.0.0.0/[::] 归入"本地
+    不走代理"，消除"系统代理存活时请求恰好被代理救活、代理退出后残留死
+    代理把自探测吞掉 120s 后误判 API 未就绪"的次因（v2rayn 开/关导致
+    启动行为不一致的根因之一）。
     """
     try:
         parsed = urllib.parse.urlparse(url)
@@ -69,6 +79,8 @@ def trust_env_for(url: str) -> bool:
     if h in ("localhost", ""):
         return False
     if h.startswith("127."):
+        return False
+    if h in ("0.0.0.0", "::"):
         return False
     if h == "::1":
         return False

@@ -641,6 +641,11 @@ class Rc004DeadProxyTests(TestBase):
         self.assertFalse(trust_env_for("http://127.0.0.1:9091/metrics"))
         self.assertFalse(trust_env_for("http://localhost:9091/metrics"))
         self.assertFalse(trust_env_for("http://[::1]:9091/metrics"))
+        # REL-1.1.4-001：web.host=0.0.0.0（bind-any）时 wait_for_ready 轮询
+        # http://0.0.0.0:port ——Windows 上 0.0.0.0 客户端连接等价环回，
+        # 必须与 127.* 同等对待（死代理残留会把自探测吞掉 120s 后误判未就绪）
+        self.assertFalse(trust_env_for("http://0.0.0.0:8765/api/status"))
+        self.assertFalse(trust_env_for("http://[::]:8765/api/status"))
         # RFC1918 私有网段：不走代理
         self.assertFalse(trust_env_for("http://10.0.0.5:9091/metrics"))
         self.assertFalse(trust_env_for("http://172.16.1.2:9091/metrics"))

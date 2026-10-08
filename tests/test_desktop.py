@@ -380,6 +380,34 @@ class DesktopTests(unittest.TestCase):
         leftovers = [t for t in threading.enumerate() if t.name == "llamamonitor-uvicorn" and t.is_alive()]
         self.assertEqual(leftovers, [])
 
+    def test_main_with_host_0000_reaches_api_via_loopback(self):
+        """REL-1.1.4-001 端到端（用户实机故障）：web.host=0.0.0.0（bind-any，
+        让手机走局域网 IP 访问）时 main() 必须成功（rc==0）——内部就绪探测经环回
+        拿到 200。修复前 wait_for_ready 直连 http://0.0.0.0:port，Winsock
+        connect 失败（10049），120s 后误判"API 未就绪"退出（rc==1）。"""
+        metrics_url = self._start_fake_metrics()
+        port = _free_port()
+        db_file = self.tmp / "bindany.db"
+
+        def on_start():
+            # 通过托盘 Exit 退出（前台路径，窗口已创建）
+            self.tray_instances[0].commands["exit"]()
+
+        self._patch_fakes(_make_fake_webview(self.webview_calls, on_start=on_start))
+        cfg = make_config(url=metrics_url)
+        cfg.web.host = "0.0.0.0"
+        cfg.web.port = port
+        loaded = make_loaded(cfg, self.tmp)
+        argv = ["desktop.py", "--db", str(db_file)]
+        with mock.patch.dict(os.environ, {"LOCALAPPDATA": str(self.tmp / "lad")}), \
+             mock.patch.object(sys, "argv", argv):
+            rc = desktop.main(loaded=loaded)
+        # rc==0 意味着 wait_for_ready(loopback_url) 拿到 200（API 就绪）
+        self.assertEqual(rc, 0)
+        # 窗口仍用原始 base_url（浏览器/WinINET 对 0.0.0.0 客户端地址按环回处理）
+        _, url, _ = self.webview_calls["create"]
+        self.assertEqual(url, f"http://0.0.0.0:{port}/")
+
     def test_main_background_mode_creates_hidden_window(self):
         """--background：窗口以 hidden=True 创建（不闪一下），其余流程相同。"""
         metrics_url = self._start_fake_metrics()
@@ -417,6 +445,65 @@ class DesktopTests(unittest.TestCase):
             rc = self._run_main(port, metrics_url, db_file)
         self.assertEqual(rc, 0)
         self.assertEqual(browser_urls, [f"http://127.0.0.1:{port}/"])
+
+    def test_probe_host_maps_bind_any_to_loopback(self):
+        """REL-1.1.4-001：bind-any host（0.0.0.0/::）探测改走环回，其余原样。"""
+        self.assertEqual(desktop._probe_host("0.0.0.0"), "127.0.0.1")
+        self.assertEqual(desktop._probe_host("::"), "127.0.0.1")
+        self.assertEqual(desktop._probe_host("127.0.0.1"), "127.0.0.1")
+        self.assertEqual(desktop._probe_host("192.168.1.10"), "192.168.1.10")
+
+    def test_port_in_use_detects_0000_listener_via_loopback(self):
+        """REL-1.1.4-001：监听 0.0.0.0:port 时，_port_in_use('0.0.0.0', port) 必须
+        为 True（Winsock 直连 0.0.0.0 是 WSAEADDRNOTAVAIL，只能经环回探测）。"""
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind(("127.0.0.1", 0))
+        s.listen(8)
+        s.settimeout(0.2)
+        port = s.getsockname()[1]
+        stopped = threading.Event()
+
+        def _accept_loop():
+            # 持续 accept：Windows 上 backlog 内未 accept 的连接不完成握手，
+            # 裸 connect_ex 会失败（与真实监听服务行为一致需要 accept 侧）
+            while not stopped.is_set():
+                try:
+                    conn, _ = s.accept()
+                except socket.timeout:
+                    continue
+                except OSError:
+                    break
+                conn.close()
+
+        t = threading.Thread(target=_accept_loop, daemon=True)
+        t.start()
+        try:
+            # 直连 0.0.0.0 在 Winsock 上永远失败（10049）——探测必须落到 127.0.0.1
+            self.assertTrue(desktop._port_in_use("0.0.0.0", port))
+            self.assertTrue(desktop._port_in_use("127.0.0.1", port))
+        finally:
+            stopped.set()
+            s.close()
+        self.assertFalse(desktop._port_in_use("0.0.0.0", port))
+
+    def test_wait_for_ready_on_0000_listener_via_loopback(self):
+        """REL-1.1.4-001 端到端：uvicorn 监听 0.0.0.0 时，内部就绪探测
+        必须走环回（http://127.0.0.1:port）才能拿到 200——直连 0.0.0.0
+        在 Winsock 上 connect 失败（10049）。"""
+        db, collector, app = self._make_app(name="r0.db")
+        port = _free_port()
+        server, thread = desktop.run_uvicorn_in_thread(app, "0.0.0.0", port)
+        self._servers.append((server, thread))
+        try:
+            self.assertTrue(
+                desktop.wait_for_ready(f"http://127.0.0.1:{port}", timeout=15, poll=0.1),
+                "uvicorn 监听 0.0.0.0 时经环回应就绪",
+            )
+            self.assertTrue(desktop._port_in_use("0.0.0.0", port))
+        finally:
+            server.should_exit = True
+            thread.join(timeout=5)
 
     def test_main_port_occupied_by_existing_llamamonitor(self):
         # 已有 LlamaMonitor 在跑：不接管，浏览器打开，对话框确认后退出，已有进程不受影响

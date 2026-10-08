@@ -89,18 +89,26 @@ WINDOW_HEIGHT = 900
 WINDOW_MIN_SIZE = (1000, 650)  # Phase 15 spec §53：最小合理尺寸（<1100px 触发 compact 导航）
 
 
+def _probe_host(host: str) -> str:
+    """端口探测用的目标 host。REL-1.1.4-001：bind-any 地址（0.0.0.0/::）作为
+    客户端 connect 目标在 Winsock 上无效（WSAEADDRNOTAVAIL）——监听
+    0.0.0.0:port 的服务在 127.0.0.1:port 必然可达，故探测改用环回。"""
+    return "127.0.0.1" if host in ("0.0.0.0", "::") else host
+
+
 def _port_in_use(host: str, port: int) -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.settimeout(0.3)
-        return s.connect_ex((host, port)) == 0
+        return s.connect_ex((_probe_host(host), port)) == 0
 
 
 def _port_is_llamamonitor(host: str, port: int) -> bool:
     """端口上的服务是否响应 /api/status（判断为已运行的 LlamaMonitor）。"""
+    ph = _probe_host(host)
     try:
         # RC-004：同 wait_for_ready——本机端口探测不走系统代理
-        r = httpx.get(f"http://{host}:{port}/api/status", timeout=2.0,
-                      trust_env=trust_env_for(f"http://{host}:{port}"))
+        r = httpx.get(f"http://{ph}:{port}/api/status", timeout=2.0,
+                      trust_env=trust_env_for(f"http://{ph}:{port}"))
         return r.status_code == 200
     except Exception:
         return False
@@ -387,6 +395,22 @@ def main(argv: list[str] | None = None, loaded: LoadedConfig | None = None) -> i
 
     host, port = cfg.web.host, cfg.web.port
     base_url = f"http://{host}:{port}"
+    # REL-1.1.4-001（1.1.4 发布后实机反馈）：web.host=0.0.0.0（bind-any，让
+    # 手机走局域网 IP 访问）时，本进程内部的 HTTP 客户端（wait_for_ready /
+    # 托盘轮询 /api/status）若直连 0.0.0.0，Windows Winsock 以 WSAEADDRNOTAVAIL
+    # (10049) 拒绝 connect（0.0.0.0 只是 bind 地址；WinINET/curl 会当作环回，
+    # 但 Python 原生 socket 不会）→ 120s 后误判"API 未就绪"退出。v2rayn 等
+    # 系统代理运行时恰好掩盖：trust_env 走了存活代理、由代理代为连环回成功；
+    # 代理退出后注册表残留死代理，问题才显形。内部客户端统一改用环回地址
+    # （服务监听 0.0.0.0 时 127.0.0.1 必然可达）；base_url 仍保留原始 host
+    # 用于浏览器/pywebview（WinINET 对 0.0.0.0 客户端地址按环回处理，可用）。
+    loopback_host = host
+    if host in ("0.0.0.0", "::"):
+        loopback_host = "127.0.0.1"
+    loopback_url = f"http://{loopback_host}:{port}"
+    if loopback_url != base_url:
+        log.info("[LlamaMonitor] web.host=%s（bind-any）：内部 API 调用使用环回 %s。",
+                 host, loopback_url)
     log.info("[LlamaMonitor] 启动: background=%s frozen=%s metrics=%s interval=%.1fs",
              background, is_frozen(), cfg.metrics_url, cfg.collector.poll_interval_seconds)
 
@@ -499,7 +523,7 @@ def main(argv: list[str] | None = None, loaded: LoadedConfig | None = None) -> i
     # httpx.get 新建 TCP 连接（TIME_WAIT 累积 + 每轮握手开销）。httpx.Client 线程安全，
     # 托盘刷新线程复用同一个 client；shutdown 时关闭。
     # RC-004：本机 API 不走系统代理（死代理会让托盘 30s 刷新永远失败）
-    tray_http = httpx.Client(timeout=2.0, trust_env=trust_env_for(base_url))
+    tray_http = httpx.Client(timeout=2.0, trust_env=trust_env_for(loopback_url))
 
     def _tray_status() -> dict:
         # 复用 server 每轮采集刷新的 app_state.runtime（托盘不额外高频查库）
@@ -519,7 +543,7 @@ def main(argv: list[str] | None = None, loaded: LoadedConfig | None = None) -> i
         # Phase 13：有可用更新时托盘显示 "Update Available: X"（本地 loopback API，开销可忽略）
         update_version = None
         try:
-            upd = tray_http.get(base_url + "/api/update/status").json()
+            upd = tray_http.get(loopback_url + "/api/update/status").json()
             if upd.get("state") == "UPDATE_AVAILABLE":
                 update_version = upd.get("available_version")
         except Exception:
@@ -661,7 +685,7 @@ def main(argv: list[str] | None = None, loaded: LoadedConfig | None = None) -> i
                  time.monotonic() - t0)
 
     try:
-        if not wait_for_ready(base_url):
+        if not wait_for_ready(loopback_url):
             log.error("[LlamaMonitor] API 未能在限时内就绪，退出。")
             _fatal_dialog("LlamaMonitor 未能启动：API 未就绪，详见 monitor.log。")
             return 1
@@ -688,8 +712,8 @@ def main(argv: list[str] | None = None, loaded: LoadedConfig | None = None) -> i
         # UI 的 Data Quality 区域与 Settings->Data 同时展示健康状态。
         try:
             import httpx as _httpx
-            health = _httpx.get(base_url + "/api/health", timeout=5.0,
-                                trust_env=trust_env_for(base_url)).json()
+            health = _httpx.get(loopback_url + "/api/health", timeout=5.0,
+                                trust_env=trust_env_for(loopback_url)).json()
             if health.get("database") == "corrupt":
                 log.error("[LlamaMonitor] 数据库完整性检查失败（protective mode，只读）。")
                 _message_box(
