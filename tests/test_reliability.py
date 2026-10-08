@@ -641,9 +641,10 @@ class Rc004DeadProxyTests(TestBase):
         self.assertFalse(trust_env_for("http://127.0.0.1:9091/metrics"))
         self.assertFalse(trust_env_for("http://localhost:9091/metrics"))
         self.assertFalse(trust_env_for("http://[::1]:9091/metrics"))
-        # REL-1.1.4-001：web.host=0.0.0.0（bind-any）时 wait_for_ready 轮询
-        # http://0.0.0.0:port ——Windows 上 0.0.0.0 客户端连接等价环回，
-        # 必须与 127.* 同等对待（死代理残留会把自探测吞掉 120s 后误判未就绪）
+        # REL-1.1.4-001：web.host=0.0.0.0（bind-any）不是有效的客户端 connect
+        # 目标（Winsock 10049 / Edge ERR_ADDRESS_INVALID）——主修复在 desktop.py
+        # （打开/访问地址统一走环回）；此处断言 bind-any 地址也归入"本地不走
+        # 代理"，消除死代理残留吞自探测的次因
         self.assertFalse(trust_env_for("http://0.0.0.0:8765/api/status"))
         self.assertFalse(trust_env_for("http://[::]:8765/api/status"))
         # RFC1918 私有网段：不走代理

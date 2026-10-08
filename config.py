@@ -57,14 +57,14 @@ def trust_env_for(url: str) -> bool:
     其余地址保留 trust_env，代理仍然有效（如 llama-server 部署在远端且
     需要代理出网）。
 
-    0.0.0.0 说明（REL-1.1.4-001，1.1.4 发布后实机反馈）：web.host=0.0.0.0
-    （bind-any，让手机走局域网 IP 访问）时，bind-any 地址不是有效的客户端
-    connect 目标（Winsock 直连 0.0.0.0 报 WSAEADDRNOTAVAIL/10049；实测
-    WinINET/curl 会当作环回但 Python 原生 socket 不会）。主修复在 desktop.py
-    ——内部 HTTP 客户端改用环回地址；本函数同时把 0.0.0.0/[::] 归入"本地
-    不走代理"，消除"系统代理存活时请求恰好被代理救活、代理退出后残留死
-    代理把自探测吞掉 120s 后误判 API 未就绪"的次因（v2rayn 开/关导致
-    启动行为不一致的根因之一）。
+    0.0.0.0 说明（REL-1.1.4-001，1.1.4/1.1.5 发布后实机两轮反馈）：
+    web.host=0.0.0.0（bind-any）时，bind-any 地址不是有效的客户端 connect
+    目标——原生 socket 报 WSAEADDRNOTAVAIL/10049，Edge/WebView2 报
+    ERR_ADDRESS_INVALID（curl 亦失败）。主修复在 desktop.py：所有
+    "打开/访问"地址统一改用环回（窗口 + 自探测 + 端口探测）。本函数把
+    0.0.0.0/[::] 归入"本地不走代理"，消除"系统代理存活时请求恰好被代理
+    救活、代理退出后残留死代理把自探测吞掉 120s 后误判 API 未就绪"的
+    次因（v2rayn 开/关导致启动行为不一致的根因之一）。
     """
     try:
         parsed = urllib.parse.urlparse(url)

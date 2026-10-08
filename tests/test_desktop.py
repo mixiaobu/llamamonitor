@@ -381,15 +381,27 @@ class DesktopTests(unittest.TestCase):
         self.assertEqual(leftovers, [])
 
     def test_main_with_host_0000_reaches_api_via_loopback(self):
-        """REL-1.1.4-001 端到端（用户实机故障）：web.host=0.0.0.0（bind-any，
-        让手机走局域网 IP 访问）时 main() 必须成功（rc==0）——内部就绪探测经环回
-        拿到 200。修复前 wait_for_ready 直连 http://0.0.0.0:port，Winsock
-        connect 失败（10049），120s 后误判"API 未就绪"退出（rc==1）。"""
+        """REL-1.1.4-001 端到端（1.1.6 跟进，用户实机两轮故障）：web.host=0.0.0.0
+        （bind-any，让手机走局域网 IP 访问）时：
+        - 就绪探测经环回拿到 200 → main() rc==0（1.1.4 前 Winsock connect
+          0.0.0.0 失败 10049，120s 后误判"API 未就绪"退出 rc==1）；
+        - 桌面窗口加载 127.0.0.1（1.1.5 只修了自探测；窗口仍加载
+          http://0.0.0.0:port 时 Edge/WebView2 报 ERR_ADDRESS_INVALID 白屏）。"""
         metrics_url = self._start_fake_metrics()
         port = _free_port()
         db_file = self.tmp / "bindany.db"
 
+        # 服务存活期间的环回可达性记录（on_start 内不 assert：抛异常会破坏
+        # 假 webview 流程导致 main 挂起）
+        reach = {}
+
         def on_start():
+            # 验证窗口实际加载的地址（环回）可达
+            try:
+                r = httpx.get(f"http://127.0.0.1:{port}/api/status", timeout=2.0, trust_env=False)
+                reach["status"] = r.status_code
+            except Exception as e:
+                reach["status"] = f"ERR {type(e).__name__}"
             # 通过托盘 Exit 退出（前台路径，窗口已创建）
             self.tray_instances[0].commands["exit"]()
 
@@ -399,14 +411,27 @@ class DesktopTests(unittest.TestCase):
         cfg.web.port = port
         loaded = make_loaded(cfg, self.tmp)
         argv = ["desktop.py", "--db", str(db_file)]
+        bind_calls = []
+        _orig_run = desktop.run_uvicorn_in_thread
+
+        def _capture_bind(app_, host, port_):
+            bind_calls.append((host, port_))
+            return _orig_run(app_, host, port_)
+
         with mock.patch.dict(os.environ, {"LOCALAPPDATA": str(self.tmp / "lad")}), \
-             mock.patch.object(sys, "argv", argv):
+             mock.patch.object(sys, "argv", argv), \
+             mock.patch.object(desktop, "run_uvicorn_in_thread", side_effect=_capture_bind):
             rc = desktop.main(loaded=loaded)
-        # rc==0 意味着 wait_for_ready(loopback_url) 拿到 200（API 就绪）
+        # rc==0 意味着 wait_for_ready 拿到 200（API 就绪）
         self.assertEqual(rc, 0)
-        # 窗口仍用原始 base_url（浏览器/WinINET 对 0.0.0.0 客户端地址按环回处理）
+        # uvicorn 仍绑定原始 0.0.0.0（bind-any）——手机经局域网 IP 可达；
+        # 只改"打开/访问"地址，不动监听绑定（防回归：绑定改环回则手机失联）
+        self.assertEqual(bind_calls, [("0.0.0.0", port)])
+        # 窗口加载环回地址（Edge 对 0.0.0.0 连接目标报 ERR_ADDRESS_INVALID）
         _, url, _ = self.webview_calls["create"]
-        self.assertEqual(url, f"http://0.0.0.0:{port}/")
+        self.assertEqual(url, f"http://127.0.0.1:{port}/")
+        # 服务存活期间环回可达（窗口实际加载的地址）
+        self.assertEqual(reach.get("status"), 200)
 
     def test_main_background_mode_creates_hidden_window(self):
         """--background：窗口以 hidden=True 创建（不闪一下），其余流程相同。"""
