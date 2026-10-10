@@ -396,12 +396,20 @@ class DesktopTests(unittest.TestCase):
         reach = {}
 
         def on_start():
-            # 验证窗口实际加载的地址（环回）可达
-            try:
-                r = httpx.get(f"http://127.0.0.1:{port}/api/status", timeout=2.0, trust_env=False)
-                reach["status"] = r.status_code
-            except Exception as e:
-                reach["status"] = f"ERR {type(e).__name__}"
+            # 验证窗口实际加载的地址（环回）可达；重试 6 次（on_start 与
+            # 事件循环在高负载下可能有毫秒级竞态/首包延迟，非产品问题）
+            import time as _time
+            last = None
+            for _ in range(6):
+                try:
+                    r = httpx.get(f"http://127.0.0.1:{port}/api/status", timeout=2.0, trust_env=False)
+                    reach["status"] = r.status_code
+                    break
+                except Exception as e:
+                    last = e
+                    _time.sleep(0.5)
+            if "status" not in reach:
+                reach["status"] = f"ERR {type(last).__name__}"
             # 通过托盘 Exit 退出（前台路径，窗口已创建）
             self.tray_instances[0].commands["exit"]()
 

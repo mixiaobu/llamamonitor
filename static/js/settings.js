@@ -144,12 +144,12 @@
     $("setServerUrl").value = (c.llama_server && c.llama_server.url) || "";
     $("setMetricsPath").value = (c.llama_server && c.llama_server.metrics_path) || "";
     $("setTimeoutSec").value = (c.llama_server && c.llama_server.timeout_seconds) || 3;
-    $("setPollInterval").value = (c.collector && c.collector.poll_interval_seconds) || 5;
+    $("setPollInterval").value = (c.collector && c.collector.poll_interval_seconds) || 2;
     $("setLiveRetention").value = (c.collector && c.collector.live_retention_hours) || 48;
     $("setGpuEnabled").checked = !!(c.gpu && c.gpu.enabled);
-    $("setGpuPoll").value = (c.gpu && c.gpu.poll_interval_seconds) || 10;
+    $("setGpuPoll").value = (c.gpu && c.gpu.poll_interval_seconds) || 2;
     $("setGpuRetention").value = (c.gpu && c.gpu.history_retention_hours) || 48;
-    $("setRefreshInterval").value = (c.ui && c.ui.refresh_interval_seconds) || 5;
+    $("setRefreshInterval").value = (c.ui && c.ui.refresh_interval_seconds) || 2;
     $("setDefaultRange").value = defaultRangeToValue(c.ui && c.ui.daily_default_days);
     $("setTheme").value = (c.ui && c.ui.theme) || "system";
     // 访问范围（web.host 经 scope 映射）
@@ -171,8 +171,8 @@
     $("setUpdateInterval").value = (c.updates && c.updates.check_interval_hours) || 24;
     $("setUpdateAutoDownload").checked = !!(c.updates && c.updates.auto_download);
     $("setSysEnabled").checked = !!(c.system && c.system.enabled);
-    $("setSysPoll").value = (c.system && c.system.poll_interval_seconds) || 5;
-    $("setSysHistory").value = (c.system && c.system.history_interval_seconds) || 5;
+    $("setSysPoll").value = (c.system && c.system.poll_interval_seconds) || 2;
+    $("setSysHistory").value = (c.system && c.system.history_interval_seconds) || 2;
     $("setSysRetention").value = (c.system && c.system.history_retention_hours) || 48;
     $("setSysAdvanced").checked = !(c.system && c.system.advanced_sensors === false);
     $("setSysAdvPoll").value = (c.system && c.system.advanced_sensor_interval_seconds) || 2;

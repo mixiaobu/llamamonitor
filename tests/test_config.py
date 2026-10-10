@@ -60,13 +60,13 @@ class ConfigFileTests(unittest.TestCase):
         self.assertEqual(cfg.llama_server.url, "http://127.0.0.1:9091")
         self.assertEqual(cfg.llama_server.metrics_path, "/metrics")
         self.assertEqual(cfg.llama_server.timeout_seconds, 3.0)
-        self.assertEqual(cfg.collector.poll_interval_seconds, 5.0)
+        self.assertEqual(cfg.collector.poll_interval_seconds, 2.0)
         self.assertEqual(cfg.collector.live_retention_hours, 48.0)
         self.assertEqual(cfg.web.host, "127.0.0.1")
         self.assertEqual(cfg.web.port, 8765)
         self.assertEqual(cfg.database.path, "")
         self.assertTrue(cfg.database.wal)
-        self.assertEqual(cfg.ui.refresh_interval_seconds, 5.0)
+        self.assertEqual(cfg.ui.refresh_interval_seconds, 2.0)
         self.assertEqual(cfg.ui.daily_default_days, 7)
         self.assertEqual(cfg.ui.theme, "system")  # 1.0 起默认跟随系统
         self.assertEqual(cfg.logging.level, "INFO")
@@ -100,7 +100,7 @@ class ConfigFileTests(unittest.TestCase):
         self.assertEqual(cfg.llama_server.timeout_seconds, 3.0)
         # 整个缺失的节 -> 默认
         self.assertEqual(cfg.web.port, 8765)
-        self.assertEqual(cfg.collector.poll_interval_seconds, 5.0)
+        self.assertEqual(cfg.collector.poll_interval_seconds, 2.0)
 
     # 5) 旧配置兼容新版本新增字段
     def test_old_config_compatible_with_new_fields(self):
@@ -116,7 +116,7 @@ class ConfigFileTests(unittest.TestCase):
     def test_invalid_number_falls_back(self):
         self.cfg_file.write_text(json.dumps({"collector": {"poll_interval_seconds": -20}}), encoding="utf-8")
         loaded = cfgmod.load_config(self.cfg_file)
-        self.assertEqual(loaded.config.collector.poll_interval_seconds, 5.0)
+        self.assertEqual(loaded.config.collector.poll_interval_seconds, 2.0)
         self.assertTrue(loaded.has_errors)
         self.assertTrue(any("poll_interval_seconds" in e for e in loaded.errors))
         # 其他合法字段仍正常
@@ -172,10 +172,10 @@ class ConfigFileTests(unittest.TestCase):
         cfg = loaded.config.system
         self.assertTrue(cfg.enabled)
         self.assertEqual(cfg.poll_interval_seconds, 2.0)
-        self.assertEqual(cfg.history_interval_seconds, 5.0)
+        self.assertEqual(cfg.history_interval_seconds, 2.0)
         self.assertEqual(cfg.history_retention_hours, 48.0)
         self.assertTrue(cfg.advanced_sensors)
-        self.assertEqual(cfg.advanced_sensor_interval_seconds, 5.0)
+        self.assertEqual(cfg.advanced_sensor_interval_seconds, 2.0)
 
     def test_system_section_user_values(self):
         self.cfg_file.write_text(json.dumps({
@@ -449,7 +449,7 @@ class ApiConfigTests(unittest.TestCase):
             reloaded = cfgmod.load_config(loaded.path)
             self.assertEqual(reloaded.config.system.poll_interval_seconds, 7.0)
             self.assertFalse(reloaded.config.system.advanced_sensors)
-            self.assertEqual(reloaded.config.system.history_interval_seconds, 5.0)
+            self.assertEqual(reloaded.config.system.history_interval_seconds, 2.0)
         finally:
             client.__exit__(None, None, None)
 

@@ -7,6 +7,36 @@
 > 互相视为"不同系列"：安装器降级保护按数值比较（1.0.0 > 0.13.x），从 1.0.0 安装
 > 0.13.x 会被识别为降级并拒绝（实测行为，非缺陷）。
 
+## [1.2.0] - 2026-10-08
+
+**全链路 2 秒实时化：所有采集与页面刷新默认统一为 2s**。
+
+### 变更
+- 后端采集默认间隔（`config.py` + `DEFAULT_CONFIG`）：
+  - llama metrics 轮询（`collector.poll_interval_seconds`）：5s → **2s**
+  - GPU 轮询（`gpu.poll_interval_seconds`）：5s → **2s**
+  - system 实时采集：保持 **2s**（1.1 起即 2s）
+  - system 落库（`history_interval_seconds`）：5s → **2s**
+  - 高级传感器 Bridge 输出周期（`advanced_sensor_interval_seconds`）：5s → **2s**
+- 前端刷新（`ui.refresh_interval_seconds` 默认 5s → **2s**，且所有页面数据
+  轮询任务统一 2s 节奏）：
+  - 1.2 前为分层节奏：状态类 5s、图表 10-15s、用量/历史 20-60s、
+    库存/传感器 60-300s；1.2 起**所有页面数据更新一律 2s**（含 summary /
+    dataQuality / history / throughput / slots / MTP / daily / GPU live /
+    GPU daily / system status / system live / 网络接口 / 传感器 / 硬件库存）。
+  - 保留不变：更新检查横幅 30s（软件更新检查，非数据采集）、
+    更新下载进度 1s、in-flight 去重与页面可见性策略（hidden 页跳过）。
+- 前端 settings/app 的旧默认 fallback（`|| 5` / `|| 10`）同步改为 `|| 2`。
+
+### 影响面
+- 采样密度约 2.5 倍：48h 保留窗口下每表 ~3.5 万行 → ~8.6 万行，DB 体积与
+  查询负载相应增加（2s 长稳 soak 验证无内存/句柄泄漏、无延迟恶化）。
+- **已保存过配置的实例**：config.json 里保存的旧间隔值优先于新默认值——
+  在「设置」里把对应间隔改为 2 并保存（或 Reset to Defaults）即可生效；
+  全新安装默认即 2s。
+- 各自适应阈值（缺口判定、stale 横幅、能量 delta、GPU unknown gap）随间隔
+  配置自动联动，无需手改。
+
 ## [1.1.6] - 2026-10-08
 
 **Hotfix 跟进（REL-1.1.4-001）：`web.host=0.0.0.0` 时桌面窗口加载

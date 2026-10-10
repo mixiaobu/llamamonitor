@@ -14,8 +14,10 @@
   var F = LM.fmt, api = LM.api, ui = LM.ui, charts = LM.charts;
   var $ = function (id) { return document.getElementById(id); };
 
+  // 初始值 = 代码默认（2s）；/api/config 到达后以服务端配置为准（需刷新页面
+  // 才重新计算 R——轮询任务注册在 config 返回前完成，1.2 起默认 2s）
   var cfgUi = {
-    refreshIntervalSeconds: 5,
+    refreshIntervalSeconds: 2,
     dailyDefaultDays: 7,   // 与服务端默认一致（默认 7 天）——
     theme: "system",
   };
@@ -2849,7 +2851,7 @@
       // 直接用内置默认值——手机 DevTools 网络面板不再出现 403。
       var c = LM.api.isLocal() ? await api.get("/api/config") : null;
       if (c && c.ui) {
-        cfgUi.refreshIntervalSeconds = c.ui.refresh_interval_seconds || 5;
+        cfgUi.refreshIntervalSeconds = c.ui.refresh_interval_seconds || 2;
         cfgUi.dailyDefaultDays = c.ui.daily_default_days || 7;
         cfgUi.theme = c.ui.theme || "system";
         // 推理性能页：采集间隔（缺口阈值 = poll*3，新鲜度阈值 = 3*interval）
@@ -3043,8 +3045,8 @@
       LM.settings.loadAbout();
     });
 
-    // 轮询任务注册（页面作用域——
-    // 状态类 ~5s（config 间隔）；图表 10-15s；用量/历史 30-60s 且仅在对应页前台时运行）
+    // 轮询任务注册（页面作用域——1.2 起统一 2s 节奏：
+    // 所有页面数据更新与后端采集（2s）对齐；可见性策略保留：hidden 页跳过）
     var R = Math.max(1, cfgUi.refreshIntervalSeconds) * 1000;
     // 状态类（全局：状态条/离线横幅依赖，任何页可见时都跑）
     LM.poll.register("status", { intervalMs: R, visibleOnly: true, run: refreshStatus });
@@ -3056,36 +3058,36 @@
       intervalMs: R, visibleIntervalMs: R, visibleOnly: true,
       run: function () { if (LM.nav.currentPage() === "overview") return refreshOverview(); },
     });
-    // 摘要/质量（Overview + Usage/History 共用，30s 基线、前台 10s）
-    LM.poll.register("summary", { intervalMs: 30000, visibleIntervalMs: 10000, visibleOnly: false, run: refreshSummary });
-    LM.poll.register("dataQuality", { intervalMs: 30000, visibleIntervalMs: 10000, visibleOnly: false, run: refreshDataQuality });
+    // 摘要/质量（Overview + Usage/History 共用，1.2 起 2s 统一节奏）
+    LM.poll.register("summary", { intervalMs: 2000, visibleIntervalMs: 2000, visibleOnly: false, run: refreshSummary });
+    LM.poll.register("dataQuality", { intervalMs: 2000, visibleIntervalMs: 2000, visibleOnly: false, run: refreshDataQuality });
     // Round-5 History 页：页面作用域轮询（hidden 页不跑，§296-304）。
     // 前台 20s / 后台 60s；soft 刷新（hard=false，不清屏，慢 API 下不闪烁）。
     // 进页 + 切 Range/Filter 时立即硬刷新（applyHistoryRange(true)）。
     LM.poll.register("history", {
-      intervalMs: 60000, visibleIntervalMs: 20000, visibleOnly: true,
+      intervalMs: 2000, visibleIntervalMs: 2000, visibleOnly: true,
       run: function () { if (LM.nav.currentPage() === "history") return refreshHistoryNow(false); },
     });
     // 页面专属（hidden page 不轮询，避免跨页重复请求）
     // Round 5 推理性能页：吞吐率图（前台 ~5s，后台 30s；§215）
     LM.poll.register("throughput", {
-      intervalMs: 30000, visibleIntervalMs: R, visibleOnly: true,
+      intervalMs: 2000, visibleIntervalMs: R, visibleOnly: true,
       run: function () { if (LM.nav.currentPage() === "performance") return refreshThroughput(); },
     });
     // Slot 监控（§217 前台 2~5s；拉取 /api/llama/slots 一次，驱动顶部活跃 Slot +
     // 运行时「活跃/总 Slot」+「当前序列长度」+ 下方 Slot 表/卡，避免多处重复请求）
     LM.poll.register("perfSlots", {
-      intervalMs: 30000, visibleIntervalMs: R, visibleOnly: true,
+      intervalMs: 2000, visibleIntervalMs: R, visibleOnly: true,
       run: function () { if (LM.nav.currentPage() === "performance") return refreshSlots(); },
     });
     // 模型与运行环境（§216 静态：进页刷新 + 低频轮询兜底 server 重启/换模型）
     LM.poll.register("perfModel", {
-      intervalMs: 120000, visibleIntervalMs: 60000, visibleOnly: true,
+      intervalMs: 2000, visibleIntervalMs: 2000, visibleOnly: true,
       run: function () { if (LM.nav.currentPage() === "performance" && LM.system) return LM.system.refreshLlamaInfo(); },
     });
     // MTP 区间（§218-§220：today 快更，历史 60s；仅性能页前台）
     LM.poll.register("mtpRange", {
-      intervalMs: 60000, visibleIntervalMs: 60000, visibleOnly: true,
+      intervalMs: 2000, visibleIntervalMs: 2000, visibleOnly: true,
       run: function () {
         if (LM.nav.currentPage() !== "performance") return;
         // today 范围：MTP 数据随推理累积变化快，前台 30s
@@ -3095,10 +3097,10 @@
     });
     // Overview 摘要的「Draft Token 接受率」三态（/api/mtp 今天；任意页后台低频）
     LM.poll.register("mtp", {
-      intervalMs: 60000, visibleIntervalMs: 30000, visibleOnly: false, run: refreshMtp,
+      intervalMs: 2000, visibleIntervalMs: 2000, visibleOnly: false, run: refreshMtp,
     });
     LM.poll.register("daily", {
-      intervalMs: 60000, visibleIntervalMs: 30000, visibleOnly: true,
+      intervalMs: 2000, visibleIntervalMs: 2000, visibleOnly: true,
       run: function () {
         var p = LM.nav.currentPage();
         // Round 5：performance 页的吞吐/MTP 改由 /api/throughput + /api/mtp/range
@@ -3114,11 +3116,11 @@
       },
     });
     LM.poll.register("gpuLive", {
-      intervalMs: 60000, visibleIntervalMs: 15000, visibleOnly: true,
+      intervalMs: 2000, visibleIntervalMs: 2000, visibleOnly: true,
       run: function () { if (LM.nav.currentPage() === "gpu") return refreshGpuLive(); },
     });
     LM.poll.register("gpuDaily", {
-      intervalMs: 120000, visibleIntervalMs: 60000, visibleOnly: true,
+      intervalMs: 2000, visibleIntervalMs: 2000, visibleOnly: true,
       run: function () { if (LM.nav.currentPage() === "gpu") return refreshGpuDaily(); },
     });
     // 1.1 系统监控（页面作用域；四个域各自独立轮询、各自 catch）
@@ -3136,7 +3138,7 @@
       },
     });
     LM.poll.register("sysLive", {
-      intervalMs: 60000, visibleIntervalMs: 15000, visibleOnly: true,
+      intervalMs: 2000, visibleIntervalMs: 2000, visibleOnly: true,
       run: function () {
         if (!LM.system) return;
         if (LM.nav.currentPage() === "system") return LM.system.refreshLive();
@@ -3144,14 +3146,14 @@
     });
     // Round-3：网络接口列表（低频刷新，保持"自动=默认路由主接口"与选择器同步）
     LM.poll.register("sysNetIface", {
-      intervalMs: 120000, visibleIntervalMs: 60000, visibleOnly: true,
+      intervalMs: 2000, visibleIntervalMs: 2000, visibleOnly: true,
       run: function () {
         if (!LM.system) return;
         if (LM.nav.currentPage() === "system") return LM.system.refreshNetworkInterfaces();
       },
     });
     LM.poll.register("sysSensors", {
-      intervalMs: 120000, visibleIntervalMs: 60000, visibleOnly: true,
+      intervalMs: 2000, visibleIntervalMs: 2000, visibleOnly: true,
       run: function () {
         if (!LM.system) return;
         var p = LM.nav.currentPage();
@@ -3161,7 +3163,7 @@
       },
     });
     LM.poll.register("sysInventory", {
-      intervalMs: 300000, visibleIntervalMs: 120000, visibleOnly: true,
+      intervalMs: 2000, visibleIntervalMs: 2000, visibleOnly: true,
       run: function () {
         if (!LM.system) return;
         if (LM.nav.currentPage() === "system") return LM.system.refreshInventory(false);

@@ -1,5 +1,9 @@
 # LlamaMonitor 性能基线（Phase 14，1.1 增补）
 
+> **注（1.2）**：各章的"5s 轮询"均为该次**测量当时**的配置；1.2 起默认改为
+> **全链路 2s**（llama/GPU/system/传感器/落库/前端刷新），频率约为旧基线的 2.5 倍，
+> 性能基线需在 1.2 长稳（soak）中复测确认。
+>
 > 测量环境：Windows 11 桌面机，LlamaMonitor 0.13.1（安装版，后台模式，
 > 真实 llama-server 127.0.0.1:9091 在产生流量，5s 轮询）。
 > 测量方法：Get-Process 采样（RSS/handles/threads/CPU 累计），间隔 30s。

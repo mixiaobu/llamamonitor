@@ -110,14 +110,14 @@ class LlamaServerConfig:
 
 @dataclass
 class CollectorConfig:
-    poll_interval_seconds: float = 5.0        # 1 ~ 3600
+    poll_interval_seconds: float = 2.0        # 1 ~ 3600（1.2 起默认 2s 全链路实时）
     live_retention_hours: float = 48.0        # 1 ~ 8760
 
 
 @dataclass
 class GpuConfig:
     enabled: bool = True
-    poll_interval_seconds: float = 5.0        # 1 ~ 3600
+    poll_interval_seconds: float = 2.0        # 1 ~ 3600（1.2 起默认 2s 全链路实时）
     history_retention_hours: float = 48.0     # 1 ~ 8760（gpu_samples 保留时长）
     device_uuids: list = field(default_factory=list)  # 空 = 监控所有检测到的 NVIDIA GPU
 
@@ -128,10 +128,10 @@ class SystemConfig:
 
     enabled: bool = True
     poll_interval_seconds: float = 2.0        # 1 ~ 3600（实时采集间隔）
-    history_interval_seconds: float = 5.0     # 1 ~ 3600（system_samples 落库间隔）
+    history_interval_seconds: float = 2.0     # 1 ~ 3600（system_samples 落库间隔，1.2 起 2s）
     history_retention_hours: float = 48.0     # 1 ~ 8760（system_samples 保留时长）
     advanced_sensors: bool = True             # 启用 LibreHardwareMonitor 高级传感器
-    advanced_sensor_interval_seconds: float = 5.0  # 1 ~ 3600（Bridge 输出周期）
+    advanced_sensor_interval_seconds: float = 2.0  # 1 ~ 3600（Bridge 输出周期，1.2 起 2s）
 
 
 @dataclass
@@ -166,7 +166,7 @@ class UpdatesConfig:
 
 @dataclass
 class UIConfig:
-    refresh_interval_seconds: float = 5.0     # 1 ~ 3600
+    refresh_interval_seconds: float = 2.0     # 1 ~ 3600（1.2 起默认 2s，与采集节奏一致）
     daily_default_days: int = 7               # 1 ~ 3650（16D：默认 7 天）
     theme: str = "system"                     # dark / light / system（1.0 起默认跟随系统）
 
@@ -229,12 +229,12 @@ DEFAULT_CONFIG: dict = {
         "timeout_seconds": 3,
     },
     "collector": {
-        "poll_interval_seconds": 5,
+        "poll_interval_seconds": 2,
         "live_retention_hours": 48,
     },
     "gpu": {
         "enabled": True,
-        "poll_interval_seconds": 5,
+        "poll_interval_seconds": 2,
         "history_retention_hours": 48,
         "device_uuids": [],
     },
@@ -247,7 +247,7 @@ DEFAULT_CONFIG: dict = {
         "wal": True,
     },
     "ui": {
-        "refresh_interval_seconds": 5,
+        "refresh_interval_seconds": 2,
         "daily_default_days": 7,
         "theme": "system",
     },
@@ -269,10 +269,10 @@ DEFAULT_CONFIG: dict = {
     "system": {
         "enabled": True,
         "poll_interval_seconds": 2,
-        "history_interval_seconds": 5,
+        "history_interval_seconds": 2,
         "history_retention_hours": 48,
         "advanced_sensors": True,
-        "advanced_sensor_interval_seconds": 5,
+        "advanced_sensor_interval_seconds": 2,
     },
 }
 
@@ -445,7 +445,7 @@ def _build_app_config(merged: dict) -> tuple[AppConfig, list[str]]:
     collector = CollectorConfig(
         poll_interval_seconds=_check(
             "collector", "poll_interval_seconds", col.get("poll_interval_seconds"),
-            lambda v: _in_range(v, 1, 3600), float, 5.0,
+            lambda v: _in_range(v, 1, 3600), float, 2.0,
         ),
         live_retention_hours=_check(
             "collector", "live_retention_hours", col.get("live_retention_hours"),
@@ -456,7 +456,7 @@ def _build_app_config(merged: dict) -> tuple[AppConfig, list[str]]:
         enabled=_check("gpu", "enabled", gpu_sec.get("enabled"), lambda v: isinstance(v, bool), bool, True),
         poll_interval_seconds=_check(
             "gpu", "poll_interval_seconds", gpu_sec.get("poll_interval_seconds"),
-            lambda v: _in_range(v, 1, 3600), float, 5.0,
+            lambda v: _in_range(v, 1, 3600), float, 2.0,
         ),
         history_retention_hours=_check(
             "gpu", "history_retention_hours", gpu_sec.get("history_retention_hours"),
@@ -486,7 +486,7 @@ def _build_app_config(merged: dict) -> tuple[AppConfig, list[str]]:
     ui_config = UIConfig(
         refresh_interval_seconds=_check(
             "ui", "refresh_interval_seconds", ui.get("refresh_interval_seconds"),
-            lambda v: _in_range(v, 1, 3600), float, 5.0,
+            lambda v: _in_range(v, 1, 3600), float, 2.0,
         ),
         daily_default_days=_check(
             "ui", "daily_default_days", ui.get("daily_default_days"),
@@ -548,7 +548,7 @@ def _build_app_config(merged: dict) -> tuple[AppConfig, list[str]]:
         ),
         history_interval_seconds=_check(
             "system", "history_interval_seconds", sys_sec.get("history_interval_seconds"),
-            lambda v: _in_range(v, 1, 3600), float, 5.0,
+            lambda v: _in_range(v, 1, 3600), float, 2.0,
         ),
         history_retention_hours=_check(
             "system", "history_retention_hours", sys_sec.get("history_retention_hours"),
@@ -559,7 +559,7 @@ def _build_app_config(merged: dict) -> tuple[AppConfig, list[str]]:
         advanced_sensor_interval_seconds=_check(
             "system", "advanced_sensor_interval_seconds",
             sys_sec.get("advanced_sensor_interval_seconds"),
-            lambda v: _in_range(v, 1, 3600), float, 5.0,
+            lambda v: _in_range(v, 1, 3600), float, 2.0,
         ),
     )
     return (

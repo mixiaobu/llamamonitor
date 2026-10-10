@@ -7,7 +7,7 @@
  - 可见性策略：
  visibleOnly=false（默认）：窗口隐藏仍按间隔跑（30s/120s 类，
  与 语义一致：隐藏时有效频率约 30s）；
- visibleOnly=true：隐藏时跳过本轮（5s/15s/1s 类）；
+ visibleOnly=true：隐藏时跳过本轮（1.2 起数据任务统一 2s 节奏）；
  - 应用可见性 = document.visibilityState AND window.__appVisible
  （pywebview 窗口 hide 时 Python 侧 evaluate_js 置 false，UI-024）；
  - 回到前台：立即全量刷新一次。

@@ -8,7 +8,8 @@
 
 ## 1. 采样与时间
 
-- **轮询**：默认每 5s 抓取一次 `GET {llama_server}/metrics`（Prometheus 文本）。
+- **轮询**：默认每 2s 抓取一次 `GET {llama_server}/metrics`（Prometheus 文本）
+  （1.2 起全链路默认 2s；1.2 前默认 5s）。
 - **时间戳**：`now = clock.now()`（Unix 秒，本机墙钟）。生产用系统时钟；测试可注入
   `FakeClock`。所有 daily 归属、48h 清理、覆盖率窗口都以此 `now` 为唯一时间源
   （AUDIT-ASYNC-005：`/api/daily` 的 cutoff 与 collector 同源，不再错位）。
