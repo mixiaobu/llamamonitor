@@ -76,17 +76,10 @@
     parts.forEach(function (v) { if (v != null) sum = (sum == null ? 0 : sum) + v; });
     return sum;
   }
-  /* 组件功耗次值（§28/§113）："X 个组件可读取" + 缺失提示（部分数据注明总值不代表整机）。 */
+  /* 组件功耗次值（§28/§113）：仅「N 个组件可读取」（缺失明细不再展开）。 */
   function componentPowerSub(pw) {
     var n = (pw.components_present != null) ? pw.components_present : 0;
-    if (!n) return "";
-    var s = n + " 个组件可读取";
-    var miss = [];
-    if (pw.cpu_package_available === false) miss.push("CPU Package");
-    if (pw.gpu_available === false) miss.push("GPU");
-    if (miss.length && n < 2) s += " · " + miss.join("、") + " 不可读";
-    if (miss.length) s += "（总值非整机）";
-    return s;
+    return n ? n + " 个组件可读取" : "";
   }
 
   /* ================= 系统概览 + CPU/内存/磁盘/网络/功耗 + 概览主机状态 ================= */
@@ -140,19 +133,23 @@
         setText("sysPowerGpu", pw.gpu_total_w == null ? F.NA : F.formatPower(pw.gpu_total_w));
         // 整机输入功耗（§118-§121）：无外部测量源 -> "未配置"（非 --）+ 说明
         setText("sysWallPower", pw.wall_power_w == null ? "未配置" : F.formatPower(pw.wall_power_w));
-        setSub("sysWallPowerSub", pw.wall_power_w == null ? "需外部功率计 / UPS / 智能插座 / BMC" : "");
+        setSub("sysWallPowerSub", "");
 
         /* Round-6：概览「主机状态」6 项改由 /api/overview 统一驱动（renderOvSystem）——
            与今日用量/推理/GPU/完整性同源同节奏，避免 /api/system/status 与 /api/overview
            两处写同一组 ov* 元素造成互相覆写。系统页仍用 sys* 元素（上方已填）。 */
 
+        LM.poll.streakOk("system");
         /* --- 系统页状态徽章（§16-§17："采集正常"，仅表示采集器正常，非硬件健康） --- */
         ui.setStatusBadge($("systemPageState"), d.available ? "online" : "offline",
           d.available ? "采集正常" : "采集暂停");
       })
       .catch(function (e) {
+        // 1.2.1：连续 >=5 次失败才切「采集暂停」；之前保留上次数据与状态
         console.warn("system status failed:", e.message || e);
-        ui.setStatusBadge($("systemPageState"), "offline", "采集暂停");
+        if (LM.poll.streakFail("system")) {
+          ui.setStatusBadge($("systemPageState"), "offline", "采集暂停");
+        }
       });
   }
   function _uptime() {
@@ -288,6 +285,7 @@
   function refreshSensors() {
     return api.get("/api/system/sensors")
       .then(function (d) {
+        LM.poll.streakOk("sensors");
         var state = d.state || (d.available ? "available" : "unavailable");
         lastSensorState = state;
         var sensors = d.sensors || [];
@@ -315,13 +313,15 @@
         if (monList) _renderSettingsSensorList(monList, sensors, counts, state);
       })
       .catch(function (e) {
+        // 1.2.1：连续 >=5 次失败才提示；之前保留最后成功的数据
         console.warn("system sensors failed:", e.message || e);
+        if (!LM.poll.streakFail("sensors")) return;
         var monList = $("sysMonSensorList");
         if (monList) { monList.innerHTML = ""; var t = document.createElement("div"); t.className = "stat-hint";
-          t.textContent = "高级传感器暂不可用（刷新失败，将在下个周期重试）。"; monList.appendChild(t); }
+          t.textContent = "高级传感器暂不可用"; monList.appendChild(t); }
         var box = $("sysSensors");
         if (box) { box.innerHTML = ""; var t2 = document.createElement("div"); t2.className = "stat-hint";
-          t2.textContent = "传感器刷新失败（将在下个周期重试）。"; box.appendChild(t2); }
+          t2.textContent = "传感器暂不可用"; box.appendChild(t2); }
       });
   }
   /* 传感器分类（§138/§140-§142/§149）：温度 / 风扇 / 功耗 / 其它。
@@ -377,7 +377,7 @@
     if (others.length) _sensorGroup(box, "其它", others);
     if (!groups.temp.length && !groups.fan.length && !groups.power.length && !groups.other.length) {
       var e = document.createElement("div"); e.className = "stat-hint";
-      e.textContent = "当前无结构化传感器数据（可在下方「查看全部传感器」查看原始分组）。";
+      e.textContent = "无结构化传感器数据";
       box.appendChild(e);
     }
     // 查看全部传感器（折叠；§152-§154 结构化 Table，不用逗号 raw 串）

@@ -476,8 +476,7 @@
       return s.prompt_tps != null || s.decode_tps != null;
     });
     if (actPts.length === 0) {
-      setEmpty(containerId, true, "暂无推理吞吐数据",
-        "所选时间范围内没有推理活动。产生推理请求后将在此显示实时吞吐趋势。");
+      setEmpty(containerId, true, "暂无推理吞吐数据", "");
       return;
     }
     setEmpty(containerId, false);

@@ -170,6 +170,23 @@
     return out;
   }
 
+  /* 连续失败容忍（1.2.1）：单次（<5 次连续）采集失败保留上一次成功的数据
+   * 与状态、不提示；streakFail 连续第 5 次（含）起返回 true，调用方此时
+   * 才切换失败态。streakOk 成功一次即清零。各数据源（llama/GPU/系统）共用。 */
+  var failStreaks = {};
+  var FAIL_THRESHOLD = 5;
+  function streakFail(name) {
+    failStreaks[name] = (failStreaks[name] || 0) + 1;
+    return failStreaks[name] >= FAIL_THRESHOLD;
+  }
+  function streakOk(name) {
+    failStreaks[name] = 0;
+  }
+  /** 只读检查（不计数）：渲染层判断"是否已达失败阈值"，计数统一由采集层做。 */
+  function streakReached(name) {
+    return (failStreaks[name] || 0) >= FAIL_THRESHOLD;
+  }
+
   window.LM = window.LM || {};
   LM.poll = {
     register: register,
@@ -180,5 +197,8 @@
     isAppVisible: isAppVisible,
     bindBrowserVisibility: bindBrowserVisibility,
     audit: audit,
+    streakFail: streakFail,
+    streakOk: streakOk,
+    streakReached: streakReached,
   };
 })();

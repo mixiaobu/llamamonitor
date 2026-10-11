@@ -2237,7 +2237,9 @@ def build_app(
         elif schema_status == "readonly":
             db_secondary = "保护模式（只读）"
         else:
-            db_secondary = "WAL 已启用" if str(db.journal_mode).lower() == "wal" else "WAL 未启用"
+            # 1.2.1：正常态不再展示「WAL 已启用」等开发者向细节（WAL 状态仍可在
+            # 设置页数据库区查看）
+            db_secondary = ""
         integrity = {
             "coverage_percent": coverage,
             "gap_count_today": today_gap["gap_count"] + (1 if collector.open_gap_property() else 0),

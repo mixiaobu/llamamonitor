@@ -100,14 +100,13 @@
     gap: var(--spacing-sm);
     row-gap: 2px;
   }
-  /* Round-8：sh-actions min-width:0 + width:100%——flex 子项默认
-     min-width:auto，长说明（GPU 图例等）会把整行撑宽于 section，
-     撑破 .content 产生 App 级横向滚动。独占一行 + 右对齐 + 可换行。 */
+  /* 1.2.1：sh-actions 与标题同行（margin-left:auto 靠右）；
+     旧的 width:100% 强制"查看"独占一行（标题与查看不在同一行）。
+     长内容（select 等）仍由 flex-wrap 自然换行，min-width:0 防撑破。 */
   .section-header .sh-actions {
     margin-left: auto;
     min-width: 0;
-    width: 100%;
-    justify-content: flex-end;
+    flex: none;
   }
   .section-header .sh-actions .sh-sub {
     min-width: 0;
@@ -173,10 +172,6 @@
   /* 服务卡：右侧元信息（上下文/Slot/模态）+ 最后更新，换到左列下方（.status-strip 已 column）。 */
   .ov-service-card .ov-service-meta { flex-direction: row; flex-wrap: wrap; gap: var(--spacing-sm) var(--spacing-lg); justify-content: flex-start; }
   .ov-meta-grid { gap: var(--spacing-lg); flex-wrap: wrap; }
-  /* 需要关注：全宽堆叠。 */
-  .ov-attention-list { padding: var(--spacing-sm) var(--spacing-md); }
-  /* Page Header 分域跳转：整行铺满 + 换行。 */
-  .ov-page-links { width: 100%; }
 
   /* ---------- 指标条：5 项 → 2 列（最后一项独占一行） ---------- */
   .metric-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }

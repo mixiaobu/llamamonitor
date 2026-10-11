@@ -82,40 +82,8 @@
   var perfTpsSeg = null;   // Token 吞吐率范围分段（15分钟/1小时/6小时/24小时）
   var perfMtpSeg = null;   // MTP 范围分段（今天/7天/30天/全部）
 
-  /* ---- 状态条 1s ticker（信息层级调整） ----
- 主信息：在线 → "最后更新 X 秒前"（来自 lastUpdateTs）；
- 离线 → "最后成功采样: X 分钟前"（lastSuccessTs）。
- 次要信息：倒计时 "x 秒后刷新"（text-disabled 色，降级为辅助信息）。
- 后端不可达：主信息提示后端不可达。 */
-  function updateLastUpdateText() {
-    var el = document.getElementById("ovLastUpdate");
-    if (!el) return;
-    // 常态（在线）不显示"最后更新 X 秒前 / X 秒后刷新"（5s 轮询信息量低）；
-    // 仅离线/后端不可达时显示说明。
-    if (!state.statusBackendOk) {
-      el.textContent = "后端不可达，正在重试...";
-      el.className = "stat-hint bad";
-      return;
-    }
-    if (state.online === false) {
-      var ref = state.lastSuccessTs || state.lastUpdateTs;
-      el.textContent = ref ? "最后成功采样：" + F.formatAgo(Math.floor(Date.now() / 1000) - ref) : "";
-      el.className = "stat-hint warn";
-    } else {
-      // 1.1.4 精修 §12：Server 卡右侧常态显示 "最后更新：刚刚 / X 秒前"
-      // （数据新鲜度始终可见；5s 轮询下 elapsed 通常 <5s 显示"刚刚"，
-      // 不每轮跳字）。
-      var elapsed = state.lastUpdateTs ? (Math.floor(Date.now() / 1000) - state.lastUpdateTs) : null;
-      if (elapsed == null) {
-        el.textContent = "";
-        el.className = "stat-hint";
-      } else {
-        el.textContent = "最后更新：" + F.formatAgo(elapsed);
-        el.className = elapsed >= 10 ? "stat-hint warn" : "stat-hint";
-      }
-    }
-  }
-  setInterval(updateLastUpdateText, 1000);
+  /* 连续失败容忍统一走 LM.poll.streakFail / LM.poll.streakOk（polling.js，
+  1.2.1：<5 次连续失败保留上次数据与状态，>=5 次才切换失败态）。 */
 
   function setText(id, text, cls) {
     var el = $(id);
@@ -199,64 +167,6 @@
     bindSystemThemeListener();
   }
 
-  /* ================= 全局 InfoBar（Offline / Update，UI-015） ================= */
-  var offlineBar = null;
-  var updateBar = null;
-
-  function showOfflineBar(lastTs) {
-    var box = $("globalInfobars");
-    if (!box) return;
-    if (offlineBar) { offlineBar.close(); offlineBar = null; }
-    offlineBar = ui.createInfoBar({
-      type: "error",
-      title: "llama-server 连接中断",
-      message: "最近一次成功采样：" + (lastTs ? F.formatTime(lastTs) : "无记录") +
-        "。实时值显示 --；历史数据已保留。",
-      dismissible: false,
-    });
-    offlineBar.el.id = "offlineInfoBar";
-    box.insertBefore(offlineBar.el, box.firstChild);
-  }
-
-  function hideOfflineBar() {
-    if (offlineBar) { offlineBar.close(); offlineBar = null; }
-  }
-
-  var updateBannerVisible = false;
-  var updateBannerText = "";
-  function setUpdateBanner(show, text) {
-    var box = $("globalInfobars");
-    if (!box) return;
-    if (show && text === updateBannerText && updateBannerVisible) return;
-    if (updateBar) { updateBar.close(); updateBar = null; }
-    updateBannerVisible = show;
-    updateBannerText = text || "";
-    if (show) {
-      updateBar = ui.createInfoBar({
-        type: "info",
-        title: text,
-        message: "可在 设置 \u2192 更新 中下载并验证更新。",
-        actions: [{
-          label: "查看更新",
-          onClick: function () {
-            updateBannerVisible = false;
-            if (updateBar) { updateBar.close(); updateBar = null; }
-            LM.nav.showPage("settings");
-            LM.settings.goToSection("updates");
-          },
-        }],
-        dismissible: true,
-      });
-      updateBar.el.id = "updateInfoBar";
-      updateBar.el.addEventListener("click", function (ev) {
-        if (ev.target.closest(".infobar-close")) {
-          updateBannerVisible = false;
-        }
-      }, true);
-      box.appendChild(updateBar.el);
-    }
-  }
-
   /* ================= Server Status（Overview + 全局） ================= */
   function setStatValue(id, text) {
     var el = $(id);
@@ -306,15 +216,7 @@
       }
     }
 
-    // Offline InfoBar（明确 offline，保留历史）
-    if (state.online === false) {
-      showOfflineBar(state.lastSuccessTs || data.last_update);
-    } else {
-      hideOfflineBar();
-    }
-
-    // 记录最近采样时刻（离线条/lastSuccessTs 用）；顶部"X 秒后刷新"倒计时
-    // 由 1s ticker 依据 refreshStatus 的轮询时机驱动
+    // 记录最近采样时刻（lastSuccessTs 用）
     state.lastUpdateTs = data.last_update || null;
 
     // 服务器地址（§13 语义修复：统一显示 Server Base Address，不含 /metrics 路径。
@@ -841,7 +743,7 @@
     if (covEl) {
       if (q.coverage_percent == null) { covEl.textContent = F.NA; covEl.className = "stat-value mid"; }
       else { covEl.textContent = F.formatPercent(q.coverage_percent, 1); covEl.className = "stat-value mid " + (q.coverage_percent >= 99.9 ? "ok" : q.coverage_percent >= 95 ? "warn" : "bad"); }
-      if (covHint) covHint.textContent = "当前范围 · " + historyRangeLabel();
+      if (covHint) covHint.textContent = "";
     }
     // 范围内缺口（累计 + 时间归属不确定）
     var gapEl = $("iqGaps"), gapHint = $("iqGapsHint");
@@ -859,7 +761,7 @@
         var parts = [];
         if (q.lost_count > 0) parts.push(q.lost_count + " 个缺口可能造成 Token 丢失");
         if (q.time_uncertain_count > 0) parts.push(q.time_uncertain_count + " 个时间归属不确定");
-        riskHint.textContent = parts.length ? parts.join(" · ") : "范围内无 Token 数据风险";
+        riskHint.textContent = parts.length ? parts.join(" · ") : "";
         riskHint.className = "stat-hint" + ((q.lost_count || 0) > 0 ? " warn" : "");
       }
     }
@@ -877,7 +779,7 @@
     var hint = $("trendGranHint");
     if (hint) {
       var gran = { hour: "按小时", day: "按日", week: "按周", month: "按月" }[t && t.bucket] || "";
-      hint.textContent = "采集覆盖率 · " + gran + "（点击趋势对应时段可筛选采集缺口）";
+      hint.textContent = "采集覆盖率 · " + gran;
     }
     // 点击趋势 -> 把缺口 Section 筛到对应桶 + scrollIntoView（§81-83，不弹 modal）。
     // 用容器 DOM click（非 ECharts 符号命中）：点击绘图区**任意位置**都能映射到最近桶，
@@ -1074,7 +976,7 @@
     var events = state.histEvents || [];
     var empty = $("eventsEmpty"), wrapEl = $("eventsTableWrap"), tl = $("evTimeline");
     var cnt = $("eventsCountLabel");
-    if (cnt) cnt.textContent = "当前范围 · " + events.length + " 条已加载";
+    if (cnt) cnt.textContent = events.length + " 条已加载";
     ui.setEmptyState(empty, events.length === 0);
     var isMobile = window.matchMedia("(max-width: 987px)").matches;
     if (isMobile) {
@@ -1686,11 +1588,15 @@
     var grid = $("ovGpuMini");
     if (!stateEl || !lineEl) return;
     if (!d.available) {
+      // 1.2.1：连续 >=5 次不可用才切「不可用」（计数在 refreshGpuStatus）；
+      // 之前保留最后成功的迷你卡数据
+      if (!LM.poll.streakReached("gpu")) return;
       ui.setStatusBadge(stateEl, "offline", "不可用");
       lineEl.textContent = d.reason || "nvidia-smi 不可用";
       if (grid) grid.innerHTML = "";
       return;
     }
+    LM.poll.streakOk("gpu");
     var gpus = d.gpus || [];
     ui.setStatusBadge(stateEl, "online", gpus.length + " 张 GPU");
     if (!gpus.length) {
@@ -1947,13 +1853,25 @@
       .catch(function (e) {
         if (gen !== ovGen) return;
         console.warn("overview failed:", e.message || e);
-        // 首屏失败：保留占位；后续失败：保留上次值（不清屏）
+        // 首屏失败：保留占位；后续失败：保留上次值（不清屏）。
+        // 1.2.1：GPU 连续 >=5 次不可用时，概览 GPU 迷你卡同步切「不可用」
+        //（后端整体不可达时 /api/overview 也持续失败，这里兜底切换状态）。
+        if (LM.poll.streakReached("gpu")) {
+          var st = $("ovGpuState");
+          if (st) {
+            ui.setStatusBadge(st, "offline", "不可用");
+            var line = $("ovGpuLine"); if (line) line.textContent = "GPU 采集异常";
+            var grid = $("ovGpuMini"); if (grid) grid.innerHTML = "";
+            var unav = $("ovGpuUnavailable");
+            if (unav) { unav.hidden = false; unav.textContent = "GPU 采集异常：连续多次采集失败"; }
+          }
+        }
       });
   }
 
-  /* 服务状态卡（就绪 / 不可达 / 监测异常 + 上下文窗口 / 并发 Slot / 模态 / 最后更新）。
+  /* 服务状态卡（就绪 / 不可达 / 监测异常 + 上下文窗口 / 并发 Slot / 模态）。
      注意：全局「检测中 / 模型加载中」状态由 /api/status 的 applyStatus 驱动（更细粒度，
-     含模型加载中间态）；/api/overview 的服务状态用于「需要关注」与右侧元信息。 */
+     含模型加载中间态）；/api/overview 的服务状态用于右侧元信息。 */
   function renderOvService(s) {
     if (!s) return;
     // 服务卡右侧元信息（上下文窗口 / 并发 Slot / 模态）
@@ -1975,53 +1893,8 @@
       if (m.audio_supported) parts.push("音频");
       modalEl.textContent = parts.length ? parts.join(" · ") : "文本";
     }
-    // 「最后更新 N 秒前」由全局 1s ticker（updateLastUpdateText）统一驱动
-    // （更及时 + 处理离线/后端不可达），此处不覆写避免冲突。
   }
 
-  /* 需要关注（仅当存在 item 时显示；最多 3 条 + 还有 N 项）。 */
-  function renderOvAttention(a) {
-    var box = $("ovAttention");
-    if (!box) return;
-    var list = $("ovAttentionList");
-    var more = $("ovAttentionMore");
-    if (!a || a.hidden || !a.items || !a.items.length) {
-      box.hidden = true;
-      if (list) list.innerHTML = "";
-      if (more) more.hidden = true;
-      return;
-    }
-    box.hidden = false;
-    list.innerHTML = "";
-    a.items.forEach(function (it) {
-      var row = document.createElement("div");
-      row.className = "ov-attention-item";
-      row.setAttribute("data-sev", it.severity || "info");
-      var dot = document.createElement("span");
-      dot.className = "ov-attention-dot";
-      var body = document.createElement("div");
-      body.className = "ov-attention-body";
-      var title = document.createElement("div");
-      title.className = "ov-attention-title";
-      title.textContent = it.title || "";
-      body.appendChild(title);
-      if (it.subtitle) {
-        var sub = document.createElement("div");
-        sub.className = "ov-attention-sub";
-        sub.textContent = it.subtitle;
-        body.appendChild(sub);
-      }
-      row.appendChild(dot);
-      row.appendChild(body);
-      list.appendChild(row);
-    });
-    if (more) {
-      if (a.remaining > 0) {
-        $("ovAttentionMoreText").textContent = "还有 " + a.remaining + " 项";
-        more.hidden = false;
-      } else { more.hidden = true; }
-    }
-  }
 
   /* 今日用量（6 指标：总量/实际计算 大数字 + 输入/缓存复用/输出/缓存复用率）。 */
   function renderOvUsage(u) {
@@ -2137,12 +2010,7 @@
       setStatValue("ovHostPower", F.formatPower(pw.monitored_components_w));
       var psub = $("ovHostPowerSub");
       if (psub) {
-        var n = pw.components_present || 0;
-        var miss = [];
-        if (pw.cpu_package_available === false) miss.push("CPU Package");
-        if (pw.gpu_available === false) miss.push("GPU");
-        var txt = n ? n + " 个组件可读取" : "";
-        if (miss.length && n < 2) txt += (txt ? " · " : "") + miss.join("、") + " 不可读（总值非整机）";
+        var txt = (pw.components_present || 0) + " 个组件可读取";
         psub.textContent = txt; psub.hidden = !txt;
       }
     } else {
@@ -2168,12 +2036,16 @@
     var grid = $("ovGpuMini"), unav = $("ovGpuUnavailable");
     if (!stateEl || !grid) return;
     if (!g || !g.available) {
+      // 1.2.1：连续 >=5 次不可用才切「不可用」（计数在 refreshGpuStatus）；
+      // 之前保留最后成功的迷你卡数据
+      if (!LM.poll.streakReached("gpu")) return;
       ui.setStatusBadge(stateEl, "offline", "不可用");
       if (lineEl) lineEl.textContent = (g && g.reason) ? g.reason : "nvidia-smi 不可用";
       grid.innerHTML = "";
       if (unav) { unav.hidden = false; unav.textContent = "GPU 采集异常：" + ((g && g.reason) || "nvidia-smi 不可用"); }
       return;
     }
+    LM.poll.streakOk("gpu");
     var list = g.gpus || [];
     ui.setStatusBadge(stateEl, "online", g.count + " 张 GPU");
     if (lineEl) lineEl.textContent = "";
@@ -2265,7 +2137,6 @@
   /* 渲染整份 /api/overview（各域独立；任一域缺失只影响对应 Section）。 */
   function renderOverview(d) {
     renderOvService(d.service);
-    renderOvAttention(d.attention);
     renderOvUsage(d.usage_today);
     renderOvInference(d.inference);
     renderOvSystem(d.system);
@@ -2519,9 +2390,9 @@
     var hint = $("usageTrendHint");
     var useHour = state.trendGran === "hour" && state.dailyRangeMode === "today";
     if (useHour) {
-      if (hint) hint.textContent = "今天 · 逐小时（Prompt / 缓存复用 / 生成，堆叠）";
+      if (hint) hint.textContent = "";
       if (!state.todayHourly) {
-        charts.setEmpty("chartUsageBox", true, "暂无逐小时数据", "采集后自动生成今天逐小时曲线。");
+        charts.setEmpty("chartUsageBox", true, "暂无逐小时数据", "");
       } else {
         charts.renderUsageHourlyChart("chartUsageBox", "chartUsage", state.todayHourly);
       }
@@ -2532,8 +2403,7 @@
       return;
     }
     // 非小时档（或非今天范围）：按天堆叠
-    if (hint) hint.textContent = state.dailyData.length > 31
-      ? "按天（Prompt / 缓存复用 / 生成，堆叠；可拖动缩放）" : "按天（Prompt / 缓存复用 / 生成，堆叠）";
+    if (hint) hint.textContent = state.dailyData.length > 31 ? "可拖动缩放" : "";
     charts.renderUsageChart("chartUsageBox", "chartUsage", state.dailyData);
   }
 
@@ -2622,15 +2492,22 @@
   }
 
   function refreshStatus() {
-    // 倒计时基准：以本次轮询发起时刻为准（1s ticker 据此显示 "x 秒后刷新"）
-    state.statusBackendOk = true;
     state.lastStatusRefresh = Date.now();
     return api.get("/api/status")
-      .then(applyStatus)
+      .then(function (d) {
+        // 成功一次即清零连续失败计数
+        LM.poll.streakOk("status");
+        state.statusBackendOk = true;
+        return applyStatus(d);
+      })
       .catch(function (e) {
-        // 后端不可达（区别于 llama 离线）：保留上次数据 + 提示
+        // 后端不可达（区别于 llama 离线）：保留上次数据与状态，
+        // 连续 >=5 次失败才把服务状态切到「不可达」（不提示单次抖动）。
         console.warn("status failed:", e.message || e);
-        state.statusBackendOk = false; // 由 1s ticker 统一渲染"后端不可达"
+        if (LM.poll.streakFail("status")) {
+          state.statusBackendOk = false;
+          ui.setStatusBadge($("ovServerState"), "offline", "不可达");
+        }
       });
   }
 
@@ -2672,8 +2549,26 @@
   }
 
   function refreshGpuStatus() {
-    return api.get("/api/gpu/status").then(applyGpuStatus)
-      .catch(function (e) { console.warn("gpu status failed:", e.message || e); });
+    return api.get("/api/gpu/status")
+      .then(function (d) {
+        if (d && d.available) {
+          LM.poll.streakOk("gpu");
+          applyGpuStatus(d);
+        } else if (LM.poll.streakFail("gpu")) {
+          // 后端连续 >=5 次报告不可用才切「不可用」；之前保留上次成功数据与状态
+          applyGpuStatus(d);
+        }
+      })
+      .catch(function (e) {
+        // 1.2.1：连续 >=5 次采集失败才提示；之前保留最后成功的数据
+        console.warn("gpu status failed:", e.message || e);
+        if (LM.poll.streakFail("gpu")) {
+          var stateEl = $("gpuPageState");
+          if (stateEl) ui.setStatusBadge(stateEl, "offline", "不可用");
+          var reasonEl = $("gpuUnavailReason");
+          if (reasonEl) { reasonEl.textContent = "GPU 采集失败"; reasonEl.style.display = ""; }
+        }
+      });
   }
 
   function refreshGpuLive() {
@@ -2959,38 +2854,6 @@
       });
       var remoteRow = $("moreSheetRemote");
       if (remoteRow) remoteRow.hidden = false;
-      var banner = $("remoteBanner");
-      if (banner) {
-        var dismissed = false;
-        try { dismissed = sessionStorage.getItem("lm_remote_banner_dismissed") === "1"; } catch (e) {}
-        if (!dismissed) {
-          banner.hidden = false;
-          // 1.1.4：主文案可点击展开/收起说明（role=button 的 span 即可，不引入新层级）
-          var main = $("remoteBannerMain");
-          var detail = $("remoteBannerDetail");
-          if (main && detail) {
-            var toggle = function () {
-              var open = detail.hidden;   // 展开前是收起的
-              detail.hidden = !open;
-              banner.classList.toggle("open", open); // 展开态放开 max-height
-            };
-            main.addEventListener("click", toggle);
-            main.addEventListener("keydown", function (e) {
-              if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); }
-            });
-          }
-          var close = document.createElement("button");
-          close.type = "button";
-          close.className = "remote-banner-close";
-          close.setAttribute("aria-label", "关闭提示");
-          close.textContent = "✕";
-          close.addEventListener("click", function () {
-            banner.hidden = true;
-            try { sessionStorage.setItem("lm_remote_banner_dismissed", "1"); } catch (e) {}
-          });
-          banner.appendChild(close);
-        }
-      }
     }
     // Settings 事件绑定（保存/重置/测试连接/dirty 标记/主题切换/自动启动/危险操作/更新）
     if (LM.settings && LM.settings.init) LM.settings.init();
@@ -3201,7 +3064,6 @@
   LM.app = {
     init: init,
     applyTheme: function (mode) { setThemeMode(mode); },
-    setUpdateBanner: setUpdateBanner,
     refreshLiveNow: function () { return refreshThroughput(); },
     refreshThroughputNow: function () { return refreshThroughput(); },
     refreshSummaryNow: function () { refreshSummary(); },

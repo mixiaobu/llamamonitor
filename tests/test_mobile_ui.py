@@ -193,10 +193,12 @@ class TouchAndA11yTests(unittest.TestCase):
         self.assertIn("max-width: min(300px, calc(100vw - 32px))", self.mobile_css,
                       "tooltip 不得超屏")
 
-    def test_remote_banner(self):
-        self.assertIn('id="remoteBanner"', self.html, "缺少远程只读 banner DOM")
-        self.assertIn("remoteBanner", self.app_js, "app.js 未接 remoteBanner")
-        self.assertIn(".remote-banner", self.layout_css)
+    def test_remote_banner_removed_121(self):
+        """1.2.1：顶部远程只读 banner 已移除（用户要求去掉顶部提示）；
+        远程只读状态改由 Overflow Sheet 内的 more-sheet-remote 行表达。"""
+        self.assertNotIn('id="remoteBanner"', self.html, "1.2.1 应移除顶部远程 banner")
+        self.assertNotIn(".remote-banner", self.layout_css, "1.2.1 应移除 remote-banner 死样式")
+        self.assertIn('id="moreSheetRemote"', self.html, "Overflow Sheet 远程只读行保留")
 
     @property
     def layout_css(self):
@@ -242,10 +244,9 @@ class OverviewSubtitleTests(unittest.TestCase):
 
     def test_subtitle(self):
         html = _read("index.html")
-        # Round-6：概览副标题去营销化，规格规范文案为
-        # 「查看 llama.cpp 服务、用量、推理状态、主机资源与监测完整性。」
-        self.assertIn("查看 llama.cpp 服务、用量、推理状态、主机资源与监测完整性。",
-                      html)
+        # 1.2.1：概览副标题已移除（用户要求去掉无效说明）；营销文案保持不存在
+        self.assertNotIn("查看 llama.cpp 服务、用量、推理状态、主机资源与监测完整性。",
+                         html)
         self.assertNotIn("10 秒看懂", html, "营销文案未清理")
 
 

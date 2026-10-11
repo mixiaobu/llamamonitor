@@ -1885,8 +1885,8 @@ details.core-heat[open] summary::before { content: "▾ "; }
 .sh-actions .sh-sub { min-width: 0; max-width: 100%; overflow-wrap: break-word; }
 .sh-sub, .card-sub { font-variant-numeric: tabular-nums; }
 @media (max-width: 400px) {
-  #page-system .section-header .sh-actions { flex: 1 1 100%; justify-content: flex-start; }
-  #page-system .section-header .sh-actions .sh-sub { max-width: 100%; }
+  /* 1.2.1：不再强制 sh-actions 独占整行（摘要已短，与标题同行；
+     防撑破由 min-width:0 + overflow-wrap 兜底，见上方 .sh-actions .sh-sub） */
   #page-system .host-dual { gap: 6px; }
 }
 
@@ -2160,18 +2160,6 @@ details.core-heat[open] summary::before { content: "▾ "; }
    关键数字禁止 ellipsis（仅模型名/GPU 全名/路径/长错误可截断）。
    ============================================================ */
 
-/* ---- Page Header 右侧分域跳转（统一「查看 X →」） ---- */
-.ov-page-links {
-  flex-wrap: wrap;
-  row-gap: var(--spacing-xs);
-}
-.ov-page-links .link {
-  font-size: var(--font-size-caption);
-  color: var(--text-secondary);
-}
-.ov-page-links .link:hover {
-  color: var(--accent);
-}
 
 /* ---- 服务状态卡：右侧 上下文窗口 / 并发 Slot / 模态（桌面三列；
      「最后更新」为次要信息；移动端整组换到左列下方） ---- */
@@ -2214,11 +2202,6 @@ details.core-heat[open] summary::before { content: "▾ "; }
   text-overflow: ellipsis;
 }
 .ov-meta-value-sm { font-size: var(--font-size-body); }
-.ov-last-update {
-  margin-top: 0;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
 
 /* ---- 需要关注（仅当存在可靠问题时显示；Error>Warning>Info；最多 3 条 + 还有 N 项） ---- */
 .ov-attention {

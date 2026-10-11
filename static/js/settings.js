@@ -1139,12 +1139,6 @@
       if (relBtn) relBtn.dataset.url = rel.release_url;
     }
 
-    if (st.state === "UPDATE_AVAILABLE" && st.available_version && LM.app) {
-      LM.app.setUpdateBanner(true, "LlamaMonitor " + st.available_version + " 可用（当前 " +
-        st.current_version + "）");
-    } else if (LM.app) {
-      LM.app.setUpdateBanner(false);
-    }
   }
 
   async function loadUpdateStatus() {

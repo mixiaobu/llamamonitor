@@ -214,7 +214,6 @@ class UiTerminologyTests(unittest.TestCase):
             "当前序列长度",
             "剩余生成预算",
             "新处理 Prompt",
-            "仅展示运行元数据",
             "草稿 Token",
         ]
         for term in required:
@@ -296,16 +295,19 @@ class UiTerminologyTests(unittest.TestCase):
         # refreshMtp 自身从 /api/mtp 拉数据
         self.assertIn('return api.get("/api/mtp")', app_js, "refreshMtp 未拉 /api/mtp")
 
-    def test_online_shows_last_update_age(self):
-        """AUDIT-1.1.1 UX-1111-001：在线态必须显示"最后更新 X 秒前"（此前恒空，
-        数据新鲜度不可见）。修复 = updateLastUpdateText 每秒刷新，用
-        state.lastUpdateTs 计算 elapsed 秒并写入 ovLastUpdate。"""
+    def test_last_update_ticker_removed_121(self):
+        """1.2.1：顶部「最后更新 X 秒前」1s ticker 已移除（用户要求去掉）；
+        新鲜度由数据本身（最后采样等）表达。同时 5 次连续失败容忍助手
+        （LM.poll.streakFail/streakOk）必须在 polling.js 存在并被各采集器使用。"""
         app_js = (STATIC / "js" / "app.js").read_text(encoding="utf-8")
-        self.assertIn("updateLastUpdateText", app_js, "缺少 updateLastUpdateText")
-        self.assertIn("setInterval(updateLastUpdateText, 1000)", app_js,
-                      "lastUpdate 未每秒刷新")
-        self.assertIn("ovLastUpdate", app_js, "未写入 ovLastUpdate 元素")
-        self.assertIn("最后更新", app_js, "缺少'最后更新'文案")
+        polling_js = (STATIC / "js" / "polling.js").read_text(encoding="utf-8")
+        self.assertNotIn("updateLastUpdateText", app_js, "1.2.1 应移除 1s 最后更新 ticker")
+        self.assertIn("function streakFail", polling_js, "缺少连续失败计数助手 streakFail")
+        self.assertIn("streakOk", polling_js, "缺少连续失败清零助手 streakOk")
+        self.assertIn('streakFail("status")', app_js, "status 采集未接入 5 次容忍")
+        self.assertIn('streakFail("gpu")', app_js, "gpu 采集未接入 5 次容忍")
+        system_js = (STATIC / "js" / "system.js").read_text(encoding="utf-8")
+        self.assertIn('streakFail("system")', system_js, "system 采集未接入 5 次容忍")
 
     # ---------- 1.1.4 精修 Round 2：主导航两字 + 顺序 ----------
 
@@ -355,8 +357,10 @@ class UiTerminologyTests(unittest.TestCase):
         """§18/§26/§50/§53/§66：Overview 新术语必须存在。"""
         html = self.html
         for term in ["主机状态", "组件功耗", "今日采集缺口", "今日采集覆盖率",
-                     "数据库状态", "远程只读 · 管理操作仅限本机", "查看监控历史"]:
+                     "数据库状态", "查看监控历史"]:
             self.assertIn(term, html, "缺少新术语：%s" % term)
+        # 1.2.1：顶部远程只读 banner 已移除
+        self.assertNotIn("远程只读 · 管理操作仅限本机", html)
 
     def test_overview_legacy_gap_terms_gone(self):
         """Round-6：监测完整性指标规范命名为「今日缺口」（今日口径），历史范围表用
