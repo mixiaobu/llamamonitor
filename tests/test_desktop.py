@@ -796,5 +796,67 @@ class _FakeControlNoHandle:
         raise Exception("handle not created")
 
 
+class DisplayFitTests(unittest.TestCase):
+    """1.2.2：分辨率/缩放切换时把窗口夹回工作区（纯函数 + watcher 冒烟）。"""
+
+    def test_window_inside_workarea_noop(self):
+        self.assertIsNone(desktop._fit_rect_to_workarea(
+            (100, 100, 1400, 900), (0, 0, 2560, 1440), desktop.WINDOW_MIN_SIZE))
+
+    def test_smaller_screen_shrinks_and_clamps(self):
+        # 1400x900 窗口切到 1366x768（任务栏占位后工作区 720 高）
+        fit = desktop._fit_rect_to_workarea(
+            (500, 300, 1400, 900), (0, 0, 1366, 720), desktop.WINDOW_MIN_SIZE)
+        self.assertIsNotNone(fit)
+        x, y, w, h = fit
+        self.assertEqual((w, h), (1366, 720))
+        self.assertGreaterEqual(x, 0)
+        self.assertLessEqual(x + w, 1366)
+        self.assertGreaterEqual(y, 0)
+        self.assertLessEqual(y + h, 720)
+
+    def test_offscreen_right_clamped_back(self):
+        fit = desktop._fit_rect_to_workarea(
+            (2400, 100, 800, 600), (0, 0, 2560, 1440), desktop.WINDOW_MIN_SIZE)
+        self.assertIsNotNone(fit)
+        x, y, w, h = fit
+        self.assertEqual(x, 2560 - 800)
+        self.assertEqual((w, h), (800, 600))
+
+    def test_offscreen_left_top_clamped_to_origin(self):
+        fit = desktop._fit_rect_to_workarea(
+            (-300, -200, 1000, 650), (0, 0, 1920, 1080), desktop.WINDOW_MIN_SIZE)
+        self.assertEqual(fit, (0, 0, 1000, 650))
+
+    def test_workarea_smaller_than_min_keeps_min_size(self):
+        fit = desktop._fit_rect_to_workarea(
+            (0, 0, 1400, 900), (0, 0, 800, 600), desktop.WINDOW_MIN_SIZE)
+        self.assertIsNotNone(fit)
+        x, y, w, h = fit
+        self.assertEqual((w, h), desktop.WINDOW_MIN_SIZE)
+        self.assertEqual((x, y), (0, 0))
+
+    def test_second_monitor_offset(self):
+        # 工作区在右侧显示器（x 偏移 2560）
+        fit = desktop._fit_rect_to_workarea(
+            (2560 + 1500, 100, 1400, 900), (2560, 0, 1920, 1080), desktop.WINDOW_MIN_SIZE)
+        self.assertIsNotNone(fit)
+        x, y, w, h = fit
+        self.assertGreaterEqual(x, 2560)
+        self.assertLessEqual(x + w, 2560 + 1920)
+
+    @unittest.skipUnless(sys.platform == "win32", "ctypes.windll 仅 Windows")
+    def test_watcher_loop_exits_when_stopped(self):
+        stop = threading.Event()
+        stop.set()
+        # stop 已置位：立即返回，不触碰任何窗口 API
+        desktop._display_watcher_loop(stop, lambda: 0, poll_s=0.05)
+
+    def test_hwnd_getter_without_native_returns_zero(self):
+        class W:
+            pass
+        self.assertEqual(desktop._make_hwnd_getter(W())(), 0)
+
+
 if __name__ == "__main__":
     unittest.main()

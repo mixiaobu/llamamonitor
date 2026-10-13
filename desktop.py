@@ -89,6 +89,118 @@ WINDOW_HEIGHT = 900
 WINDOW_MIN_SIZE = (1000, 650)  # Phase 15 spec §53：最小合理尺寸（<1100px 触发 compact 导航）
 
 
+# ---------- 1.2.2：分辨率/缩放切换适配 ----------
+# pywebview 窗口按固定 1400x900 创建；系统分辨率/缩放切换后窗口不会自动适配
+# （被截断或跑到屏幕外），前端 CSS 重排依赖窗口尺寸变化，因此原生层必须把窗口
+# 拉回新工作区。工作区变化由轮询检测（2s），避免 ctypes WndProc 消息循环的
+# 生命周期复杂度；最大化窗口系统会自动按新工作区重排，跳过。
+
+def _fit_rect_to_workarea(win, work, min_size):
+    """分辨率切换兜底（纯函数，物理像素）：窗口超出新工作区时返回调整后的
+    (x, y, w, h)；无需调整返回 None。
+
+    - 尺寸：收缩到能放进工作区，但绝不低于 min_size；
+    - 位置：夹取到窗口完整位于工作区内（窗口比工作区大时左上角对齐，
+      保证标题栏可见、可拖动）。"""
+    x, y, w, h = win
+    wx, wy, ww, wh = work
+    min_w, min_h = min_size
+    new_w = min(w, max(ww, min_w))
+    new_h = min(h, max(wh, min_h))
+    if new_w <= ww:
+        new_x = min(max(x, wx), wx + ww - new_w)
+    else:  # 工作区比最小尺寸还窄：左上角对齐
+        new_x = wx
+    if new_h <= wh:
+        new_y = min(max(y, wy), wy + wh - new_h)
+    else:
+        new_y = wy
+    if (new_x, new_y, new_w, new_h) == (x, y, w, h):
+        return None
+    return (new_x, new_y, new_w, new_h)
+
+
+def _display_watcher_loop(stop: threading.Event, get_hwnd, poll_s: float = 2.0) -> None:
+    """轮询窗口所在显示器的工作区；变化（分辨率/缩放/任务栏切换）时把窗口
+    夹回工作区。任何单轮异常只记日志，不影响下一轮与主程序。"""
+    import ctypes
+    import logging
+    from ctypes import wintypes
+
+    log = logging.getLogger("llamamonitor")  # 模块级无 log（main 局部），用同名 logger
+    user32 = ctypes.windll.user32
+
+    class RECT(ctypes.Structure):
+        _fields_ = [("left", ctypes.c_long), ("top", ctypes.c_long),
+                    ("right", ctypes.c_long), ("bottom", ctypes.c_long)]
+
+    class MONITORINFO(ctypes.Structure):
+        _fields_ = [("cbSize", wintypes.DWORD), ("rcMonitor", RECT),
+                    ("rcWork", RECT), ("dwFlags", wintypes.DWORD)]
+
+    # 64 位下必须声明签名，否则 HWND 句柄被截断
+    user32.IsWindow.argtypes = [wintypes.HWND]
+    user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(RECT)]
+    user32.MonitorFromWindow.argtypes = [wintypes.HWND, wintypes.DWORD]
+    user32.MonitorFromWindow.restype = wintypes.HMONITOR
+    user32.GetMonitorInfoW.argtypes = [wintypes.HMONITOR, ctypes.POINTER(MONITORINFO)]
+    user32.IsZoomed.argtypes = [wintypes.HWND]
+    user32.SetWindowPos.argtypes = [wintypes.HWND, wintypes.HWND, ctypes.c_int, ctypes.c_int,
+                                    ctypes.c_int, ctypes.c_int, wintypes.UINT]
+
+    SWP_NOZORDER = 0x0004
+    SWP_NOACTIVATE = 0x0010
+    MONITOR_DEFAULTTONEAREST = 0x00000002
+
+    last_work = None
+    while not stop.wait(poll_s):
+        try:
+            hwnd = get_hwnd()
+            if not hwnd or not user32.IsWindow(hwnd):
+                continue
+            wr = RECT()
+            if not user32.GetWindowRect(hwnd, ctypes.byref(wr)):
+                continue
+            hmon = user32.MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST)
+            if not hmon:
+                continue
+            mi = MONITORINFO()
+            mi.cbSize = ctypes.sizeof(MONITORINFO)
+            if not user32.GetMonitorInfoW(hmon, ctypes.byref(mi)):
+                continue
+            work = (mi.rcWork.left, mi.rcWork.top,
+                    mi.rcWork.right - mi.rcWork.left, mi.rcWork.bottom - mi.rcWork.top)
+            changed, last_work = (work != last_work), work
+            if not changed:
+                continue  # 只在切换瞬间调整，平时不干预用户的窗口摆放
+            if user32.IsZoomed(hwnd):
+                continue  # 最大化：系统自动按新工作区重排
+            win = (wr.left, wr.top, wr.right - wr.left, wr.bottom - wr.top)
+            fit = _fit_rect_to_workarea(win, work, WINDOW_MIN_SIZE)
+            if fit:
+                user32.SetWindowPos(hwnd, None, fit[0], fit[1], fit[2], fit[3],
+                                    SWP_NOZORDER | SWP_NOACTIVATE)
+                log.info("[LlamaMonitor] 工作区变为 %s，窗口已调整 %s -> %s", work, win, fit)
+        except Exception:
+            log.debug("显示监视单轮失败（忽略）", exc_info=True)
+
+
+def _make_hwnd_getter(window):
+    """优先 pywebview 原生句柄（webview.start() 创建窗口后绑定 window.native）。
+    拿不到返回 0（watcher 空转等待，不做跨进程 FindWindow 以免误伤同名窗口）。"""
+
+    def get():
+        try:
+            native = getattr(window, "native", None)
+            if native is not None:
+                return int(native.Handle.ToInt64())
+        except Exception:
+            pass
+        return 0
+
+    return get
+
+
 def _probe_host(host: str) -> str:
     """端口探测用的目标 host。REL-1.1.4-001：bind-any 地址（0.0.0.0/::）作为
     客户端 connect 目标在 Winsock 上无效（WSAEADDRNOTAVAIL）——监听
@@ -419,6 +531,7 @@ def main(argv: list[str] | None = None, loaded: LoadedConfig | None = None) -> i
     lifecycle = AppLifecycle()
     _shutdown_steps_done = threading.Event()
     shutdown_event = threading.Event()
+    display_stop = threading.Event()  # 1.2.2：分辨率/缩放切换 watcher
     ui: dict = {"window": None, "webview_ok": False}
     tray_ref: dict = {"tray": None}
     tray_hint_shown = {"v": False}
@@ -672,6 +785,7 @@ def main(argv: list[str] | None = None, loaded: LoadedConfig | None = None) -> i
         _step("停止 FastAPI/Collector/GPU/SQLite", lambda: stop_uvicorn(server, uv_thread))
         _step("关闭窗口", lambda: ui["window"].destroy() if ui["window"] else None)
         _step("停止 UI 分发器", dispatcher.stop)
+        _step("停止显示 watcher", display_stop.set)
         _step("停止 ShowWindow 监听", listener.stop)
         _step("停止 Shutdown 监听", shutdown_listener.stop)
         _step("释放单实例 Mutex", single.release)
@@ -798,6 +912,14 @@ def main(argv: list[str] | None = None, loaded: LoadedConfig | None = None) -> i
             window.events.closing += _on_closing
             ui["window"] = window
             ui["webview_ok"] = True  # 窗口已创建：show/hide 命令可直接操作
+            # 1.2.2：分辨率/缩放切换 watcher（daemon 线程；native 句柄在
+            # webview.start() 内创建窗口后才有，之前空转等待）
+            if platform.system() == "Windows":
+                threading.Thread(
+                    target=_display_watcher_loop,
+                    args=(display_stop, _make_hwnd_getter(window)),
+                    name="display-watcher", daemon=True,
+                ).start()
             webview_module.start()  # 阻塞：点 X 被拦截隐藏，只有 destroy 才返回
         except Exception as exc:
             log.warning("[LlamaMonitor] pywebview 不可用: %r", exc)
