@@ -19,6 +19,13 @@ native/hardware_bridge/vendor/
 # Release 产物（由 scripts/build_release.py 生成）
 release/
 
+# CDP 冒烟/审计用的浏览器 profile 与大体量运行态产物（保留截图与审计 JSON）
+artifacts/_edge120_profile/
+artifacts/_edge121_profile/
+artifacts/edge-ovr-r2/
+artifacts/ovr-audit/
+artifacts/ovr-r4/
+
 # 开发模式可能在项目根生成的运行时文件
 config.json
 monitor.db

@@ -51,6 +51,13 @@ from clock import default_clock
 from gpu_collector import GpuCollector
 from hardware_sensor_provider import HardwareSensorProvider
 from llama_runtime_collector import LlamaRuntimeCollector
+from runtime_provider import (
+    PROVIDER_STRATA,
+    detect_backend,
+    resolve_provider,
+    verify_manual_provider,
+)
+from strata_collector import StrataCollector, strata_state_label
 from system_collector import SystemCollector
 from windows_integration import FOLDER_TARGETS, is_frozen, open_folder
 from config import (
@@ -89,9 +96,53 @@ def _err(code: str, message: str, field: str | None = None) -> dict:
     return {"success": False, "error": error}
 
 
-def build_collector(cfg, db) -> tuple[MetricsCollector, GpuCollector]:
-    """创建 llama.cpp metrics 采集器 + GPU 采集器（server/desktop 两个入口共用）。"""
-    return MetricsCollector(cfg, db), GpuCollector(cfg, db)
+def build_collector(cfg, db, provider: str | None = None) -> tuple:
+    """
+    创建 Token 采集器 + GPU 采集器（server/desktop 两个入口共用）。
+
+    1.3.0 双推理后端：provider 为解析后的实际后端（llamacpp/strata）；
+    None 时取 cfg.llama_server.provider（auto 应由调用方先用
+    resolve_runtime_provider 解析）。
+    """
+    provider = (provider or cfg.llama_server.provider or "auto").lower()
+    gpu = GpuCollector(cfg, db)
+    if provider == PROVIDER_STRATA:
+        return StrataCollector(cfg, db), gpu
+    return MetricsCollector(cfg, db), gpu
+
+
+def resolve_runtime_provider(cfg) -> str:
+    """
+    启动时解析实际推理后端（1.3.0）：
+
+    - 配置为具体后端 -> 直接用配置值（用户意图优先）；
+    - auto -> GET /health + /metrics 识别（只读，见 runtime_provider）；
+      识别失败/无特征 -> llama.cpp（与升级前行为一致的默认兼容路径）。
+
+    在主线程、uvicorn 事件循环启动前调用（asyncio.run 安全）。
+    """
+    configured = (cfg.llama_server.provider or "auto").strip().lower()
+    if configured in ("llamacpp", "strata"):
+        return configured
+    try:
+        detected = asyncio.run(detect_backend(
+            cfg.llama_server.url,
+            metrics_path=cfg.llama_server.metrics_path,
+            timeout_seconds=cfg.llama_server.timeout_seconds,
+            api_key=cfg.llama_server.api_key or None,
+        ))
+    except RuntimeError:
+        return "llamacpp"  # 当前上下文已有事件循环（边缘场景）：跳过识别
+    except Exception as exc:
+        logger.warning("推理后端自动识别异常（按默认 llama.cpp 处理）: %r", exc)
+        return "llamacpp"
+    provider = resolve_provider("auto", detected)
+    if provider != "llamacpp":
+        logger.info(
+            "推理后端自动识别: %s（%s）",
+            detected.get("provider_display"), detected.get("server_id"),
+        )
+    return provider
 
 
 def _memory_usage_percent(used, total) -> float | None:
@@ -913,10 +964,18 @@ def build_app(
             }
         # 1.1：llama.cpp Runtime（Health State / 模型摘要 / 当前 Slot）。
         # 全部内存态（llama_runtime_collector）；runtime collector 未注入时 -> None。
+        # 1.3.0：provider 标识 + Strata 专属状态块（llama.cpp 时 strata=None）。
+        provider = getattr(collector, "provider_id", "llamacpp")
+        result["provider"] = provider
+        result["provider_display"] = {"llamacpp": "llama.cpp", "strata": "Strata"}.get(provider, provider)
         if runtime is not None:
             result["server_state"] = runtime.server_state  # ready / loading / unavailable
             result["llama_model"] = _model_summary_public(runtime, request)
             result["llama_slots"] = _slots_public(runtime)
+        if provider == "strata":
+            result["server_state"] = getattr(collector, "server_state", None)
+            result["server_state_label"] = strata_state_label(getattr(collector, "server_state", None))
+            result["strata"] = (snapshot or {}).get("strata") if snapshot else None
         # Phase 12：应用版本（与 /api/version、About 同一来源 version.py）
         result["version"] = __version__
         # Phase 10：应用级状态（不暴露 Mutex handle 等 Windows 内部句柄）
@@ -968,6 +1027,9 @@ def build_app(
                 "url": cfg.llama_server.url,
                 "metrics_path": cfg.llama_server.metrics_path,
                 "timeout_seconds": cfg.llama_server.timeout_seconds,
+                "provider": cfg.llama_server.provider,
+                # 1.3.0：密钥只暴露"是否已设置"（值不落远程 API 响应）
+                "api_key_set": bool(cfg.llama_server.api_key),
                 "metrics_url": cfg.metrics_url,
             },
             "collector": {
@@ -1046,6 +1108,11 @@ def build_app(
         if not isinstance(payload, dict):
             return JSONResponse(status_code=400, content=_err("CONFIG_VALIDATION_ERROR", "请求体必须是 JSON 对象"))
         existing = read_raw_config(loaded.path)
+        # 1.3.0：API Key 空值 = 保持不变。设置页密码框默认空白（值只进不落），
+        # 直接存空串会在每次保存时静默抹掉已设置的密钥；清空密钥走配置文件。
+        ls_upd = payload.get("llama_server")
+        if isinstance(ls_upd, dict) and ls_upd.get("api_key") == "":
+            del ls_upd["api_key"]
         candidate, changed, errors = validate_updates(existing, payload)
         if errors:
             field = None
@@ -1066,14 +1133,23 @@ def build_app(
     @app.post("/api/config/test-connection", dependencies=[Depends(_require_loopback)])
     async def api_test_connection(payload: dict) -> dict:
         """
-        测试 llama-server metrics 端点：只 GET <url><metrics_path>，
+        测试推理服务连接并识别后端（1.3.0）：只 GET /health + <metrics_path>，
         绝不触碰任何控制接口。由后端发起请求（避免前端 CORS 问题）。
+
+        响应（兼容旧字段 success/latency_ms/http_status/metrics_detected）：
+        - provider: llamacpp / strata / unknown
+        - provider_display: 显示名
+        - strata: {model, loaded, max_context, images, ...}（识别为 Strata 时）
+        - mismatch / mismatch_detail: 手动选择与实际不符时
+        - error: 失败原因（面向用户）
         """
         if not isinstance(payload, dict):
             return {"success": False, "error": "请求体必须是 JSON 对象"}
         url = payload.get("url")
         path = payload.get("metrics_path", "/metrics")
         timeout = payload.get("timeout_seconds", 3)
+        provider = payload.get("provider", "auto")
+        api_key = payload.get("api_key") or ""
         # 与 config.py 相同的校验口径
         if not (isinstance(url, str) and (url.startswith("http://") or url.startswith("https://"))):
             return {"success": False, "error": "无效的 URL"}
@@ -1081,36 +1157,57 @@ def build_app(
             return {"success": False, "error": "无效的 metrics_path"}
         if not (isinstance(timeout, (int, float)) and not isinstance(timeout, bool) and 0.5 <= timeout <= 60):
             return {"success": False, "error": "无效的 timeout_seconds"}
-        metrics_url = build_metrics_url(url, path)
+        if not (provider in ("auto", "llamacpp", "strata")):
+            return {"success": False, "error": "无效的推理后端"}
+        if not isinstance(api_key, str):
+            return {"success": False, "error": "无效的 API 密钥"}
+
         t0 = time.perf_counter()
         try:
-            # RC-004：本地/内网测试目标不走系统代理（死代理会让本机端点测试假超时）
-            async with httpx.AsyncClient(timeout=float(timeout), follow_redirects=True,
-                                         trust_env=trust_env_for(metrics_url)) as client:
-                r = await client.get(metrics_url)
-            latency_ms = (time.perf_counter() - t0) * 1000
-            if r.status_code == 200:
-                lines = (line for line in r.text.splitlines() if line)
-                detected = any(
-                    line.startswith("llamacpp:") or line.startswith("# TYPE") for line in lines
+            if provider in ("llamacpp", "strata"):
+                result = await verify_manual_provider(
+                    url, provider, metrics_path=path,
+                    timeout_seconds=float(timeout), api_key=api_key or None,
                 )
-                return {
-                    "success": True,
-                    "latency_ms": round(latency_ms, 1),
-                    "http_status": 200,
-                    "metrics_detected": bool(detected),
-                }
-            logger.warning("Test connection failed: HTTP %s from %s", r.status_code, metrics_url)
-            return {"success": False, "http_status": r.status_code, "error": f"HTTP {r.status_code}"}
-        except httpx.ConnectError:
-            logger.warning("Test connection failed: connection refused: %s", metrics_url)
-            return {"success": False, "error": "Connection refused"}
-        except httpx.TimeoutException:
-            logger.warning("Test connection failed: timeout after %ss: %s", timeout, metrics_url)
-            return {"success": False, "error": f"Timeout after {timeout}s"}
+            else:
+                result = await detect_backend(
+                    url, metrics_path=path,
+                    timeout_seconds=float(timeout), api_key=api_key or None,
+                )
+                result["mismatch"] = False
+                result["mismatch_detail"] = None
         except Exception as exc:
-            logger.warning("Test connection failed: %r (%s)", exc, metrics_url)
+            logger.warning("Test connection failed: %r (%s)", exc, url)
             return {"success": False, "error": str(exc) or exc.__class__.__name__}
+
+        latency_ms = (time.perf_counter() - t0) * 1000
+        provider_id = result.get("provider", "unknown")
+        mismatch = bool(result.get("mismatch"))
+        ok = provider_id in ("llamacpp", "strata") and not mismatch
+        out = {
+            "success": ok,
+            "latency_ms": round(latency_ms, 1),
+            "http_status": result.get("http_status"),
+            "provider": provider_id,
+            "provider_display": result.get("provider_display"),
+            # 兼容旧前端：llama.cpp 的 metrics 检测结果
+            "metrics_detected": bool(
+                (result.get("llamacpp") or {}).get("metrics_detected")
+            ),
+            "strata": result.get("strata"),
+            "mismatch": mismatch,
+            "mismatch_detail": result.get("mismatch_detail"),
+            "error": None if ok else (
+                result.get("mismatch_detail") or result.get("error")
+                or "服务可达，但未能识别推理后端"
+            ),
+        }
+        if ok:
+            logger.info("Test connection OK: %s (%s) %s",
+                        out["provider_display"], result.get("server_id"), url)
+        else:
+            logger.warning("Test connection failed: %s: %s", url, out["error"])
+        return out
 
     # ---------- GPU（Phase 9） ----------
 
@@ -1595,16 +1692,20 @@ def build_app(
     @app.get("/api/runtime")
     async def api_runtime() -> dict:
         """
-        llama-server 运行时状态（最新一轮 gauge 值，缺失指标为 null）。
+        推理服务运行时状态（最新一轮 gauge 值，缺失指标为 null）。
 
         capabilities：服务器当前提供了哪些功能（Metric Capability Detection；
-        只存布尔，不暴露原始 Prometheus 文本）；gpu = GPU 监控当前是否可用。
+        llama.cpp 为布尔，1.3.0 Strata 为四态状态值：
+        supported / unsupported / temporarily_unavailable / unknown）；
+        gpu = GPU 监控当前是否可用。
         """
         snap = collector.last_snapshot
         caps = dict(collector.capabilities)
         caps["gpu"] = bool(gpu is not None and gpu.available)
+        provider = getattr(collector, "provider_id", "llamacpp")
         return {
             "server_online": snap["online"] if snap is not None else None,
+            "provider": provider,
             "requests_processing": (snap or {}).get("requests_processing"),
             "requests_deferred": (snap or {}).get("requests_deferred"),
             "busy_slots": (snap or {}).get("n_busy_slots_per_decode"),
@@ -1613,6 +1714,75 @@ def build_app(
             "kv_cache_usage_ratio": (snap or {}).get("kv_cache_usage_ratio"),
             "capabilities": caps,
         }
+
+    @app.get("/api/strata/live")
+    async def api_strata_live() -> dict:
+        """
+        Strata 专属实时监控（1.3.0，§30-§63；内存态，非 Strata 后端 404）。
+
+        全部字段来自规范化后的内存快照（strata_parser 白名单）：
+        - live: 实时状态 + 当前请求进度（§33-§39）
+        - slots: /slots 原始白名单（§47）
+        - recent_requests: 最近请求（§49-§54，不持久化）
+        - conversation_cache: 会话缓存（§55-§59）
+        - engine: 引擎/运行配置（§60-§61）
+        - hardware: Strata 主机硬件摘要（§62；本机监控仍用 Windows/nvidia-smi 源）
+        - model: 模型元数据（§15）
+        """
+        provider = getattr(collector, "provider_id", "llamacpp")
+        if provider != "strata":
+            raise HTTPException(status_code=404, detail="not a Strata backend")
+        c = collector
+        hardware = c.backend_hardware
+        # 本机 vs Strata 主机标签（§62/§78）：server_id 与本机回环/主机名关系
+        from strata_parser import server_identity
+        server_id = c.server_id
+        local_host = _is_local_server(server_id)
+        return {
+            "provider": "strata",
+            "server_id": server_id,
+            "server_local": local_host,
+            "state": c.server_state,
+            "state_label": strata_state_label(c.server_state),
+            "live": c.live,
+            "slots": [
+                {k: s.get(k) for k in ("id", "n_ctx", "is_processing", "n_prompt_tokens")
+                 if s.get(k) is not None}
+                for s in (c._slots or []) if isinstance(s, dict)
+            ],
+            "recent_requests": c.recent_requests,
+            "conversation_cache": c.conversation_cache,
+            "engine": c.engine_info,
+            "hardware": hardware,
+            "hardware_static": (hardware or {}).get("static") if hardware else None,
+            "model": _strata_model_public(c),
+            "capabilities": c.capabilities,
+            "last_update": c.last_update,
+        }
+
+    def _is_local_server(server_id: str) -> bool:
+        """server_id (host:port) 是否本机（回环地址 / localhost）。"""
+        host = server_id.split(":")[0].lower() if server_id else ""
+        return host in ("127.0.0.1", "localhost", "::1")
+
+    def _strata_model_public(c) -> dict | None:
+        """Strata 模型元数据（API 暴露；model_file_name 已按文件名脱敏）。"""
+        info = c.model_info
+        if not info:
+            return None
+        out = {
+            "model": info.get("model"),
+            "model_loaded": info.get("model_loaded"),
+            "context_window": info.get("context_window"),
+            "vision_supported": info.get("vision_supported"),
+            "input_modalities": info.get("input_modalities"),
+            "output_modalities": info.get("output_modalities"),
+            "total_slots": info.get("total_slots"),
+            "is_sleeping": info.get("is_sleeping"),
+            "build_info": info.get("build_info"),
+            "model_file_name": info.get("model_file_name"),
+        }
+        return out
 
     # ---------- 数据管理（Phase 8） ----------
 
@@ -2031,29 +2201,65 @@ def build_app(
         now = collector.clock.now()
         today_str = local_date(now)
 
-        # ---- service（llama-server 健康 + 指标采集） ----
+        # ---- service（推理服务健康 + 指标采集；1.3.0 支持 llama.cpp / Strata） ----
         snap = collector.last_snapshot
         online = None
         if snap is not None:
             online = bool(snap.get("online"))
+        provider = getattr(collector, "provider_id", "llamacpp")
         server_state = runtime.server_state if runtime is not None else None
-        if online is True:
-            service_status = "ready"  # 就绪
-        elif online is False:
-            # 健康检查仍正常但指标端点不可达 = 监测异常；健康也失败 = 不可达
-            service_status = (
-                "monitoring_error" if server_state in ("ready", "loading")
-                else "unreachable"
-            )
-        else:
-            service_status = "detecting"  # 首轮采集未完成
         model_info = runtime.model_info if runtime is not None else None
+        if provider == "strata":
+            server_state = getattr(collector, "server_state", None)
+            # Strata 状态机 -> 服务状态（§32）
+            _ST = {
+                "ready": "ready", "busy": "busy", "loading": "loading",
+                "sleeping": "sleeping", "monitoring_error": "monitoring_error",
+                "waiting": "unreachable", "unreachable": "unreachable",
+            }
+            if server_state in _ST:
+                service_status = _ST[server_state]
+            elif online is True:
+                service_status = "ready"
+            elif online is False:
+                service_status = "unreachable"
+            else:
+                service_status = "detecting"
+            _si = getattr(collector, "model_info", None)
+            service_model = {
+                "model_alias": (_si or {}).get("model"),
+                "model_file_name": (_si or {}).get("model_file_name"),
+                "model_ftype": None,
+                "parameter_count": None,
+                "model_size_bytes": None,
+                "context_size": (_si or {}).get("context_window"),
+                "total_slots": (_si or {}).get("total_slots"),
+                "vision_supported": (_si or {}).get("vision_supported"),
+                "video_supported": None,
+                "audio_supported": None,
+                "build_info": (_si or {}).get("build_info"),
+                "is_sleeping": (_si or {}).get("is_sleeping"),
+            } if _si else None
+        else:
+            if online is True:
+                service_status = "ready"  # 就绪
+            elif online is False:
+                # 健康检查仍正常但指标端点不可达 = 监测异常；健康也失败 = 不可达
+                service_status = (
+                    "monitoring_error" if server_state in ("ready", "loading")
+                    else "unreachable"
+                )
+            else:
+                service_status = "detecting"  # 首轮采集未完成
+            service_model = _model_summary_public(runtime, request) if runtime is not None else None
         service = {
             "status": service_status,
+            "provider": provider,
+            "provider_display": {"llamacpp": "llama.cpp", "strata": "Strata"}.get(provider, provider),
             "online": online,
             "server_state": server_state,
             "address": _base_address_public(collector.metrics_url),
-            "model": _model_summary_public(runtime, request) if runtime is not None else None,
+            "model": service_model,
             "last_update": collector.last_update,
             "available": online is not None,
         }
@@ -2063,6 +2269,8 @@ def build_app(
             ctx = snap.get("context_max")
         if ctx is None and model_info:
             ctx = model_info.get("context_size")
+        if ctx is None and provider == "strata" and service_model:
+            ctx = service_model.get("context_size")
         service["context_window"] = ctx
         # 静态模型元数据（上下文/Slot/模态）——内存态，无 I/O，无需额外缓存
 
@@ -2752,7 +2960,7 @@ def build_app(
             else:
                 risk, risk_label = "none", "无"
             reason = g["reason"] or "unknown"
-            label, inferred, inferred_note = _reason_label(reason)
+            label, inferred, inferred_note = _reason_label(reason, g.get("source"))
             if reason == "unknown" and not lost:
                 s0, e0 = float(g["start_timestamp"]), float(g["end_timestamp"])
                 for ws, we in sleep_wins:
@@ -2780,8 +2988,20 @@ def build_app(
             })
         return out
 
-    def _reason_label(reason: str) -> tuple[str, bool, str]:
-        """raw reason -> (中文 label, inferred=False, note="")（§97-104 正式分类）。未知 -> 原因未确定。"""
+    def _reason_label(reason: str, source: str | None = None) -> tuple[str, bool, str]:
+        """
+        raw reason -> (中文 label, inferred=False, note="")（§97-104 正式分类）。
+        1.3.0：按缺口 source 区分 Provider（strata 缺口不显示 llama.cpp 字样）。
+        未知 -> 原因未确定。
+        """
+        if source == "strata":
+            return {
+                "system_pause_or_sleep": ("系统休眠", False, ""),
+                "monitor_restart": ("LlamaMonitor 重启", False, ""),
+                "server_offline": ("Strata 服务不可达", False, ""),
+                "invalid_metrics": ("采集超时 / 异常", False, ""),
+                "unknown": ("原因未确定", False, ""),
+            }.get(reason, ("原因未确定", False, ""))
         return {
             "system_pause_or_sleep": ("系统休眠", False, ""),
             "monitor_restart": ("LlamaMonitor 重启", False, ""),
@@ -2795,6 +3015,7 @@ def build_app(
     # 未知 source 原样保留（Developer Detail 可查）。
     EVENT_SOURCE_LABELS: dict[str, str] = {
         "collector": "llama.cpp 采集器",
+        "strata": "Strata 采集器",
         "application": "LlamaMonitor",
         "system": "系统",
         "gpu": "GPU",
@@ -2824,6 +3045,12 @@ def build_app(
         "server_online": ("llama.cpp 服务已恢复", "服务", "success"),
         "server_offline": ("llama.cpp 服务不可达", "服务", "warning"),
         "llama_health_changed": ("llama.cpp 健康状态变化", "服务", None),
+        # 服务（Strata，1.3.0）
+        "strata_online": ("Strata 服务已恢复", "服务", "success"),
+        "strata_offline": ("Strata 服务不可达", "服务", "warning"),
+        "strata_model_loaded": ("Strata 模型加载完成", "服务", "info"),
+        "strata_state_changed": ("Strata 服务状态变化", "服务", None),
+        "strata_instance_changed": ("Strata 累计周期变化（服务重启）", "服务", "info"),
         # 应用（LlamaMonitor 生命周期）
         "monitor_start": ("LlamaMonitor 已启动", "应用", "info"),
         "monitor_stop": ("LlamaMonitor 已停止", "应用", "info"),
@@ -4007,10 +4234,16 @@ def main() -> None:
         retention_seconds=cfg.collector.live_retention_hours * 3600,
         pre_migration_backup_dir=app_data_dir() / "backups",
     )
-    collector, gpu = build_collector(cfg, db)
+    # 1.3.0：解析推理后端（auto -> /health + /metrics 只读识别；失败按 llama.cpp）
+    provider = resolve_runtime_provider(cfg)
+    collector, gpu = build_collector(cfg, db, provider=provider)
     # 1.1：System & Hardware Telemetry collectors（故障隔离：各自独立，
-    # 失败绝不影响 Token 采集 / GPU 采集）
-    runtime = LlamaRuntimeCollector(cfg, db=db)
+    # 失败绝不影响 Token 采集 / GPU 采集）。
+    # 1.3.0：llama.cpp 运行时采集器仅 llama.cpp 后端需要（Strata 用 StrataCollector
+    # 自带的 /health /slots /props /v1/models 轮询）。
+    runtime = None
+    if provider != PROVIDER_STRATA:
+        runtime = LlamaRuntimeCollector(cfg, db=db)
     system = SystemCollector(cfg, db=db)
     sensors = HardwareSensorProvider(cfg, db=db)
     app = build_app(db, collector, loaded, gpu,

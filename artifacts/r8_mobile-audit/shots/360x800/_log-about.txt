@@ -1,0 +1,1 @@
+﻿OK 360x800 about -> artifacts\r8_mobile-audit\shots\360x800\_result-360-800-about.json

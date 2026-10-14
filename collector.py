@@ -62,6 +62,7 @@ import httpx
 from clock import Clock, default_clock
 from config import AppConfig, apply_overrides, load_config, setup_logging, trust_env_for
 from db import Database, local_date
+from gap_tracker import GAP_THRESHOLD_FACTOR, GapTracker
 from metrics_parser import get_metric_by_label, get_metric_value, parse_metrics
 from stats import TRACKED_COUNTERS, COUNTER_SHORT_NAMES, compute_deltas, counter_delta, mtp_accept_rate, tps
 
@@ -75,7 +76,7 @@ CORE_COUNTERS = (
 )
 
 # 缺口判定阈值倍数：相邻有效样本（monotonic）间隔 > poll_interval * 该值 -> 已知缺口
-GAP_THRESHOLD_FACTOR = 3.0
+# （1.3.0：定义下沉到共享 gap_tracker.GapTracker，两个推理后端采集器共用）
 
 # AUDIT-DATA-003：/metrics 响应大小上限（16 MB）。正常 llama-server 的 /metrics
 # 只有几 KB；超过即视为异常响应（防御性上限），按离线处理，保护 LlamaMonitor 内存。
@@ -230,28 +231,26 @@ class MetricsCollector:
         # 新建连接的首个请求"有 ~1s 级开销，复用连接后单轮抓取从 ~1.5s 降到 ~10ms。
         self._http: httpx.AsyncClient | None = None
         self._http_loop = None
-        # ---- Phase 11：缺口 / 数据质量追踪（全部内存态，写库才持久化） ----
-        # 最近一次"有效样本"的 (wall, mono)；用于 monotonic 间隔判定 gap/sleep
-        self._last_valid: tuple[float, float] | None = None
-        # 当前未结束的已知缺口：dict(start_wall, reason) 或 None。
-        # 缺口在"下一个有效样本"到来时才写 data_gaps（end/duration/possible_token_loss 才能确定）
-        self._open_gap: dict | None = None
+        # ---- Phase 11：缺口 / 数据质量追踪（1.3.0 起由共享 GapTracker 承载；
+        # ---- Strata 采集器使用同一实现，保证两个后端的缺口语义完全一致） ----
+        self._gaps = GapTracker(self.interval, self.clock)
         # 上一轮是否"有效样本"（用于 sample_invalid 状态转换日志/事件）
         self._last_sample_valid: bool | None = None
-        # monitor_restart 缺口：启动时若发现 state 有旧 baseline（上一进程留下的），
-        # 首个有效样本到来时记一条 monitor_restart 缺口（上一进程最后写库 -> 本次）。
-        # 由 server/desktop 在启动时调用 maybe_note_restart_gap() 置位。
-        self._restart_pending_since: float | None = None
         # 上一轮检测到 reset 的核心 Counter（用于"恢复样本"判定 possible_token_loss）
         self._core_reset_on_last_sample: bool = False
         # 本轮值不可用（NaN/Inf/负值）的指标名集合（invalid_metric_value 状态转换去重用）
         self._invalid_metrics: set[str] = set()
 
-    # ---- Phase 11：缺口 / 重启 钩子 ------------------------------------------------
+    # ---- Phase 11：缺口 / 重启 钩子（1.3.0：实现下沉到共享 gap_tracker.GapTracker）----
+
+    @property
+    def _last_valid(self) -> tuple[float, float] | None:
+        """最近一次"有效样本"的 (wall, mono)（server 端点直接读；API 兼容）。"""
+        return self._gaps._last_valid
 
     def gap_threshold(self) -> float:
         """相邻有效样本（monotonic）间隔超过该秒数视为已知缺口。"""
-        return self.interval * GAP_THRESHOLD_FACTOR
+        return self._gaps.gap_threshold()
 
     def maybe_note_restart_gap(self) -> None:
         """
@@ -259,71 +258,23 @@ class MetricsCollector:
         记录"上一进程最后写库时刻"，首个有效样本到来时补记 monitor_restart 缺口。
         全新库（无任何 baseline）不记（没有可对比的上一段）。
         """
-        if self.db is None or self._restart_pending_since is not None:
+        if self.db is None:
             return
-        try:
-            _, last = self.db.get_first_and_last_sample()
-        except Exception:
-            last = None
-        if last is not None:
-            self._restart_pending_since = float(last)
+        self._gaps.maybe_note_restart_gap(
+            lambda: (self.db.get_first_and_last_sample() or (None, None))[1]
+        )
 
     def open_gap_property(self) -> dict | None:
         """供 API 读取当前未结束缺口（{start_timestamp, reason, duration_seconds}）。"""
-        if self._open_gap is None:
-            return None
-        elapsed = self.clock.now() - self._open_gap["start_wall"]
-        return {
-            "start_timestamp": self._open_gap["start_wall"],
-            "reason": self._open_gap["reason"],
-            "duration_seconds": max(0.0, elapsed),
-        }
+        return self._gaps.open_gap_property()
 
     def _maybe_open_gap(self, now_wall: float, now_mono: float, reason: str) -> None:
         """在 now 时刻开启一个缺口（若已有未结束缺口则不重复开启）。"""
-        if self._open_gap is not None:
-            return
-        self._open_gap = {"start_wall": now_wall, "start_mono": now_mono, "reason": reason}
+        self._gaps.open_gap(reason, now_wall, now_mono, source="llama")
 
     def _close_open_gap(self, now_wall: float, core_reset: bool) -> None:
-        """
-        在 now 时刻结束未结束缺口并写库。
-        possible_token_loss = 缺口期间核心 Counter 发生过 reset 且间隔超过阈值
-        （llama-server 在断档中重启：断档中生成的 token 无法从 Counter 恢复）。
-        """
-        gap = self._open_gap
-        if gap is None:
-            return
-        self._open_gap = None
-        if self.db is None:
-            return
-        duration = max(0.0, now_wall - gap["start_wall"])
-        if duration <= 0:
-            return
-        # 间隔未超过阈值：只是正常抖动，不落库（避免 data_gaps 被 1s 级小缺口刷屏）
-        # （monitor_restart / sleep 等长缺口天然远超阈值）
-        if duration < self.gap_threshold() and gap["reason"] not in ("monitor_restart",):
-            return
-        loss = bool(core_reset) and duration >= self.gap_threshold()
-        try:
-            self.db.record_gap(
-                start_ts=gap["start_wall"],
-                end_ts=now_wall,
-                source="llama",
-                reason=gap["reason"],
-                token_recoverable=not loss,
-                possible_token_loss=loss,
-                now=now_wall,
-            )
-            if loss:
-                logger.warning(
-                    "已知缺口结束（%s, %.0fs）：期间核心 Counter 发生 reset，"
-                    "可能有不可恢复 token 丢失", gap["reason"], duration,
-                )
-            else:
-                logger.info("已知缺口结束（%s, %.0fs）", gap["reason"], duration)
-        except Exception as exc:
-            logger.warning("写入缺口记录失败（不影响采集）: %r", exc)
+        """在 now 时刻结束未结束缺口并写库（possible_token_loss 判定见 gap_tracker）。"""
+        self._gaps.close_open_gap(self.db, now_wall, core_reset, source="llama")
 
     def _get_client(self) -> httpx.AsyncClient:
         """懒创建并复用 AsyncClient；事件循环变化（测试多 asyncio.run 场景）时重建。"""
@@ -370,33 +321,8 @@ class MetricsCollector:
         if self.db is None:
             return
         now = self.clock.now()
-        if self._open_gap is not None:
-            gap = self._open_gap
-            self._open_gap = None
-            duration = max(0.0, now - gap["start_wall"])
-            if duration >= self.gap_threshold():
-                try:
-                    self.db.record_gap(
-                        start_ts=gap["start_wall"], end_ts=now, source="llama",
-                        reason=gap["reason"], token_recoverable=True,
-                        possible_token_loss=False, now=now,
-                    )
-                except Exception as exc:
-                    logger.warning("退出时写入未结束缺口失败: %r", exc)
-        if self._restart_pending_since is not None:
-            # 进程在首个有效样本前退出：补记 monitor_restart 缺口
-            since = self._restart_pending_since
-            self._restart_pending_since = None
-            duration = max(0.0, now - since)
-            if duration >= self.gap_threshold():
-                try:
-                    self.db.record_gap(
-                        start_ts=since, end_ts=now, source="application",
-                        reason="monitor_restart", token_recoverable=True,
-                        possible_token_loss=False, now=now,
-                    )
-                except Exception as exc:
-                    logger.warning("退出时写入 monitor_restart 缺口失败: %r", exc)
+        # 落盘未结束缺口 + 重启断档补记（共享 GapTracker；source=llama/application）
+        self._gaps.finalize_on_shutdown(self.db, now)
         try:
             self.db.record_event("monitor_stop", "info", "collector", {}, now=now)
         except Exception as exc:
@@ -539,35 +465,15 @@ class MetricsCollector:
         #    进程一直在运行，不能仅凭"monotonic 跨度大"改判为睡眠——5 分钟的
         #    真实 server 离线同样有 5 分钟的 monotonic 跨度。真正的睡眠/暂停
         #    （期间**没有**任何轮询轮次）由下面第 3 步的 mono 跳变检测记录。
-        gap_was_open = self._open_gap is not None
-        if self._open_gap is not None:
+        gap_was_open = self._gaps.open_gap_was_open
+        if self._gaps.open_gap_was_open:
             self._close_open_gap(now_wall, core_reset)
 
         # 3) 睡眠/系统暂停：上一轮与本轮都有效（期间无离线/无效轮，即本样本前
         #    没有开启过缺口），但 monotonic 间隔超阈值（进程被系统挂起：
         #    offline 轮根本没发生，只能靠 monotonic 跳变发现）
-        if (
-            not gap_was_open
-            and self._last_valid is not None
-            and (now_mono - self._last_valid[1]) > self.gap_threshold()
-        ):
-            sleep_start_wall = self._last_valid[0]
-            loss = core_reset  # 暂停期间 server 是否重启：以恢复样本的 reset 判定
-            if self.db is not None:
-                duration = max(0.0, now_wall - sleep_start_wall)
-                self.db.record_gap(
-                    start_ts=sleep_start_wall, end_ts=now_wall, source="llama",
-                    reason="system_pause_or_sleep",
-                    token_recoverable=not (loss and duration >= self.gap_threshold()),
-                    possible_token_loss=bool(loss and duration >= self.gap_threshold()),
-                    now=now_wall,
-                )
-                logger.warning("检测到系统暂停/睡眠（monotonic 间隔 %.0fs > 阈值 %.0fs），已记缺口",
-                               now_mono - self._last_valid[1], self.gap_threshold())
-                self.db.record_event(
-                    "sleep_gap", "warning", "collector",
-                    {"monotonic_gap_seconds": now_mono - self._last_valid[1]}, now=now_wall,
-                )
+        if not gap_was_open:
+            self._gaps.on_sleep_gap(self.db, now_wall, now_mono, core_reset, source="llama")
 
         # 4) 持久化（单事务；失败 -> 保持旧 baseline，下轮重算完整 delta）
         # AUDIT-SEC-004：unavailable 若由**本进程写失败**触发（last_db_error 非空），
@@ -620,24 +526,10 @@ class MetricsCollector:
                         pass
 
         # 5) monitor_restart 缺口：启动时置位 -> 首个有效样本时补记（上一进程断档）
-        if self._restart_pending_since is not None:
-            since_wall = self._restart_pending_since
-            self._restart_pending_since = None
-            duration = max(0.0, now_wall - since_wall)
-            if duration >= self.gap_threshold() and self.db is not None:
-                loss = bool(core_reset)
-                self.db.record_gap(
-                    start_ts=since_wall, end_ts=now_wall, source="application",
-                    reason="monitor_restart",
-                    token_recoverable=not loss, possible_token_loss=loss, now=now_wall,
-                )
-                self.db.record_event("monitor_restart_gap", "warning", "application",
-                                     {"duration_seconds": duration}, now=now_wall)
-                logger.warning("monitor 重启缺口 %.0fs（%s -> 现在）", duration,
-                               local_date(since_wall))
+        self._gaps.finalize_restart_gap(self.db, now_wall, core_reset, source="application")
 
         # 记录有效样本时刻（wall + mono）
-        self._last_valid = (now_wall, now_mono)
+        self._gaps.on_valid_sample(now_wall, now_mono)
         snapshot["_valid"] = True
         return snapshot
 

@@ -1,0 +1,1 @@
+﻿OK 320x568 gpu -> artifacts\r8_mobile-audit\shots\320x568\_result-320-568-gpu.json

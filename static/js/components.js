@@ -361,13 +361,45 @@
           "prompt_tokens_cached_total": "缓存复用 Token 计数",
           "tokens_predicted_total": "输出 Token 计数",
         };
+        // 1.3.0：Strata 命名空间 Counter（strata:<host>:totals.<field>）
+        var STRATA_COUNTER_LABELS = {
+          "totals.prompt_tokens": "输入 Token 累计",
+          "totals.reused": "缓存复用 Token 累计",
+          "totals.output_tokens": "输出 Token 累计",
+          "totals.drafts_offered": "Draft 提交累计",
+          "totals.drafts_accepted": "Draft 接受累计",
+          "totals.prompt_ms": "Prompt 耗时累计",
+          "totals.decode_ms": "解码耗时累计",
+        };
         var parts = [];
         if (d.counter_name) parts.push((COUNTER_LABELS[d.counter_name] || String(d.counter_name)) + ":");
+        if (d.metric) {
+          var sm = String(d.metric).replace(/^strata:[^:]+(:\d+)?:/, "");
+          parts.push((STRATA_COUNTER_LABELS[sm] || sm) + ":");
+        }
         if (d.previous != null || d.current != null) {
           parts.push((d.previous != null ? num(d.previous) : "?") + " → " + (d.current != null ? num(d.current) : "?"));
         }
         return parts.join(" ");
       }
+      // 1.3.0：Strata 后端事件（source=strata）
+      case "strata_state_changed": {
+        var STRATA_STATE_LABELS = {
+          ready: "就绪", busy: "推理中", loading: "模型加载中", sleeping: "休眠",
+          monitoring_error: "监测异常", unreachable: "不可达",
+          waiting: "等待服务响应", detecting: "检测中",
+        };
+        var sp = STRATA_STATE_LABELS[d.previous] || String(d.previous || "?");
+        var sc = STRATA_STATE_LABELS[d.current] || String(d.current || "?");
+        return sp + " → " + sc;
+      }
+      case "strata_online":
+      case "strata_offline":
+        return d.url ? hostUrl(d.url) : "";
+      case "strata_model_loaded":
+        return d.model ? "模型 " + String(d.model) + " 已加载" : "模型已加载";
+      case "strata_instance_changed":
+        return "累计周期变化（Baseline 已重建）";
       case "backup_created":
         return d.file ? String(d.file) : "备份完成";
       case "database_protective_mode":

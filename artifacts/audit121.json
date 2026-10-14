@@ -1,0 +1,149 @@
+{
+ "overview": {
+  "hints": [
+   "p.page-subtitle :: 查看 llama.cpp 服务、用量、推理状态、主机资源与监测完整性。",
+   "span.stat-hint :: 最后更新：刚刚",
+   "div.ov-attention-item :: 今日采集覆盖率未达 100% 7 个已知缺口",
+   "div.ov-attention-item :: GPU 0 性能受限 GPU Idle",
+   "div.stat-sub :: 当前无对应推理活动",
+   "div.stat-sub :: 当前无对应推理活动",
+   "div.stat-sub :: 70.3 GiB / 255.7 GiB",
+   "div.stat-sub :: 1 个组件可读取 · CPU Package 不可读（总值非整机）",
+   "span.sh-sub :: 2 张 GPU",
+   "div.stat-sub :: 可能存在 Token 丢失",
+   "div.stat-sub :: WAL 已启用",
+   "div.stat-sub :: 07:40:50"
+  ],
+  "tips": [],
+  "misaligned": []
+ },
+ "usage": {
+  "hints": [
+   "p.page-subtitle :: 查看指定时间范围内的 Token 汇总、使用趋势与每日明细。",
+   "span.sh-sub :: 近 7 天（2 天有数据）",
+   "div.stat-hint :: 含缓存复用",
+   "div.stat-hint :: 不含缓存复用",
+   "span.sh-sub :: 按天（Prompt / 缓存复用 / 生成，堆叠）",
+   "span.sh-sub :: 采集覆盖率与缺口（缺口详情见监控历史页）"
+  ],
+  "tips": [],
+  "misaligned": []
+ },
+ "performance": {
+  "hints": [
+   "p.page-subtitle :: 监测推理吞吐、请求与 Slot 状态、上下文占用及 MTP（Multi-Token Prediction）效率。",
+   "div.empty-title :: 暂无推理吞吐数据",
+   "div.empty-desc :: 所选时间范围内没有推理活动。产生推理请求后将在此显示实时吞吐趋势。",
+   "span.card-sub :: 今天",
+   "span.card-sub :: 今天",
+   "span.sh-sub :: 仅展示运行元数据 ?"
+  ],
+  "tips": [],
+  "misaligned": []
+ },
+ "system": {
+  "hints": [
+   "p.page-subtitle :: 监测 CPU、内存、存储、网络、功耗与硬件传感器。 采集正常",
+   "div.stat-sub :: 70.4 GiB / 255.7 GiB",
+   "div.stat-sub :: 1 个组件可读取 · CPU Package 不可读（总值非整机）",
+   "span.sh-sub :: 当前 3% · 平均 10% · 峰值 42%",
+   "div.stat-sub :: 基准 2.70 GHz",
+   "span.card-sub :: 当前 3% · 平均 10% · 峰值 42%",
+   "span.sh-sub :: 当前 28% · 平均 27% · 峰值 28%",
+   "span.card-sub :: 当前 28% · 平均 27% · 峰值 28%",
+   "div.stat-hint :: 可用 705.8 GiB",
+   "div.stat-hint :: 可用 3116.2 GiB",
+   "span.sh-sub :: 接口： WLAN",
+   "div.stat-sub :: Wi-Fi",
+   "span.sh-sub :: 组件功耗合计 = 所有可读取组件之和，非整机输入功耗。",
+   "div.stat-sub :: 1 个组件可读取 · CPU Package 不可读（总值非整机）",
+   "div.stat-sub :: 需外部功率计 / UPS / 智能插座 / BMC",
+   "span.sh-sub :: · 数据来源：LibreHardwareMonitor",
+   "div.stat-hint :: 当前无结构化传感器数据（可在下方「查看全部传感器」查看原始分组）。"
+  ],
+  "tips": [],
+  "misaligned": []
+ },
+ "gpu": {
+  "hints": [
+   "p.page-subtitle :: 监测 NVIDIA GPU 的利用率、显存、功耗、温度及运行状态。 ? 采集正常",
+   "span.stat-hint :: 2 张 GPU",
+   "span.stat-hint :: 驱动 580.88",
+   "span.sh-sub :: 同一 GPU 同色：实线 = 利用率，虚线 = 显存占用率（0-100%）",
+   "span.sh-sub :: 风扇转速与 SM / 显存时钟（历史）",
+   "span.sh-sub :: 根据采样功耗随时间积分估算，仅供参考。",
+   "span.sh-sub :: 只读 · 不结束进程"
+  ],
+  "tips": [],
+  "misaligned": []
+ },
+ "history": {
+  "hints": [
+   "p.page-subtitle :: 查看采集完整性、监控缺口、运行事件与数据导出。",
+   "span.sh-sub :: 采集覆盖率反映监测时间完整性，不代表 Token 统计精度",
+   "div.stat-hint :: WAL 已启用",
+   "div.stat-hint :: 当前范围 · 近 7 天",
+   "div.stat-hint :: 累计 158 个 · 范围缺口 2天6小时",
+   "div.stat-hint :: 范围内无 Token 数据风险",
+   "div.stat-hint :: 最后采样 2026/10/11 07:41:02",
+   "div.stat-hint :: 数据库状态与最后采样不受时间范围影响",
+   "span.sh-sub :: 采集覆盖率 · 按日（点击趋势对应时段可筛选采集缺口）",
+   "span.sh-sub :: 20 个已加载",
+   "div.empty-title :: 当前范围暂无采集缺口",
+   "div.empty-desc :: 监控正常运行时，此列表保持为空。",
+   "span.sh-sub :: 当前范围 · 30 条已加载",
+   "div.empty-title :: 当前范围暂无事件",
+   "span.sh-sub :: 导出当前时间范围内的结果"
+  ],
+  "tips": [],
+  "misaligned": []
+ },
+ "settings": {
+  "hints": [
+   "p.page-subtitle :: 配置 LlamaMonitor 的连接、采集、显示、存储与应用行为。",
+   "div.setting-desc :: 基础地址，例如 http://127.0.0.1:9091，不包含接口路径。",
+   "div.setting-desc :: Prometheus Metrics 路径，例如 /metrics。",
+   "div.setting-desc :: 读取 Metrics 的请求超时时间（1~30 秒）。",
+   "div.setting-desc :: 使用当前表单值测试，不保存设置。",
+   "div.setting-desc :: 从 llama-server Metrics 读取数据的间隔（推荐 2–5 秒）。这是后台采样周期，不是页面刷新间隔。",
+   "div.setting-desc :: 保留高时间分辨率的 llama.cpp 指标历史。长期每日统计不受此项影响。",
+   "div.setting-desc :: 「系统」跟随 Windows 的 Light/Dark 变化。主题实时切换，保存后持久化。",
+   "div.setting-desc :: 页面可见时刷新动态数据的频率。只影响界面，不修改后台采样周期。",
+   "div.setting-desc :: 用量 / 性能页打开时默认显示的统计范围。",
+   "div.setting-desc :: 读取 nvidia-smi 的采样周期。",
+   "div.setting-desc :: GPU 样本高时间分辨率历史的保留时长。",
+   "div.setting-desc :: 按 UUID 保存选择——GPU 序号可能变化，LlamaMonitor 使用 UUID 识别显卡。未选择时监控所有已检测到的 GPU。",
+   "div.stat-hint :: 已检测 51 个传感器",
+   "div.setting-desc :: CPU / 内存 / 磁盘 / 网络 的实时采样周期。",
+   "div.setting-desc :: 将实时系统采样写入短期历史的间隔（采样更频繁，按此周期落库）。",
+   "div.setting-desc :: 系统样本高时间分辨率历史的保留时长。",
+   "div.setting-desc :: 读取温度 / 功耗 / 风扇等硬件传感器（LibreHardwareMonitor）。",
+   "div.setting-desc :: 硬件传感器桥接输出的周期。",
+   "div.setting-desc :: 自定义数据库文件路径，留空使用默认位置。",
+   "div.setting-desc :: 预写日志模式（Write-Ahead Logging），提高并发读取与写入可靠性。推荐：启用。",
+   "div.setting-desc :: 自动备份的最小间隔（距上次成功自动备份达到该时长后触发）。",
+   "div.setting-desc :: 自动备份最多保留的份数（超出按最旧删除；手动备份不受影响）。",
+   "div.setting-desc :: 最近一次成功的自动备份时间（仅本机信息）。",
+   "div.setting-desc :: 登录 Windows 后在后台启动 LlamaMonitor。",
+   "div.setting-desc :: 启动项需要修复（当前指向旧的 EXE 位置）：",
+   "div.setting-desc :: 仅本机访问。",
+   "div.setting-desc :: 绑定的网络地址（高级）。例如局域网 IP。",
+   "div.setting-desc :: LlamaMonitor Web 界面监听的端口（1024~65535）。",
+   "div.setting-desc :: DEBUG 仅用于问题诊断，可能生成更多日志。",
+   "div.setting-desc :: 单个日志文件达到该大小后轮转。",
+   "div.setting-desc :: 轮转后保留的日志文件数量。",
+   "div.setting-desc :: 退出后将停止后台监控。",
+   "div.setting-desc :: 按检查间隔自动访问配置的 GitHub Releases 检查新版本。",
+   "div.setting-desc :: 发现新版本时自动下载（不会自动安装）。",
+   "div.setting-desc :: 删除全部实时采样历史（llama.cpp 指标 + GPU 样本）。每日统计汇总与计数器基线会保留。",
+   "div.setting-desc :: 删除 Token 用量历史（每日聚合）、GPU 统计、MTP 统计、实时采样与采集缺口记录。计数器基线会保留，计数从当前会话继续。"
+  ],
+  "tips": [],
+  "misaligned": []
+ },
+ "about": {
+  "hints": [],
+  "tips": [],
+  "misaligned": []
+ }
+}

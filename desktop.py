@@ -721,13 +721,20 @@ def main(argv: list[str] | None = None, loaded: LoadedConfig | None = None) -> i
         retention_seconds=cfg.collector.live_retention_hours * 3600,
         pre_migration_backup_dir=app_data_dir() / "backups",
     )
-    collector, gpu = build_collector(cfg, db)
+    # 1.3.0：解析推理后端（auto -> /health + /metrics 只读识别；失败按 llama.cpp）
+    from server import PROVIDER_STRATA, resolve_runtime_provider
+
+    provider = resolve_runtime_provider(cfg)
+    collector, gpu = build_collector(cfg, db, provider=provider)
     # 1.1：System & Hardware Telemetry collectors（故障隔离；与 server.main 同一套）
     from hardware_sensor_provider import HardwareSensorProvider
     from llama_runtime_collector import LlamaRuntimeCollector
     from system_collector import SystemCollector
 
-    runtime = LlamaRuntimeCollector(cfg, db=db)
+    # 1.3.0：llama.cpp 运行时采集器仅 llama.cpp 后端需要
+    runtime = None
+    if provider != PROVIDER_STRATA:
+        runtime = LlamaRuntimeCollector(cfg, db=db)
     system = SystemCollector(cfg, db=db)
     sensors = HardwareSensorProvider(cfg, db=db)
 

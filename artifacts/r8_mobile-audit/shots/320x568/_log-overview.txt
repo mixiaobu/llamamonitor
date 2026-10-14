@@ -1,0 +1,1 @@
+﻿OK 320x568 overview -> artifacts\r8_mobile-audit\shots\320x568\_result-320-568-overview.json

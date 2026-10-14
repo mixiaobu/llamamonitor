@@ -1,0 +1,39 @@
+feat: LlamaMonitor 1.3.0 — 双推理后端（llama.cpp + Strata）统一软件/数据库/页面
+
+一个实例同时只监控一个推理后端（provider: auto/llamacpp/strata，
+重启生效），切换不丢历史：Counter Baseline 按「后端 + 服务地址」隔离，
+两后端 Token 统计/缺口/事件在同一数据库累积。
+
+后端：
+- strata_parser.py：Strata JSON /metrics 纯解析（白名单字段、§20 Token
+  口径：prompt_tokens 含缓存复用 → 拆分输入/复用/新处理/输出、
+  live 实时状态含 phase/busy 权威 OR 规则、requests/会话缓存/引擎/硬件）
+- strata_collector.py：Strata 采集器（7 态状态机：不可达/等待/加载/
+  就绪/推理中/休眠/监测异常；metrics+status 每轮、slots/2、health/5、
+  props+models/300；只读 GET；status.tail/chat_template/API Key 值/
+  模型完整路径不落内存快照/DB/日志）
+- runtime_provider.py：后端探测与手动校验（/health service 字段 /
+  metrics 前缀特征识别；中文错误；测试连接一致性报告）
+- gap_tracker.py：共享缺口追踪器（llama.cpp 与 Strata 同一实现；
+  离线/无效/睡眠/重启缺口 + possible_token_loss 语义一致）
+- db v7：daily_usage_by_source（日期 × 后端 × 服务地址 每日增量）；
+  apply_sample(source=...) 双写；既有历史不回填；reset 清两表
+- server.py：/api/strata/live、/api/status provider 块、
+  /api/overview 服务域双后端、/api/config provider+api_key（PUT 空 key
+  = 保持不变；GET 只回显 api_key_set）、test-connection 双后端、
+  事件展示中文（strata_* 事件族）
+- 隐私：API Key 只进 Authorization 头；tail/tool 字段解析层剥离
+
+前端（统一页面，按 provider 切换专属段）：
+- 性能页 Strata 专属段：实时推理状态（阶段/速度/进度/思考恢复）、
+  会话缓存与 Draft、最近请求（内存态，不落库）、后端硬件（与本机
+  「系统」页区分）；MTP 段与 llama.cpp 专属指标按后端显隐
+- Slot 监控：Strata Slot（保留上下文/窗口上限），移动端沿用卡片化
+- 模型与运行环境：双后端字段映射（引擎版本/构建/模态/上下文）
+- 设置：推理后端选择 + API Key；测试连接显示识别结果/一致性
+- 概览服务卡名称与状态徽章按后端（llama.cpp 三态保留）
+- 事件详情中文渲染（strata_state_changed 状态映射、Strata Counter
+  名称映射）；缺口来源筛选新增 Strata
+
+版本与发布：version.py 1.3.0；CHANGELOG；README 双后端章节 +
+界面预览；config.example.json provider/api_key 字段。

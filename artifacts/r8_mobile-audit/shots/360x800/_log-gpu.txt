@@ -1,0 +1,1 @@
+﻿OK 360x800 gpu -> artifacts\r8_mobile-audit\shots\360x800\_result-360-800-gpu.json

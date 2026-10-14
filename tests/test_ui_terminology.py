@@ -119,7 +119,8 @@ class UiTerminologyTests(unittest.TestCase):
             for _, label in cats:
                 self.assertNotEqual(label, legacy, "rail 残留旧分类名：%s" % legacy)
         # 分类内容标题
-        for title in ["llama-server", "指标采集", "GPU 监控", "系统监控", "软件更新"]:
+        # 1.3.0：连接卡标题 llama-server -> 推理服务器（双后端：llama.cpp / Strata）
+        for title in ["推理服务器", "指标采集", "GPU 监控", "系统监控", "软件更新"]:
             self.assertIn(">%s</h2>" % title, html, "设置分区缺少内容标题：%s" % title)
 
     def test_new_terms_present(self):
@@ -151,7 +152,9 @@ class UiTerminologyTests(unittest.TestCase):
             # Round-7 设置/关于精修：术语最终冻结（§222）
             "请求超时",
             "Metrics 路径",
-            "llama-server 地址",
+            # 1.3.0：llama-server 地址 -> 服务地址（双后端：llama.cpp / Strata）
+            "服务地址",
+            "推理后端",
             "指标采样间隔",
             "短期历史保留",
             "界面刷新间隔",

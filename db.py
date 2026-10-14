@@ -92,7 +92,7 @@ DB_HEALTH_PROTECTIVE = (DB_HEALTH_CORRUPT, DB_HEALTH_UNAVAILABLE, DB_HEALTH_INCO
 # v5 = 1.1.0（System & Hardware Telemetry：system_samples / system_daily +
 #       gpu_samples 高级遥测列扩展）
 # 版本机制见 _connect/_migrate
-CURRENT_SCHEMA_VERSION = 6
+CURRENT_SCHEMA_VERSION = 7
 
 # live_samples 默认保留时长：48 小时（实际值来自配置 collector.live_retention_hours）
 LIVE_SAMPLE_RETENTION_SECONDS = 48 * 3600
@@ -433,6 +433,48 @@ def _migrate_v5_to_v6(conn: sqlite3.Connection) -> None:
         logger.warning("写入 migration 事件失败（不影响迁移本身）", exc_info=True)
 
 
+def _migrate_v6_to_v7(conn: sqlite3.Connection) -> None:
+    """
+    v6 -> v7（1.3.0 双推理后端）：新建 daily_usage_by_source（来源级每日统计）。
+
+    设计（§29 历史来源身份）：
+    - daily_usage 保持**统一每日汇总**（date 主键，所有历史 UI/导出/托盘的
+      口径不变）；
+    - 新表按 (date, provider, server_id) 记录来源级明细——未来多实例监控 /
+      按 Provider 筛选的基础；
+    - 旧历史（升级前 daily_usage 已累加的行）不回填本表——它们来源为
+      llama.cpp 默认实例，但 server_id 无法从旧数据恢复；汇总查询只读
+      daily_usage，来源查询只读本表，**两表永不相加**（避免双重计数）。
+    幂等：IF NOT EXISTS；不 DROP、不 DELETE、不动旧数据。
+    """
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS daily_usage_by_source (
+            date TEXT NOT NULL,
+            provider TEXT NOT NULL,          -- llamacpp / strata
+            server_id TEXT NOT NULL,         -- host:port（来源身份）
+            prompt_tokens INTEGER NOT NULL DEFAULT 0,
+            cached_tokens INTEGER NOT NULL DEFAULT 0,
+            output_tokens INTEGER NOT NULL DEFAULT 0,
+            draft_tokens INTEGER NOT NULL DEFAULT 0,
+            accepted_tokens INTEGER NOT NULL DEFAULT 0,
+            prompt_seconds REAL NOT NULL DEFAULT 0,
+            predicted_seconds REAL NOT NULL DEFAULT 0,
+            draft_sequences INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (date, provider, server_id)
+        );
+        """
+    )
+    try:
+        conn.execute(
+            "INSERT INTO monitor_events(timestamp, event_type, severity, source, details_json) "
+            "VALUES(?, 'migration', 'info', 'database', ?)",
+            (int(time.time()), _json_dumps({"from": 6, "to": 7})),
+        )
+    except Exception:
+        logger.warning("写入 migration 事件失败（不影响迁移本身）", exc_info=True)
+
+
 # 数据库版本 -> 迁移函数（执行后库从该版本升到 version+1）
 _MIGRATIONS: dict[int, object] = {
     1: _migrate_v1_to_v2,
@@ -440,6 +482,7 @@ _MIGRATIONS: dict[int, object] = {
     3: _migrate_v3_to_v4,
     4: _migrate_v4_to_v5,
     5: _migrate_v5_to_v6,
+    6: _migrate_v6_to_v7,
 }
 
 
@@ -873,6 +916,31 @@ class Database:
             rows = conn.execute(sql + " ORDER BY date ASC").fetchall()
         return [dict(row) for row in rows]
 
+    def get_daily_usage_by_source(self, days: int | None = None) -> list[dict]:
+        """
+        来源级每日明细（1.3.0，按 date 升序；含 provider/server_id）。
+
+        与 get_daily_usage 的关系：本表是**来源明细**，daily_usage 是
+        **统一汇总**——页面上二选一展示，严禁相加（避免双重计数）。
+        升级前的旧历史不在本表（来源不可恢复），属预期行为。
+        """
+        conn = self._connect()
+        sql = (
+            "SELECT date, provider, server_id, prompt_tokens, cached_tokens, "
+            "output_tokens, draft_tokens, accepted_tokens, prompt_seconds, "
+            "predicted_seconds, draft_sequences FROM daily_usage_by_source"
+        )
+        if days is not None:
+            rows = conn.execute(
+                sql + " ORDER BY date DESC, provider, server_id LIMIT ?", (days,)
+            ).fetchall()
+            rows = list(reversed(rows))
+        else:
+            rows = conn.execute(
+                sql + " ORDER BY date ASC, provider, server_id"
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def _invalidate_live_cache(self) -> None:
         """live 写入后失效全量缓存，保证下一次 hours=None 读取重新加载（不读旧数据）。"""
         self._live_all_cache = None
@@ -966,6 +1034,7 @@ class Database:
         daily_increments: dict,
         now: float | None = None,
         position_increments: dict | None = None,
+        source: tuple | None = None,
     ) -> None:
         """
         持久化一次成功采集。整个方法在一个事务内完成，异常时整体回滚。
@@ -977,6 +1046,9 @@ class Database:
         - now: Unix 秒（默认当前时刻），同时用于 48h 清理截断
         - position_increments: 本轮 per-position 接受数增量 {position: 增量}
           （仅当服务器提供 position 数据且增量 >0 时传入）
+        - source: (provider, server_id) 来源身份（1.3.0）；非 None 时同一事务内
+          累加 daily_usage_by_source（来源级明细；与 daily_usage 汇总同事务，
+          要么都写要么都不写）。
         """
         conn = self._connect()
         now = time.time() if now is None else now
@@ -1007,6 +1079,27 @@ class Database:
                     + ", ".join(f"{col} = {col} + excluded.{col}" for col in _DAILY_COLUMNS),
                     params,
                 )
+                # 2b) 来源级明细（1.3.0；与统一汇总同事务，避免部分写入）
+                if source is not None:
+                    provider, server_id = source[0], str(source[1])
+                    src_params = [daily_date, provider, server_id]
+                    for col in _DAILY_COLUMNS:
+                        v = daily_increments.get(col)
+                        if v is None:
+                            v = 0 if col.endswith("_tokens") else 0.0
+                        src_params.append(_num(v))
+                    conn.execute(
+                        "INSERT INTO daily_usage_by_source(date, provider, server_id, "
+                        + ", ".join(_DAILY_COLUMNS)
+                        + ") VALUES("
+                        + ", ".join(["?"] * (len(_DAILY_COLUMNS) + 3))
+                        + ") "
+                        "ON CONFLICT(date, provider, server_id) DO UPDATE SET "
+                        + ", ".join(
+                            f"{col} = {col} + excluded.{col}" for col in _DAILY_COLUMNS
+                        ),
+                        src_params,
+                    )
                 # 3) 插入本轮 live_sample
                 conn.execute(
                     "INSERT INTO live_samples(timestamp, "
@@ -1308,7 +1401,7 @@ class Database:
         按范围/来源/Token 风险查询 data_gaps（start_timestamp DESC, id DESC）。
 
         - start_ts/end_ts：gap 起始时间落在 [start_ts, end_ts] 内（半开：>= start, < end）。
-        - source：llama / gpu / application / system（精确匹配）。
+        - source：llama / gpu / application / system / strata（精确匹配）。
         - risk："lost" = possible_token_loss=1；"time_uncertain" = 1-possible_token_loss
           且 token_recoverable=0（总量可恢复但日期归属不确定，§108-109）；其余 = 全部。
         - cursor=(last_ts, last_id)：取严格更旧的一批（keyset，稳定分页）。
@@ -1578,8 +1671,11 @@ class Database:
                     ("gpu_samples_deleted", "gpu_samples"),
                     ("gpu_daily_deleted", "gpu_daily"),
                     ("mtp_position_deleted", "mtp_position_daily"),
+                    ("by_source_deleted", "daily_usage_by_source"),
                     ("gaps_deleted", "data_gaps"),
                 ):
+                    if table == "daily_usage_by_source" and not _table_columns(conn, table):
+                        continue  # 旧库（v<7）无此表
                     out[key] = conn.execute(f"DELETE FROM {table}").rowcount
         self._invalidate_live_cache()
         return out

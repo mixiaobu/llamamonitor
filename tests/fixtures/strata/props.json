@@ -1,0 +1,21 @@
+{
+ "default_generation_settings": {
+  "n_ctx": 262144,
+  "temperature": 0.7
+ },
+ "total_slots": 2,
+ "model_alias": "qwen3.8-flash-next-unsloth-ud-q4_k_xl",
+ "chat_template": "{{ bos }}\n{%- for m in messages %}...（真实数据中约 4KB 的 Jinja 模板）...",
+ "chat_template_caps": {
+  "tools": true,
+  "thinking": true,
+  "cache": true
+ },
+ "modalities": {
+  "vision": true
+ },
+ "models_autoload": true,
+ "is_sleeping": false,
+ "model_path": "C:\\Users\\mixiaobu\\Models\\qwen\\qwen3.8-flash-next-unsloth-ud-q4_k_xl\\qwen3.8.gguf",
+ "build_info": "Strata 0.1.43.1"
+}

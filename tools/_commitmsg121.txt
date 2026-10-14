@@ -1,0 +1,53 @@
+feat: LlamaMonitor 1.2.1 — 界面精修（去无效提示/说明）+ 采集失败容忍 + 移动端布局修复
+
+用户反馈：「页面里无效的说明去掉，不要到处写说明」「最上方的那些提示全去掉
+（今日缺口、远程只能查看）」「概览顶部那么多查看 X 放一起去掉」「几秒前更新
+去掉」「一次采集失败别提示，连续 5 次采集失败再提示，没到 5 次还显示之前
+成功的数据（比如显卡信息）」「概览下方小标题和右侧查看不在同一行」。
+
+一、移除顶部提示与概览跳转
+- 删除 #globalInfobars（离线/后端不可达 InfoBar）与更新横幅
+  （showOfflineBar/hideOfflineBar/setUpdateBanner/updateBar 整套 + settings
+  页 setUpdateBanner 调用）
+- 删除 #remoteBanner 远程只读 banner（JS 展开/收起/关闭 + 样式）；远程只读
+  状态保留在移动端 Overflow Sheet 的 more-sheet-remote 行
+- 概览页删除「需要关注」列表（renderOvAttention）、顶部「查看 X →」跳转行
+  （.ov-page-links）、「最后更新 X 秒前」1s ticker（updateLastUpdateText）
+- 各页 page-subtitle 说明行删除（用量/性能/系统/显卡/历史/设置）
+
+二、精简开发者向说明文字（保留数据与状态）
+- 采集覆盖率/缺口 hint、组件功耗缺失明细（「CPU Package 不可读（总值非整机）」
+  →「N 个组件可读取」）、正常态 WAL 状态（后端 db_secondary 正常态改空）、
+  GPU 图例、传感器空态长句、事件「当前范围 · N 条已加载」→「N 条已加载」、
+  趋势图堆叠图例说明、性能空态第二句、设置页冗长 setting-desc 等
+- 保留：悬停 info-tip（hover 才显示）、「含/不含缓存复用」hero 区分、
+  数据驱动状态文案
+
+三、采集失败容忍（连续 <5 次失败不提示、不改状态；>=5 次才切换）
+- 新增 LM.poll.streakFail/streakOk/streakReached（polling.js，阈值 5，
+  成功一次清零）
+- /api/status（服务徽章）：<5 次保留上次状态，>=5 次切「不可达」
+- /api/gpu/status（GPU 页 + 概览迷你卡）：<5 次保留最后成功数据与「采集正常」，
+  >=5 次切「不可用」；/api/overview 持续失败时其 catch 兜底同步切概览 GPU 状态
+- /api/system/status（系统页）：>=5 次才切「采集暂停」
+- 传感器刷新失败提示：>=5 次才显示
+- 数据驱动的真实状态（后端明确报告 available=false 等）按 5 次容忍统一处理
+
+四、布局修复
+- 移动端 .section-header .sh-actions 去掉 width:100%（Round-8 为防长说明撑破
+  的兜底，说明精简后不再需要）→ 标题与「查看」同行右对齐，宽控件（分段
+  范围选择器）仍由 flex-wrap 自然换行
+- 删除 pages.css 400px 下 #page-system sh-actions 强制整行规则
+- 清理死样式：.remote-banner* / .ov-attention* / .ov-page-links / .ov-last-update
+
+测试：
+- test_ui_terminology：1s ticker 断言改为 5 次容忍助手断言（streakFail 在
+  status/gpu/system 三采集器接入）；required 词表移除「远程只读 · 管理操作仅限
+  本机」「仅展示运行元数据」
+- test_mobile_ui：remote banner DOM 断言反转为「已移除 + moreSheetRemote 保留」；
+  概览副标题断言反转
+
+Gate: 582 单测全绿 / CDP 桌面 1600 + 移动 390x844 逐页 0 布局错位（移动
+性能页 2 处为宽分段控件自然换行）/ 8 页功能探针全过 0 console error /
+故障注入实测：全部 /api 连续 2 次失败状态与数据不变、8 次失败后服务「不可达」
++ GPU「不可用」+ 系统「采集暂停」同步切换、恢复后立即回正

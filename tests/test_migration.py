@@ -60,7 +60,7 @@ class FreshDatabaseTests(unittest.TestCase):
             d = Database(Path(td) / "fresh.db", wal=False)
             try:
                 self.assertEqual(d.get_schema_version(), CURRENT_SCHEMA_VERSION)
-                self.assertEqual(d.get_schema_version(), 6)  # Round 5：v6（live_samples +prompt/predicted_seconds）
+                self.assertEqual(d.get_schema_version(), 7)  # 1.3.0：v7（daily_usage_by_source）
                 tables = {
                     r[0]
                     for r in d._connect().execute(
@@ -76,8 +76,16 @@ class FreshDatabaseTests(unittest.TestCase):
                     "app_state",
                     # v5（1.1.0）系统遥测表
                     "system_samples", "system_daily",
+                    # v7（1.3.0）双推理后端来源级每日统计
+                    "daily_usage_by_source",
                 ):
                     self.assertIn(expected, tables)
+                # v7 来源表关键列
+                src_cols = {r[1] for r in d._connect().execute("PRAGMA table_info(daily_usage_by_source)")}
+                for col in ("date", "provider", "server_id", "prompt_tokens",
+                            "cached_tokens", "output_tokens", "prompt_seconds",
+                            "predicted_seconds"):
+                    self.assertIn(col, src_cols)
                 # v5 系统遥测表关键列
                 sys_sample_cols = {r[1] for r in d._connect().execute("PRAGMA table_info(system_samples)")}
                 for col in ("timestamp", "cpu_usage_percent", "cpu_frequency_mhz",
@@ -187,11 +195,11 @@ class LegacyMigrationTests(unittest.TestCase):
             try:
                 self.assertEqual(d2.get_schema_version(), CURRENT_SCHEMA_VERSION)
                 # no-op：不再插入额外 migration 事件
-                # （v0 -> 当前：2->3/3->4/4->5/5->6 共 4 条；1->2 不记事件）
+                # （v0 -> 当前：2->3/3->4/4->5/5->6/6->7 共 5 条；1->2 不记事件）
                 self.assertEqual(
                     d2._connect().execute(
                         "SELECT COUNT(*) FROM monitor_events WHERE event_type='migration'"
-                    ).fetchone()[0], 4,
+                    ).fetchone()[0], 5,
                 )
                 self.assertEqual(_snapshot(p), before)
             finally:

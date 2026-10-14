@@ -1,10 +1,21 @@
 # LlamaMonitor
 
-llama.cpp 的纯旁路（sidecar）监控程序，Windows 11 桌面应用。
+llama.cpp 与 Strata 的纯旁路（sidecar）监控程序，Windows 11 桌面应用。
+一套软件、一个数据库、一套页面，监控两种推理后端（可切换，历史共存）。
 
-只读取 llama-server 的**只读端点**（全部 HTTP GET，不代理、不修改、不启停
-llama-server，不占用 9091 端口）：`/metrics`（Token 采集）+ `/health`、`/slots`、
-`/props`、`/v1/models`（Runtime 遥测，分频 GET）。监控程序崩溃不影响 llama-server。
+- **llama.cpp**：只读取 llama-server 的**只读端点**（全部 HTTP GET，不代理、
+  不修改、不启停 llama-server，不占用 9091 端口）：`/metrics`（Token 采集）+
+  `/health`、`/slots`、`/props`、`/v1/models`（Runtime 遥测，分频 GET）。
+- **Strata**（0.1.43+）：只读取 Strata 的**只读端点**（全部 HTTP GET）：
+  `/metrics`（JSON 全量遥测：Token 总量 / 实时推理状态 / 最近请求 / 会话缓存 /
+  引擎 / 主机硬件）+ `/status`（当前请求阶段）+ `/slots` + `/health` +
+  `/props` + `/v1/models`（分频）。
+
+一个实例同时只监控一个后端：设置页「连接」卡选择「自动识别 / llama.cpp /
+Strata」（默认自动，按服务特征识别；手动选择可在测试连接时校验一致性），
+修改后重启生效。切换后端不丢历史：Counter Baseline 按「后端 + 服务地址」隔离，
+两后端的 Token 统计 / 缺口 / 事件在同一数据库累积，用量与历史页同时呈现。
+监控程序崩溃不影响被监控的推理服务。
 
 ## 界面预览
 
@@ -16,6 +27,12 @@ llama-server，不占用 9091 端口）：`/metrics`（Token 采集）+ `/health
 
 - 实时状态：处理中/延迟请求数、平均忙碌 Slot 数、KV Cache 使用率、上下文高水位（llama-server
   运行时指标，服务器提供时显示）、Prompt/Decode TPS、MTP 接受率（含 per-position）
+- Strata 实时推理：推理阶段（Prompt 处理 / 思考 / 生成）、当前与平均生成速度、
+  Prompt 处理速度、当前请求进度（生成/预算 + 耗时）、思考恢复、会话缓存状态与
+  复用 Token、Draft 接受率、最近请求列表（内存态，不落库）、后端主机硬件
+  （GPU 型号/利用率/显存/温度功耗/CPU/内存，与本机「系统」页区分）
+- Strata 状态机：就绪 / 推理中 / 模型加载中 / 休眠 / 监测异常 / 不可达 /
+  等待服务响应（概览徽章；llama.cpp 保持既有三态）
 - GPU 监控（NVIDIA）：负载/显存/温度/功耗/风扇/频率/PCIe，历史曲线（15m~24h）、
   今日能耗估算、按天 GPU 统计（永久保留）；数据来自系统 NVIDIA 驱动的 nvidia-smi（只读）
 - 系统监控：CPU（含每核心负载 Heat Grid）/内存/磁盘/网络/启动时间/硬件库存
@@ -46,6 +63,12 @@ llama-server，不占用 9091 端口）：`/metrics`（Token 采集）+ `/health
   （Version/Platform/Data Dir/Schema + Copy Version Info）、PE 文件版本元数据、
   schema 降级保护（更新版本的库 → 只读 incompatible）、迁移前自动备份
   （`pre_migration_*.db`）；Inno Setup 6 安装器 + 一键发布脚本（见下"发布 / 安装器"）
+
+## 界面预览 · 1.3.0 双后端
+
+| llama.cpp（性能页，桌面） | Strata（性能页专属段，桌面） | Strata（性能页，手机） | 设置（推理后端 / API Key） |
+| --- | --- | --- | --- |
+| ![llama.cpp 性能页](docs/images/130_performance_desktop.png) | ![Strata 性能页](docs/images/130_performance_strata_desktop.png) | ![Strata 性能页（手机）](docs/images/130_performance_strata_mobile.png) | ![设置](docs/images/130_settings_desktop.png) |
 
 ## 开发模式运行
 
@@ -175,8 +198,26 @@ key id 用 repo variable `LLAMAMONITOR_UPDATE_KEY_ID`（缺省 `key-2026-09`）�
 > （修改 config.json 后需要重启程序才生效，当前版本没有热重载。）
 
 命令行参数可以临时覆盖配置（优先级最高）：
-`--url`（llama-server 基础地址）、`--interval`（采集间隔秒）、`--db`（SQLite 路径）、
+`--url`（推理服务基础地址，llama.cpp / Strata）、`--interval`（采集间隔秒）、
+`--db`（SQLite 路径）、
 `--background`（后台模式：完整运行但主窗口隐藏，只进托盘——开机自启固定使用）。
+
+`llama_server` 段与推理后端相关字段（1.3.0+）：
+
+```json
+"llama_server": {
+  "url": "http://127.0.0.1:9091",
+  "metrics_path": "/metrics",
+  "timeout_seconds": 3,
+  "provider": "auto",
+  "api_key": ""
+}
+```
+
+- `provider`：`auto`（默认，启动时按服务特征识别）/ `llamacpp` / `strata`
+  （手动指定；识别失败时回退 llama.cpp 采集并在事件中说明）；
+- `api_key`：可选 Bearer Token（Strata / llama-server 启用 API Key 鉴权时使用；
+  空 = 不发送）。只出现在 Authorization 请求头，不写入日志 / 数据库 / 监控响应。
 
 ## GPU 监控（NVIDIA）
 
@@ -198,12 +239,17 @@ key id 用 repo variable `LLAMAMONITOR_UPDATE_KEY_ID`（缺省 `key-2026-09`）�
 ## 设置页（Settings）
 
 Dashboard 顶部导航切换 **Dashboard / 设置**。设置页为左侧分类导航 + 右侧表单，
-共 **八个分区**（与 UI `settings-rail` 一致）：服务器 / 采集 / 外观 / GPU / 系统监控 /
-数据与备份 / 应用 / 更新。另有独立的**关于**页（导航"关于"）。
+共 **八个分区**（与 UI `settings-rail` 一致）：连接 / 采集 / 外观 / 显卡 /
+系统 / 数据 / 应用 / 更新。另有独立的**关于**页（导航"关于"）。
 
-- **服务器**：llama-server 基础地址（http/https）、metrics 路径、连接超时；
-  **Test Connection** 由后端只 GET `<url><metrics_path>`（不触碰任何控制接口），
-  成功显示延迟毫秒数，失败显示原因。
+- **连接**：推理后端选择（自动识别 / llama.cpp / Strata，需重启）、服务地址
+  （http/https，llama.cpp 或 Strata 的基础地址）、metrics 路径（llama.cpp 的
+  Prometheus 路径；Strata 自动读取 /metrics + /status，无需改动）、连接超时、
+  API Key（可选，服务端启用鉴权时填写；留空 = 不发送 / 保持不变，值只进
+  Authorization 头，不落日志与数据库）；
+  **Test Connection** 由后端发起只读 GET（自动模式识别后端并报告结果，
+  手动模式报告与所选后端的一致性；不触碰任何控制接口），
+  成功显示后端 + 延迟毫秒数，失败显示原因。
 - **采集**：采集间隔、实时数据保留时长（小时）。
 - **外观**：主题（系统/浅色/深色，即时生效）、界面刷新间隔、默认统计范围（天数）。
 - **GPU**：启用开关、轮询间隔（1~3600s）、历史保留时长（小时）、Detected GPUs 勾选

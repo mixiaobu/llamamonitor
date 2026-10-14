@@ -1,0 +1,35 @@
+feat: LlamaMonitor 1.2.0 — 全链路 2 秒实时化（采集 + 页面刷新）
+
+所有采集与页面刷新默认统一为 2s（用户要求：全部采集都改 + 页面 2s 更新）。
+
+后端采集默认间隔（config.py dataclass + DEFAULT_CONFIG + _check 回退，
+三处同步）：
+- llama metrics（collector.poll_interval_seconds）：5s → 2s
+- GPU（gpu.poll_interval_seconds）：5s → 2s
+- system 落库（history_interval_seconds）：5s → 2s
+- 高级传感器 Bridge 输出周期（advanced_sensor_interval_seconds）：5s → 2s
+- system 实时采集保持 2s（1.1 起即 2s）
+
+前端（static/js）：
+- ui.refresh_interval_seconds 默认 5s → 2s；settings/app 的旧 fallback
+  （|| 5 / || 10）同步为 || 2
+- 所有页面数据轮询任务统一 2000ms（原分层 10s/15s/20s/30s/60s/120s/300s）：
+  summary / dataQuality / history / throughput / perfSlots / perfModel /
+  mtpRange / mtp / daily / gpuLive / gpuDaily / sysLive / sysNetIface /
+  sysSensors / sysInventory；R 驱动任务（status/runtime/gpuStatus/overview/
+  sysStatus）随配置 = 2s
+- 修复既有顺序 bug：cfgUi.refreshIntervalSeconds 初始值 5 且轮询注册在
+  /api/config 返回前完成 → R 恒为 5000ms（1.2 前默认值相同故从未暴露）；
+  初始值改为 2 与新默认一致
+- 保留：更新检查横幅 30s、更新下载进度 1s、in-flight 去重、页面可见性策略
+
+测试：
+- test_config 默认值/回退断言 5.0 → 2.0（含 _check 回退路径）
+- test_desktop e2e 的 on_start 探测加重试（全量高负载下首包偶发 2s 超时，
+  非产品问题）
+
+Gate: 582 单测全绿 / CDP 实测 9 端点精确 2s 一次（10s 窗口各 5 次）/
+桌面 8 页 + 移动 390x844 五页 0 console error / 设置保存往返 200 /
+60min 长稳：主进程 RSS 80-84MB 平坦（warmup 后无趋势）、句柄 227-240 稳、
+线程 8 稳、DB 45.2MB 稳（剪枝正常）、Bridge 32-33.5MB 稳、JS 堆 20→21MB +
+DOM 2530 精确不变（前端无泄漏）

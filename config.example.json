@@ -2,7 +2,9 @@
   "llama_server": {
     "url": "http://127.0.0.1:9091",
     "metrics_path": "/metrics",
-    "timeout_seconds": 3
+    "timeout_seconds": 3,
+    "provider": "auto",
+    "api_key": ""
   },
   "collector": {
     "poll_interval_seconds": 5,

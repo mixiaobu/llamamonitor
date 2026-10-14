@@ -1,0 +1,1 @@
+﻿OK 1920x1080 usage -> artifacts\r8_mobile-audit\shots\1920x1080\_result-1920-1080-usage.json

@@ -1,0 +1,10 @@
+{
+ "busy": false,
+ "queued": 0,
+ "phase": "thinking",
+ "prompt_tokens": 233026,
+ "generated": 0,
+ "max_tokens": 60,
+ "reasoning_recoveries": 0,
+ "thinking_budget": 8192
+}

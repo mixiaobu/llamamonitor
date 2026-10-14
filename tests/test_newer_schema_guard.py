@@ -149,8 +149,8 @@ class PreMigrationBackupTests(unittest.TestCase):
         try:
             self.assertEqual(db.health, "healthy")
             self.assertEqual(db.get_schema_version(), CURRENT_SCHEMA_VERSION)
-            # 迁移目标版本 v6 -> 备份文件名 pre_migration_v2_to_v6_*（Round 5）
-            files = list(backup_dir.glob("pre_migration_v2_to_v6_*.db"))
+            # 迁移目标版本 v7 -> 备份文件名 pre_migration_v2_to_v7_*（1.3.0）
+            files = list(backup_dir.glob("pre_migration_v2_to_v7_*.db"))
             self.assertEqual(len(files), 1, "迁移前必须生成一个 pre-migration backup")
             # 备份文件本身 quick_check 通过，且包含迁移前的历史数据
             conn = sqlite3.connect(str(files[0]))
@@ -213,8 +213,8 @@ class PreMigrationBackupTests(unittest.TestCase):
             blocker.mkdir()
             db.ensure_migrated()
             self.assertEqual(db.get_schema_version(), CURRENT_SCHEMA_VERSION)
-            # 迁移前备份这次成功生成（目标版本 v6，Round 5）
-            self.assertEqual(len(list(blocker.glob("pre_migration_v2_to_v6_*.db"))), 1)
+            # 迁移前备份这次成功生成（目标版本 v7，1.3.0）
+            self.assertEqual(len(list(blocker.glob("pre_migration_v2_to_v7_*.db"))), 1)
         finally:
             db.close()
 

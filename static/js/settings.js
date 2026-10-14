@@ -90,6 +90,9 @@
         url: $("setServerUrl").value.trim(),
         metrics_path: $("setMetricsPath").value.trim(),
         timeout_seconds: num("setTimeoutSec"),
+        // 1.3.0：推理后端 + 可选 API Key（空 = 保持不变，见 PUT /api/config 语义）
+        provider: $("setProvider").value,
+        api_key: $("setApiKey").value,
       },
       collector: {
         poll_interval_seconds: num("setPollInterval"),
@@ -144,6 +147,12 @@
     $("setServerUrl").value = (c.llama_server && c.llama_server.url) || "";
     $("setMetricsPath").value = (c.llama_server && c.llama_server.metrics_path) || "";
     $("setTimeoutSec").value = (c.llama_server && c.llama_server.timeout_seconds) || 3;
+    // 1.3.0：推理后端 + API Key（密码框不落值，只回显"是否已设置"）
+    var provider = (c.llama_server && c.llama_server.provider) || "auto";
+    $("setProvider").value = provider;
+    $("setApiKey").value = "";
+    $("setApiKey").placeholder = c.llama_server && c.llama_server.api_key_set
+      ? "已设置（留空保持不变）" : "留空表示不发送";
     $("setPollInterval").value = (c.collector && c.collector.poll_interval_seconds) || 2;
     $("setLiveRetention").value = (c.collector && c.collector.live_retention_hours) || 48;
     $("setGpuEnabled").checked = !!(c.gpu && c.gpu.enabled);
@@ -236,6 +245,11 @@
         return "";
       } },
     { id: "setTimeoutSec", check: function (v) { if (v < 1 || v > 30) return "范围 1~30 秒"; return ""; } },
+    // 1.3.0：API Key（可选；仅限制长度与首尾空白，不做内容推断）
+    { id: "setApiKey", check: function (v) {
+        if (v && v.length > 200) return "过长（最多 200 字符）";
+        return "";
+      } },
     { id: "setPollInterval", check: function (v) { if (v < 1 || v > 3600) return "范围 1~3600 秒"; return ""; } },
     { id: "setLiveRetention", check: function (v) { if (v < 1 || v > 8760) return "范围 1~8760 小时"; return ""; } },
     { id: "setGpuPoll", check: function (v) { if (v < 1 || v > 3600) return "范围 1~3600 秒"; return ""; } },
@@ -271,7 +285,10 @@
     var raw = el.value.trim();
     var val = raw === "" ? NaN : Number(raw);
     var msg;
-    if (cfg.id === "setServerUrl" || cfg.id === "setMetricsPath" || cfg.id === "setWebHost") {
+    if (cfg.id === "setApiKey") {
+      // 1.3.0：可选字段——空合法（空 = 保持不变 / 不发送）
+      msg = cfg.check(raw);
+    } else if (cfg.id === "setServerUrl" || cfg.id === "setMetricsPath" || cfg.id === "setWebHost") {
       if (raw === "" && cfg.id !== "setWebHost") return cfg.check(raw);
       msg = cfg.check(raw);
     } else {
@@ -547,14 +564,25 @@
         url: $("setServerUrl").value.trim(),
         metrics_path: $("setMetricsPath").value.trim(),
         timeout_seconds: Number($("setTimeoutSec").value) || 3,
+        provider: $("setProvider").value,
+        api_key: $("setApiKey").value,
       }, 15000);
       if (data.success) {
-        // §73 成功：连接成功 + Metrics 可用（不虚构延迟之外的结论；延迟是真实测量）
+        // §73 成功：连接成功 + 后端识别（1.3.0：provider 显示；llama.cpp 时校验 Metrics）
+        var provName = data.provider_display || (data.provider === "strata" ? "Strata" : "llama.cpp");
         out.className = "inline-result ok";
-        out.textContent = "连接成功 · Metrics 可用 · 延迟 " + data.latency_ms + " ms"
-          + (data.metrics_detected ? "" : "（未检测到 llama.cpp 指标）");
-        ui.toast("连接成功：" + data.latency_ms + " ms", "ok");
-        lastTestConn = { at: Date.now(), ok: true, latencyMs: data.latency_ms, metricsOk: true };
+        var extra = data.provider === "strata" ? ""
+          : (data.metrics_detected ? "" : "（未检测到 llama.cpp 指标）");
+        out.textContent = "连接成功 · 后端 " + provName + " · 延迟 " + data.latency_ms + " ms" + extra;
+        ui.toast("连接成功：" + provName + " · " + data.latency_ms + " ms", "ok");
+        lastTestConn = { at: Date.now(), ok: true, latencyMs: data.latency_ms,
+                         metricsOk: true, provider: data.provider, providerDisplay: provName };
+      } else if (data.mismatch) {
+        // 1.3.0：手动选择的后端与实际不符（服务可达，但特征不一致）
+        out.className = "inline-result bad";
+        out.textContent = "失败：" + (data.mismatch_detail || describeTestFailure(data));
+        ui.toast("连接失败：" + (data.mismatch_detail || describeTestFailure(data)), "err");
+        lastTestConn = { at: Date.now(), ok: false, error: data.mismatch_detail || describeTestFailure(data) };
       } else {
         // §74-§76 失败分别表达：无法连接 / Metrics 返回 404 / 请求超时
         out.className = "inline-result bad";
@@ -1330,7 +1358,8 @@
       if (lastTestConn.ok) {
         box.classList.add("online");
         textEl.textContent = "已连接";
-        subEl.textContent = (conn && conn.url ? conn.url + " · " : "") + "Metrics 可用";
+        var prov = lastTestConn.providerDisplay ? lastTestConn.providerDisplay + " · " : "";
+        subEl.textContent = (conn && conn.url ? conn.url + " · " : "") + prov + "可用";
       } else {
         box.classList.add("offline");
         textEl.textContent = "不可达";

@@ -106,6 +106,8 @@ class LlamaServerConfig:
     url: str = "http://127.0.0.1:9091"        # 基础地址（不含 metrics path）
     metrics_path: str = "/metrics"
     timeout_seconds: float = 3.0              # 0.5 ~ 60
+    provider: str = "auto"                    # 1.3.0：auto / llamacpp / strata
+    api_key: str = ""                         # 1.3.0：可选 Bearer Token（空 = 无需密钥）
 
 
 @dataclass
@@ -227,6 +229,8 @@ DEFAULT_CONFIG: dict = {
         "url": "http://127.0.0.1:9091",
         "metrics_path": "/metrics",
         "timeout_seconds": 3,
+        "provider": "auto",
+        "api_key": "",
     },
     "collector": {
         "poll_interval_seconds": 2,
@@ -440,6 +444,16 @@ def _build_app_config(merged: dict) -> tuple[AppConfig, list[str]]:
         timeout_seconds=_check(
             "llama_server", "timeout_seconds", ls.get("timeout_seconds"),
             lambda v: _in_range(v, 0.5, 60), float, 3.0,
+        ),
+        provider=_check(
+            "llama_server", "provider", ls.get("provider"),
+            lambda v: isinstance(v, str) and v in ("auto", "llamacpp", "strata"),
+            str, "auto",
+        ),
+        api_key=_check(
+            "llama_server", "api_key", ls.get("api_key"),
+            lambda v: isinstance(v, str),
+            str, "",
         ),
     )
     collector = CollectorConfig(

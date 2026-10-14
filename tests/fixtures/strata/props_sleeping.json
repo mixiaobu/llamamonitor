@@ -1,0 +1,10 @@
+{
+ "total_slots": 2,
+ "model_alias": "qwen3.8-flash-next-unsloth-ud-q4_k_xl",
+ "modalities": {
+  "vision": true
+ },
+ "is_sleeping": true,
+ "model_path": "C:\\Users\\mixiaobu\\Models\\qwen\\q4.gguf",
+ "build_info": "Strata 0.1.43.1"
+}

@@ -1,0 +1,13 @@
+{
+ "busy": true,
+ "queued": 1,
+ "phase": "answering",
+ "prompt_tokens": 57,
+ "generated": 49,
+ "max_tokens": 60,
+ "reasoning_recoveries": 0,
+ "thinking_budget": 8192,
+ "tool": null,
+ "tail": "这是模型正在生成的实际文本，绝不能落库或展示",
+ "elapsed_s": 2.1
+}

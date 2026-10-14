@@ -1,0 +1,9 @@
+{
+ "status": "loading",
+ "max_context": 262144,
+ "model": null,
+ "images": null,
+ "api_key": false,
+ "loaded": false,
+ "service": "strata"
+}

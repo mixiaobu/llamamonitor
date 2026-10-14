@@ -1,0 +1,11 @@
+{
+ "since": 1791967755.668746,
+ "requests": 42,
+ "prompt_tokens": 2111583,
+ "reused": 2032318,
+ "output_tokens": 5759,
+ "prompt_ms": 160561.89999999997,
+ "decode_ms": 712919.0,
+ "drafts_offered": 27307,
+ "drafts_accepted": 17204
+}

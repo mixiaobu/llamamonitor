@@ -123,7 +123,7 @@
         <div class="status-strip card ov-service-card">
           <div class="ss-left">
             <span class="ss-main">
-              <span class="ss-name">llama.cpp
+              <span class="ss-name" id="ovServiceName">llama.cpp
                 <span id="ovServerState" class="status-badge paused"><span class="dot"></span><span class="status-text">检测中</span></span>
               </span>
               <span class="ss-url" id="ovServerUrl"></span>
@@ -528,17 +528,17 @@
                   <div class="stat-label">活跃 Slot / 总 Slot</div>
                   <div class="stat-value mid" id="rtSlots">--</div>
                 </div>
-                <div class="stat">
+                <div class="stat js-llama-only">
                   <div class="stat-label">平均忙碌 Slot / Decode <span class="info-tip-slot" data-tip="llama_decode() 调用期间平均处于忙碌状态的 Slot 数量。来源：llamacpp:n_busy_slots_per_decode"></span></div>
                   <div class="stat-value mid" id="rtBusySlots">--</div>
                 </div>
-                <div class="stat">
+                <div class="stat js-llama-only">
                   <div class="stat-label">当前序列长度 <span class="info-tip-slot" data-tip="所有活跃 Slot 中当前序列 Token 数（Prompt + 已生成）的最大值；无活跃 Slot 时为空闲。"></span></div>
                   <div class="stat-value mid" id="rtCurrentSeq">--</div>
                   <div class="ctx-progress" id="rtCurrentCtxBar" hidden></div>
                   <div class="stat-hint" id="rtCurrentCtxHint"></div>
                 </div>
-                <div class="stat">
+                <div class="stat js-llama-only">
                   <div class="stat-label">最大观测序列长度 <span class="info-tip-slot" data-tip="llama.cpp 进程运行期间观测到的最大序列长度（Prompt + Generation）。来源：llamacpp:n_tokens_max"></span></div>
                   <div class="stat-value mid" id="rtTokenMax">--</div>
                 </div>
@@ -551,8 +551,9 @@
           </div>
         </div>
 
-        <!-- D. MTP（Multi-Token Prediction）（范围控制整个 Section：Summary + 趋势 + 位置） -->
-        <div class="section">
+        <!-- D. MTP（Multi-Token Prediction）（范围控制整个 Section：Summary + 趋势 + 位置）
+             1.3.0：llama.cpp 专属（Strata 后端的 Draft 数据在「会话缓存与 Draft」段） -->
+        <div class="section" id="mtpSection">
           <div class="section-header">
             <span class="sh-title">MTP（Multi-Token Prediction） <span class="info-tip-slot" data-tip="Multi-Token Prediction：多 Token 预测。在当前 llama.cpp 中，MTP 可作为 Draft 来源用于推测解码，草稿 Token 由主模型批量验证。"></span></span>
             <span class="sh-actions">
@@ -613,19 +614,131 @@
           </div>
         </div>
 
-        <!-- F. 模型与运行环境（静态；页面靠后） -->
+        <!-- G-J. Strata 专属监控段（1.3.0；仅 Strata 后端显示，llama.cpp 专属段反向隐藏） -->
+        <div id="strataOnly">
+          <!-- G. 实时推理状态（Strata /metrics live + /status；§33-§40） -->
+          <div class="section">
+            <div class="section-header">
+              <span class="sh-title">实时推理状态</span>
+              <span class="sh-actions"><span class="sh-sub">Strata 实时</span></span>
+            </div>
+            <div class="section-body">
+              <div class="card">
+                <div class="stat-grid strata-live-grid">
+                  <div class="stat">
+                    <div class="stat-label">当前阶段 <span class="info-tip-slot" data-tip="Strata 实时推理阶段：Prompt 处理（Prefill）/ 思考（Reasoning）/ 生成回答。来源：/metrics live.phase 与 /status phase。"></span></div>
+                    <div class="stat-value mid" id="stPhase">--</div>
+                  </div>
+                  <div class="stat">
+                    <div class="stat-label">当前生成速度 <span class="info-tip-slot" data-tip="实时生成吞吐（tok/s），仅在生成中有效。来源：/metrics live.tok_s。"></span></div>
+                    <div class="stat-value mid" id="stTokS">--</div>
+                  </div>
+                  <div class="stat">
+                    <div class="stat-label">平均生成速度 <span class="info-tip-slot" data-tip="会话平均生成吞吐（tok/s）。来源：/metrics live.tok_s_mean。"></span></div>
+                    <div class="stat-value mid" id="stTokSMean">--</div>
+                  </div>
+                  <div class="stat">
+                    <div class="stat-label">Prompt 处理速度 <span class="info-tip-slot" data-tip="Prefill 阶段平均吞吐（tok/s）。来源：/metrics live.prefill_tok_s_mean。"></span></div>
+                    <div class="stat-value mid" id="stPrefill">--</div>
+                  </div>
+                  <div class="stat">
+                    <div class="stat-label">处理中请求 <span class="info-tip-slot" data-tip="当前正在处理的请求数。来源：/metrics live.running（含 Slot 外请求 live.outside_slots）。"></span></div>
+                    <div class="stat-value mid" id="stRunning">--</div>
+                  </div>
+                  <div class="stat">
+                    <div class="stat-label">等待请求 <span class="info-tip-slot" data-tip="等待调度的请求数（/metrics live.waiting + /status queued）。"></span></div>
+                    <div class="stat-value mid" id="stWaiting">--</div>
+                  </div>
+                  <div class="stat">
+                    <div class="stat-label">当前请求进度 <span class="info-tip-slot" data-tip="当前请求已生成 Token / 生成预算；仅处理中有效。来源：/metrics live.generated 与 max_tokens。"></span></div>
+                    <div class="stat-value mid" id="stProgress">--</div>
+                    <div class="stat-hint" id="stProgressHint"></div>
+                  </div>
+                  <div class="stat">
+                    <div class="stat-label">思考恢复 <span class="info-tip-slot" data-tip="当前请求 Reasoning 恢复次数。来源：/status reasoning_recoveries（仅处理中有效）。"></span></div>
+                    <div class="stat-value mid" id="stRecoveries">--</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- H. 会话缓存与 Draft（Strata 专属；§55-§59） -->
+          <div class="section">
+            <div class="section-header">
+              <span class="sh-title">会话缓存与 Draft</span>
+            </div>
+            <div class="section-body">
+              <div class="card">
+                <div class="stat-grid strata-cache-grid">
+                  <div class="stat">
+                    <div class="stat-label">会话缓存 <span class="info-tip-slot" data-tip="Strata 会话缓存开关（conversation_cache.enabled）。未启用时累计复用数仍可能来自更早的启用期间。"></span></div>
+                    <div class="stat-value mid" id="stCCEnabled">--</div>
+                  </div>
+                  <div class="stat">
+                    <div class="stat-label">缓存复用 Token <span class="info-tip-slot" data-tip="会话缓存累计复用 Token 数（conversation_cache.reused_tokens）。与 Prompt 缓存复用是不同概念。"></span></div>
+                    <div class="stat-value mid" id="stCCReused">--</div>
+                  </div>
+                  <div class="stat">
+                    <div class="stat-label">缓存请求 <span class="info-tip-slot" data-tip="会话缓存累计服务请求数 / 其中命中复用请求数。"></span></div>
+                    <div class="stat-value mid" id="stCCRequests">--</div>
+                  </div>
+                  <div class="stat">
+                    <div class="stat-label">Draft 接受率 <span class="info-tip-slot" data-tip="最近请求的平均 Draft Token 接受率（drafts_accepted / drafts_offered）。推测解码草稿由主模型验证，接受率反映草稿质量，不等同于加速比例。"></span></div>
+                    <div class="stat-value mid" id="stDraftRate">--</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- I. 最近请求（Strata 内存态；不落库；§49-§54） -->
+          <div class="section">
+            <div class="section-header">
+              <span class="sh-title">最近请求</span>
+              <span class="sh-actions"><span class="sh-sub">Strata 内存态（不落库）</span></span>
+            </div>
+            <div class="section-body">
+              <div class="card">
+                <div id="stReqList"><div class="stat-hint">暂无请求记录</div></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- J. 后端硬件（Strata 主机；§62：与本机系统页区分） -->
+          <div class="section">
+            <div class="section-header">
+              <span class="sh-title">后端硬件 <span class="info-tip-slot" data-tip="以下数据来自 Strata 服务主机（/metrics hardware），不一定是 LlamaMonitor 所在机器。本机监控请使用「系统」页。"></span></span>
+              <span class="sh-actions"><span class="sh-sub" id="stHwSub">Strata 主机</span></span>
+            </div>
+            <div class="section-body">
+              <div class="card">
+                <div class="stat-grid strata-hw-grid">
+                  <div class="stat"><div class="stat-label">GPU 型号</div><div class="stat-value small" id="stHwGpuName">--</div></div>
+                  <div class="stat"><div class="stat-label">GPU 利用率</div><div class="stat-value mid" id="stHwGpuUtil">--</div></div>
+                  <div class="stat"><div class="stat-label">GPU 显存</div><div class="stat-value mid" id="stHwGpuMem">--</div></div>
+                  <div class="stat"><div class="stat-label">GPU 温度 / 功耗</div><div class="stat-value mid" id="stHwGpuTemp">--</div></div>
+                  <div class="stat"><div class="stat-label">CPU</div><div class="stat-value small" id="stHwCpuName">--</div></div>
+                  <div class="stat"><div class="stat-label">主机内存</div><div class="stat-value mid" id="stHwRam">--</div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- F. 模型与运行环境（静态；页面靠后；1.3.0：Strata 后端显示引擎信息） -->
         <div class="section">
           <div class="section-header">
-            <span class="sh-title">模型与运行环境 <span class="info-tip-slot" data-tip="数据来自 llama.cpp 运行时只读接口（/props · /v1/models · /slots）。"></span></span>
+            <span class="sh-title" id="modelEnvTitle">模型与运行环境 <span class="info-tip-slot" data-tip="数据来自 llama.cpp 运行时只读接口（/props · /v1/models · /slots）。Strata 后端显示 Strata 引擎信息（/health · /props · /v1/models）。"></span></span>
           </div>
           <div class="section-body">
             <div class="card">
               <div class="stat-grid model-env-grid">
-                <div class="stat"><div class="stat-label">模型别名</div><div class="stat-value small" id="llmAlias">--</div></div>
-                <div class="stat"><div class="stat-label">量化</div><div class="stat-value small" id="llmFtype">--</div></div>
-                <div class="stat"><div class="stat-label">参数量</div><div class="stat-value small" id="llmParams">--</div></div>
+                <div class="stat"><div class="stat-label" id="llmAliasLabel">模型别名</div><div class="stat-value small" id="llmAlias">--</div></div>
+                <div class="stat"><div class="stat-label" id="llmFtypeLabel">量化</div><div class="stat-value small" id="llmFtype">--</div></div>
+                <div class="stat"><div class="stat-label" id="llmParamsLabel">参数量</div><div class="stat-value small" id="llmParams">--</div></div>
                 <div class="stat">
-                  <div class="stat-label">模型文件大小</div>
+                  <div class="stat-label" id="llmSizeLabel">模型文件大小</div>
                   <div class="stat-value small" id="llmSize">--</div>
                 </div>
                 <div class="stat">
@@ -633,12 +746,12 @@
                   <div class="stat-value small" id="llmContext">--</div>
                 </div>
                 <div class="stat">
-                  <div class="stat-label">并行 Slot <span class="info-tip-slot" data-tip="llama.cpp 配置的总 Slot 数量。"></span></div>
+                  <div class="stat-label">并行 Slot <span class="info-tip-slot" data-tip="配置的总 Slot 数量（llama.cpp 或 Strata）。"></span></div>
                   <div class="stat-value small" id="llmSlots">--</div>
                 </div>
-                <div class="stat"><div class="stat-label">模态</div><div class="stat-value small" id="llmModal">--</div></div>
+                <div class="stat"><div class="stat-label" id="llmModalLabel">模态</div><div class="stat-value small" id="llmModal">--</div></div>
                 <div class="stat">
-                  <div class="stat-label">llama.cpp 构建</div>
+                  <div class="stat-label" id="llmBuildLabel">llama.cpp 构建</div>
                   <div class="stat-value small" id="llmBuild">--</div>
                 </div>
               </div>
@@ -1131,6 +1244,7 @@
                 <select class="gfb-select" id="gapSourceFilter" aria-label="按来源筛选">
                   <option value="">全部来源</option>
                   <option value="llama">llama.cpp</option>
+                  <option value="strata">Strata</option>
                   <option value="gpu">GPU</option>
                   <option value="system">系统</option>
                   <option value="application">LlamaMonitor</option>
@@ -1249,8 +1363,8 @@
         <div class="settings-pane">
 
           <div class="settings-card" id="sec-server" data-sec="server">
-            <h2>llama-server</h2>
-            <p class="settings-desc">连接 llama-server 的监控端点。LlamaMonitor 仅读取监控接口，不代理或修改推理请求。</p>
+            <h2>推理服务器</h2>
+            <p class="settings-desc">连接推理后端的监控端点（llama.cpp 或 Strata）。LlamaMonitor 仅读取监控接口，不代理或修改推理请求。</p>
             <!-- 连接状态（复用 /api/status 既有轮询与用户测试连接结果，不额外高频探测；
                  状态模型：已连接 / 不可达 / Metrics不可用 / 尚未测试） -->
             <div class="conn-status" id="serverConnStatus">
@@ -1260,23 +1374,37 @@
             </div>
             <div class="setting-row">
               <div class="setting-info">
-                <div class="setting-title">llama-server 地址 <span class="eff-badge" title="更改后需要重启 LlamaMonitor 生效">需重启</span></div>
+                <div class="setting-title">推理后端 <span class="eff-badge" title="更改后需要重启 LlamaMonitor 生效">需重启</span></div>
+                <div class="setting-desc">自动：启动时识别服务特征（llama.cpp 或 Strata）；手动：按所选后端采集，测试连接会给出一致性提示。</div>
+              </div>
+              <div class="setting-control">
+                <select class="input w-l" id="setProvider" aria-label="推理后端">
+                  <option value="auto">自动识别</option>
+                  <option value="llamacpp">llama.cpp</option>
+                  <option value="strata">Strata</option>
+                </select>
+              </div>
+              <div class="field-error" id="setProviderErr" hidden></div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-info">
+                <div class="setting-title">服务地址 <span class="eff-badge" title="更改后需要重启 LlamaMonitor 生效">需重启</span></div>
                 <div class="setting-desc">基础地址，例如 http://127.0.0.1:9091，不包含接口路径。</div>
               </div>
               <div class="setting-control">
-                <input class="input w-l" id="setServerUrl" type="text" spellcheck="false" placeholder="http://127.0.0.1:9091" aria-label="llama-server 地址">
+                <input class="input w-l" id="setServerUrl" type="text" spellcheck="false" placeholder="http://127.0.0.1:9091" aria-label="推理服务器地址">
               </div>
               <div class="field-error" id="setServerUrlErr" hidden></div>
             </div>
             <div class="setting-row">
-              <div class="setting-info"><div class="setting-title">Metrics 路径 <span class="eff-badge" title="更改后需要重启 LlamaMonitor 生效">需重启</span></div><div class="setting-desc">Prometheus Metrics 路径，例如 /metrics。</div></div>
+              <div class="setting-info"><div class="setting-title">Metrics 路径 <span class="eff-badge" title="更改后需要重启 LlamaMonitor 生效">需重启</span></div><div class="setting-desc">llama.cpp 的 Prometheus 指标路径（默认 /metrics）；Strata 自动读取 /metrics（JSON）+ /status，此路径留空或 /metrics 均可。</div></div>
               <div class="setting-control">
                 <input class="input w-l" id="setMetricsPath" type="text" spellcheck="false" aria-label="Metrics 路径">
               </div>
               <div class="field-error" id="setMetricsPathErr" hidden></div>
             </div>
             <div class="setting-row">
-              <div class="setting-info"><div class="setting-title">请求超时 <span class="eff-badge" title="更改后需要重启 LlamaMonitor 生效">需重启</span></div><div class="setting-desc">读取 Metrics 的请求超时时间（1~30 秒）。</div></div>
+              <div class="setting-info"><div class="setting-title">请求超时 <span class="eff-badge" title="更改后需要重启 LlamaMonitor 生效">需重启</span></div><div class="setting-desc">读取监控接口的请求超时时间（1~30 秒）。</div></div>
               <div class="setting-control">
                 <div class="input-suffix">
                   <input class="input w-s" id="setTimeoutSec" type="number" min="1" max="30" step="1" inputmode="numeric" aria-label="请求超时秒数">
@@ -1286,7 +1414,14 @@
               <div class="field-error" id="setTimeoutSecErr" hidden></div>
             </div>
             <div class="setting-row">
-              <div class="setting-info"><div class="setting-title">测试连接</div><div class="setting-desc">使用当前表单值测试，不保存设置。</div></div>
+              <div class="setting-info"><div class="setting-title">API Key <span class="eff-badge" title="更改后需要重启 LlamaMonitor 生效">需重启</span></div><div class="setting-desc">若服务端启用了 API Key 鉴权则填写（留空表示不发送）。只保存在本地配置，不进入日志与数据库。</div></div>
+              <div class="setting-control">
+                <input class="input w-l" id="setApiKey" type="password" spellcheck="false" placeholder="留空表示不发送" aria-label="API Key" autocomplete="off">
+              </div>
+              <div class="field-error" id="setApiKeyErr" hidden></div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-info"><div class="setting-title">测试连接</div><div class="setting-desc">使用当前表单值测试，不保存设置。自动模式会报告识别到的后端。</div></div>
               <div class="setting-control">
                 <button class="btn" id="btnTestConn">测试连接</button>
                 <span class="inline-result" id="testConnResult"></span>

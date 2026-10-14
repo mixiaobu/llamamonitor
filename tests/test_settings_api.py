@@ -227,6 +227,7 @@ class ConfigApiTests(unittest.TestCase):
             client.__exit__(None, None, None)
 
     # 9) Test Connection（mock httpx，不访问真实网络）
+    # 1.3.0：test-connection 现在同时识别推理后端（provider 字段；旧字段保留兼容）
     def test_test_connection_success(self):
         client = self._start()
         try:
@@ -242,8 +243,53 @@ class ConfigApiTests(unittest.TestCase):
             self.assertTrue(data["success"])
             self.assertEqual(data["http_status"], 200)
             self.assertTrue(data["metrics_detected"])
+            self.assertEqual(data["provider"], "llamacpp")
             self.assertIsInstance(data["latency_ms"], float)
             self.assertEqual(_FakeClient.last_url, "http://127.0.0.1:9091/metrics")
+        finally:
+            client.__exit__(None, None, None)
+
+    def test_test_connection_strata(self):
+        # Strata /health（service=strata）-> 识别为 strata，不请求 /metrics
+        client = self._start()
+        try:
+            fake = _FakeClient(resp=_FakeResponse(200, json.dumps({
+                "status": "ok", "max_context": 262144,
+                "model": "qwen3.8", "images": True, "api_key": False,
+                "loaded": True, "service": "strata",
+            })))
+            with mock.patch.object(httpx, "AsyncClient", return_value=fake):
+                r = client.post("/api/config/test-connection", json={
+                    "url": "http://127.0.0.1:9091",
+                    "metrics_path": "/metrics",
+                    "timeout_seconds": 3,
+                })
+            self.assertEqual(r.status_code, 200)
+            data = r.json()
+            self.assertTrue(data["success"])
+            self.assertEqual(data["provider"], "strata")
+            self.assertEqual(data["provider_display"], "Strata")
+            self.assertEqual(_FakeClient.last_url, "http://127.0.0.1:9091/health")
+            self.assertEqual(data["strata"]["model"], "qwen3.8")
+        finally:
+            client.__exit__(None, None, None)
+
+    def test_test_connection_manual_mismatch(self):
+        # 手动选择 strata 但实际是 llama.cpp -> mismatch
+        client = self._start()
+        try:
+            fake = _FakeClient(resp=_FakeResponse(200, "llamacpp:prompt_tokens_total 5\n"))
+            with mock.patch.object(httpx, "AsyncClient", return_value=fake):
+                r = client.post("/api/config/test-connection", json={
+                    "url": "http://127.0.0.1:9091",
+                    "metrics_path": "/metrics",
+                    "timeout_seconds": 3,
+                    "provider": "strata",
+                })
+            data = r.json()
+            self.assertFalse(data["success"])
+            self.assertTrue(data["mismatch"])
+            self.assertIn("不一致", data["mismatch_detail"])
         finally:
             client.__exit__(None, None, None)
 
@@ -259,7 +305,7 @@ class ConfigApiTests(unittest.TestCase):
                 })
             data = r.json()
             self.assertFalse(data["success"])
-            self.assertEqual(data["error"], "Connection refused")
+            self.assertIn("拒绝", data["error"])
         finally:
             client.__exit__(None, None, None)
 
@@ -275,7 +321,7 @@ class ConfigApiTests(unittest.TestCase):
                 })
             data = r.json()
             self.assertFalse(data["success"])
-            self.assertIn("Timeout", data["error"])
+            self.assertIn("超时", data["error"])
         finally:
             client.__exit__(None, None, None)
 

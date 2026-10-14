@@ -25,6 +25,7 @@
   /* ================= 全局状态 ================= */
   var state = {
     online: null,          // null=尚未取得 / true / false
+    provider: "llamacpp",  // 1.3.0：llamacpp / strata（/api/status provider；驱动布局）
     lastSuccessTs: null,   // 最近一次 server_online===true 的 last_update（epoch s）
     config: null,          // /api/status 的 config 块
     dailyData: [],         // /api/daily 行（当前范围）
@@ -179,14 +180,33 @@
     state.online = data.server_online === true ? true : (data.server_online === false ? false : null);
     state.config = data.config || null;
 
+    // 1.3.0：推理后端（llamacpp/strata）——驱动性能页专属段显隐与状态文案
+    state.provider = data.provider === "strata" ? "strata" : "llamacpp";
+    applyProviderLayout(state.provider);
+    // 概览服务卡：后端名称（ss-name 首个文本节点；不覆盖状态徽章子元素）
+    var svcName = $("ovServiceName");
+    if (svcName && svcName.firstChild && svcName.firstChild.nodeType === 3) {
+      svcName.firstChild.nodeValue = (data.provider_display === "Strata") ? "Strata " : "llama.cpp ";
+    }
+
     // 全局状态徽章（Overview 顶部 + 页面内 server 卡）。
     // 1.1：优先用 server_state（ready/loading/unavailable 三态，来自 llama-server 探活）；
     // 无该字段时回退既有 online/offline 逻辑（旧后端兼容）。
+    // 1.3.0：Strata 七态（server_state + server_state_label 后端已给中文文案）。
     var ss = data.server_state;
+    var ssLabel = data.server_state_label;
+    var ssBadge = null;
     if (ss === "ready" || ss === "loading" || ss === "unavailable") {
-      ui.setStatusBadge($("ovServerState"),
-        ss === "ready" ? "online" : ss === "loading" ? "warning" : "offline",
-        ss === "ready" ? "就绪" : ss === "loading" ? "模型加载中" : "不可用");
+      ssBadge = ss === "ready" ? "online" : ss === "loading" ? "warning" : "offline";
+      ssLabel = ss === "ready" ? "就绪" : ss === "loading" ? "模型加载中" : "不可用";
+    } else if (ss) {
+      // Strata 扩展态
+      ssBadge = { busy: "online", loading: "warning", sleeping: "paused",
+                  monitoring_error: "error", unreachable: "offline",
+                  waiting: "paused", detecting: "paused" }[ss] || "paused";
+    }
+    if (ssBadge) {
+      ui.setStatusBadge($("ovServerState"), ssBadge, ssLabel || undefined);
     } else {
       ui.setStatusBadge($("ovServerState"),
         state.online === true ? "online" : state.online === false ? "offline" : "paused",
@@ -196,24 +216,26 @@
     // 概览：当前模型行（别名 · 量化 · 规模 · 参数量；来自 /api/status 内嵌摘要）。
     // 1.1.4 精修：model_ftype 原样是 "Q4_K - Medium"（量化 - 规模），前端展示时
     // 拆成 "Q4_K · Medium"（视觉层；后端 model_ftype 不动）。
+    // 1.3.0：Strata 后端无 llama_model，用 strata 块（模型名 + 上下文）。
     var ovModel = $("ovModelLine");
     if (ovModel) {
       var m = data.llama_model;
+      var parts = [];
       if (m) {
-        var parts = [];
         if (m.model_alias) parts.push(m.model_alias);
         if (m.model_ftype) {
           var ft = String(m.model_ftype).split(" - ");
           for (var fi = 0; fi < ft.length; fi++) if (ft[fi]) parts.push(ft[fi]);
         }
         if (m.parameter_count != null) parts.push((m.parameter_count / 1e9).toFixed(2) + "B");
-        ovModel.textContent = parts.join(" · ");
-        ovModel.title = parts.join(" · ");
-        ovModel.style.display = parts.length ? "" : "none";
-      } else {
-        ovModel.textContent = "";
-        ovModel.style.display = "none";
+      } else if (state.provider === "strata" && data.strata) {
+        var st = data.strata;
+        if (st.model) parts.push(st.model);
+        if (st.context_window != null) parts.push(F.formatTokenCount(st.context_window) + " 上下文");
       }
+      ovModel.textContent = parts.join(" · ");
+      ovModel.title = parts.join(" · ");
+      ovModel.style.display = parts.length ? "" : "none";
     }
 
     // 记录最近采样时刻（lastSuccessTs 用）
@@ -445,6 +467,8 @@
   }
 
   function renderActiveSlots() {
+    // 1.3.0：Strata 模式下活跃 Slot 由 refreshStrataLive 填充（避免覆盖）
+    if (state.provider === "strata") return;
     var st = activeSlotStats();
     var text = st ? st.active + " / " + st.total : F.NA;
     setStatValue("perfActiveSlots", text);
@@ -454,6 +478,8 @@
   /* 当前序列长度（§66/§133：所有活跃 Slot 的 n_prompt_tokens + n_decoded 最大值；
    无活跃 Slot -> "空闲"，不显示 --）。含上下文占用进度条（§77）。 */
   function renderCurrentSequence() {
+    // 1.3.0：llama.cpp 专属（Strata 模式下隐藏，且不由 slots 数据驱动）
+    if (state.provider === "strata") return;
     var el = $("rtCurrentSeq");
     var bar = $("rtCurrentCtxBar");
     var hint = $("rtCurrentCtxHint");
@@ -615,8 +641,8 @@
     invalid_metrics: "采集超时 / 异常",
     unknown: "原因未确定",
   };
-  // Round-5：来源 = 哪个数据源采样缺失（llama.cpp/GPU/系统/LlamaMonitor），弃"GPU 采集"式写法（§93-96）
-  var GAP_SOURCE_LABELS = { llama: "llama.cpp", gpu: "GPU", system: "系统", application: "LlamaMonitor" };
+  // Round-5：来源 = 哪个数据源采样缺失（llama.cpp/Strata/GPU/系统/LlamaMonitor），弃"GPU 采集"式写法（§93-96）
+  var GAP_SOURCE_LABELS = { llama: "llama.cpp", strata: "Strata", gpu: "GPU", system: "系统", application: "LlamaMonitor" };
   // AUDIT-1.1.1 UX-1111-007：数据库状态 raw 值（healthy/warning/unavailable…）
   // 中文化显示；未知值回退 raw，绝不显示空白。
   var DB_STATUS_LABELS = {
@@ -2519,7 +2545,274 @@
   /* Slot 监控（Round 5 §114-§145）：一次 /api/llama/slots 拉取驱动
      顶部「活跃 Slot」+ 运行时「活跃/总 Slot」「当前序列长度」+ 下方 Slot 表/卡。
      取代此前 system.refreshLlamaSlots 单独渲染（避免两处重复请求）。 */
+  /* ================= 1.3.0：Strata 后端（provider 布局 + 专属段渲染） =================
+   两种后端共用同一 UI 骨架（摘要/吞吐/Slot/模型环境），Strata 专属段
+   （实时推理状态 / 会话缓存与 Draft / 最近请求 / 后端硬件）只在 strata 模式显示；
+   llama.cpp 专属段（MTP、运行时 llama 指标）反向隐藏。数据全部来自
+   /api/strata/live（后端已白名单脱敏，前端不再二次拼接原始字段）。 */
+
+  var STRATA_PHASE_LABELS = {
+    "reading the prompt": "Prompt 处理",
+    "thinking": "思考中",
+    "answering": "生成回答",
+    "generating": "生成中",
+    "idle": null,
+    "": null,
+  };
+  function strataPhaseLabel(phase) {
+    if (phase == null) return null;
+    var k = String(phase);
+    if (Object.prototype.hasOwnProperty.call(STRATA_PHASE_LABELS, k)) {
+      return STRATA_PHASE_LABELS[k];
+    }
+    return k.slice(0, 40); // 未知阶段：原值安全展示（截断防超长）
+  }
+  var STRATA_MODALITY_LABELS = { text: "文本", image: "图像", audio: "音频", video: "视频" };
+
+  function applyProviderLayout(provider) {
+    var isStrata = provider === "strata";
+    var only = $("strataOnly");
+    if (only) only.hidden = !isStrata;
+    var mtp = $("mtpSection");
+    if (mtp) mtp.hidden = isStrata;
+    var llamaOnly = document.querySelectorAll(".js-llama-only");
+    for (var i = 0; i < llamaOnly.length; i++) llamaOnly[i].style.display = isStrata ? "none" : "";
+    // 「模型与运行环境」标题 + 字段标签（Strata 渲染器会再覆盖为 Strata 语义）
+    var t = $("modelEnvTitle");
+    if (t && t.firstChild && t.firstChild.nodeType === 3) {
+      t.firstChild.nodeValue = isStrata ? "模型与引擎 " : "模型与运行环境 ";
+    }
+    function lbl(id, text) { var el = $(id); if (el) el.textContent = text; }
+    if (isStrata) {
+      lbl("llmAliasLabel", "模型"); lbl("llmFtypeLabel", "引擎版本");
+      lbl("llmParamsLabel", "参数量"); lbl("llmSizeLabel", "视觉支持");
+      lbl("llmBuildLabel", "Strata 构建");
+    } else {
+      lbl("llmAliasLabel", "模型别名"); lbl("llmFtypeLabel", "量化");
+      lbl("llmParamsLabel", "参数量"); lbl("llmSizeLabel", "模型文件大小");
+      lbl("llmBuildLabel", "llama.cpp 构建");
+    }
+  }
+
+  function refreshStrataLive() {
+    return api.get("/api/strata/live")
+      .then(function (d) {
+        if (state.provider !== "strata") return;
+        state.strataLive = d;
+        renderStrataLive(d);
+      })
+      .catch(function (e) { console.warn("strata live failed:", e.message || e); });
+  }
+
+  function _stText(id, text) {
+    var el = $(id);
+    if (el) el.textContent = text == null || text === "" ? F.NA : String(text);
+  }
+
+  function renderStrataLive(d) {
+    var live = d.live || {};
+    var busy = !!live.busy;
+    // ---- G. 实时推理状态 ----
+    var phase = strataPhaseLabel(live.phase);
+    _stText("stPhase", phase || (busy ? "处理中" : "空闲"));
+    _stText("stTokS", live.tok_s != null ? F.formatTps(live.tok_s) + " tok/s" : null);
+    _stText("stTokSMean", live.tok_s_mean != null ? F.formatTps(live.tok_s_mean) + " tok/s" : null);
+    _stText("stPrefill", live.prefill_tok_s_mean != null ? F.formatTps(live.prefill_tok_s_mean) + " tok/s" : null);
+    _stText("stRunning", (live.running != null ? live.running : 0) +
+      (live.outside_slots ? " + " + live.outside_slots + "（Slot 外）" : ""));
+    _stText("stWaiting", (live.waiting != null ? live.waiting : 0) +
+      (live.queued ? " + " + live.queued : ""));
+    var gen = live.generated, max = live.max_tokens;
+    _stText("stProgress", busy && gen != null && max ? F.formatInt(gen) + " / " + F.formatInt(max)
+      : busy && gen != null ? F.formatInt(gen) : null);
+    var hint = $("stProgressHint");
+    if (hint) {
+      hint.textContent = (busy && live.elapsed_s != null) ? "已持续 " + Math.round(live.elapsed_s) + " 秒" : "";
+    }
+    _stText("stRecoveries", busy && live.reasoning_recoveries != null ? String(live.reasoning_recoveries) : null);
+
+    // ---- H. 会话缓存与 Draft ----
+    var cc = d.conversation_cache;
+    _stText("stCCEnabled", cc ? (cc.enabled ? "已启用" : "未启用") : null);
+    _stText("stCCReused", cc && cc.reused_tokens != null ? F.formatTokenCount(cc.reused_tokens) : null);
+    _stText("stCCRequests", cc && cc.requests != null
+      ? F.formatInt(cc.requests) + (cc.requests_reused != null ? " / " + F.formatInt(cc.requests_reused) + " 复用" : "") : null);
+    // Draft 接受率：最近请求均值（无请求则 --）
+    var reqs = d.recent_requests || [];
+    var rates = [];
+    for (var i = 0; i < reqs.length; i++) {
+      if (reqs[i].draft_accept_rate != null) rates.push(reqs[i].draft_accept_rate);
+    }
+    _stText("stDraftRate", rates.length
+      ? F.formatPercent(rates.reduce(function (a, b) { return a + b; }, 0) / rates.length * 100, 1)
+      : null);
+
+    // ---- I. 最近请求（DOM 构建，data-label 供移动端卡片化） ----
+    var box = $("stReqList");
+    if (box) {
+      box.innerHTML = "";
+      if (!reqs.length) {
+        var empty = document.createElement("div");
+        empty.className = "stat-hint";
+        empty.textContent = "暂无请求记录";
+        box.appendChild(empty);
+      } else {
+        box.appendChild(_strataReqTable(reqs));
+      }
+    }
+
+    // ---- J. 后端硬件（Strata 主机） ----
+    var hw = d.hardware || {};
+    var hwLive = hw.live || {}, hwStatic = hw["static"] || {};
+    _stText("stHwGpuName", hwStatic.gpu_name || null);
+    _stText("stHwGpuUtil", hwLive.gpu_util != null ? F.formatPercent(hwLive.gpu_util, 0) : null);
+    _stText("stHwGpuMem", hwLive.gpu_mem_used != null && hwLive.gpu_mem_total
+      ? F.formatMemory(hwLive.gpu_mem_used) + " / " + F.formatMemory(hwLive.gpu_mem_total) : null);
+    _stText("stHwGpuTemp", (hwLive.gpu_temp != null ? Math.round(hwLive.gpu_temp) + " °C" : "") +
+      (hwLive.gpu_power != null ? " · " + Math.round(hwLive.gpu_power) + " W" : "") || null);
+    _stText("stHwCpuName", hwStatic.cpu_name || null);
+    _stText("stHwRam", hwLive.ram_used != null && hwLive.ram_total
+      ? F.formatMemory(hwLive.ram_used) + " / " + F.formatMemory(hwLive.ram_total) : null);
+    var hwSub = $("stHwSub");
+    if (hwSub) hwSub.textContent = d.server_local ? "本机（" + (d.server_id || "") + "）" : "Strata 主机（" + (d.server_id || "") + "）";
+
+    // ---- Slot 监控（E 段，与 llama.cpp 共用容器） ----
+    renderStrataSlots(d);
+
+    // ---- 运行时摘要兜底 + 模型环境（F 段） ----
+    var slotsCount = (d.slots && d.slots.length) || null;
+    if (slotsCount != null && live.running != null) {
+      var st = $("rtSlots"); if (st) st.textContent = live.running + " / " + slotsCount;
+      var ps = $("perfActiveSlots"); if (ps) ps.textContent = live.running + " / " + slotsCount;
+    }
+    var model = d.model;
+    if (model) {
+      var ctxEl = $("rtContextMax");
+      if (ctxEl && ctxEl.textContent === F.NA && model.context_window != null) {
+        ctxEl.textContent = F.formatTokenCount(model.context_window);
+      }
+      _stText("llmContext", model.context_window != null ? F.formatTokenCount(model.context_window) : null);
+      _stText("llmSlots", model.total_slots != null ? String(model.total_slots) : null);
+      _stText("llmAlias", model.model || model.model_file_name || null);
+      var modal = [];
+      var im = model.input_modalities;
+      if (Object.prototype.toString.call(im) === "[object Array]") {
+        for (var mi = 0; mi < im.length; mi++) {
+          modal.push(STRATA_MODALITY_LABELS[im[mi]] || im[mi]);
+        }
+      }
+      _stText("llmModal", modal.length ? modal.join(" · ") : null);
+      var eng = d.engine || {};
+      _stText("llmFtype", eng.version || null);
+      _stText("llmSize", model.vision_supported == null ? null : (model.vision_supported ? "支持" : "不支持"));
+      _stText("llmBuild", model.build_info || eng.version || null);
+      var buildEl = $("llmBuild");
+      if (buildEl) buildEl.title = model.build_info || "";
+    }
+  }
+
+  /* Strata 请求表（DOM 构建；列：时间 / 结束 / Prompt / 缓存复用率 / 生成 / 生成速度 / Draft） */
+  function _strataReqTable(reqs) {
+    var nowSec = Date.now() / 1000;
+    function relTime(t) {
+      if (t == null) return "--";
+      var age = nowSec - Number(t);
+      if (age < 0) age = 0;
+      return F.formatAgo(Math.round(age));
+    }
+    var wrap = document.createElement("div");
+    wrap.className = "slot-table-wrap";
+    var head = document.createElement("thead");
+    head.innerHTML = "<tr>" +
+      "<th>时间</th><th>结束</th><th class=\"num\">Prompt</th><th class=\"num\">缓存复用率</th>" +
+      "<th class=\"num\">生成</th><th class=\"num\">生成速度</th><th class=\"num\">Draft 接受率</th>" +
+      "</tr>";
+    var body = document.createElement("tbody");
+    for (var i = 0; i < reqs.length; i++) {
+      var r = reqs[i];
+      var tr = document.createElement("tr");
+      tr.className = "slot-row";
+      function cell(label, val, cls) {
+        var td = document.createElement("td");
+        td.className = (val == null ? "na " : "") + (cls || "num");
+        td.setAttribute("data-label", label);
+        td.textContent = val == null ? F.NA : val;
+        return td;
+      }
+      tr.appendChild(cell("时间", relTime(r.time), ""));
+      tr.appendChild(cell("结束", r.finish_label || null, ""));
+      tr.appendChild(cell("Prompt", r.prompt_total != null ? F.formatTokenCount(r.prompt_total) : null));
+      tr.appendChild(cell("缓存复用率", r.prompt_reuse_rate != null ? F.formatPercent(r.prompt_reuse_rate * 100, 1) : null));
+      tr.appendChild(cell("生成", r.output_tokens != null ? F.formatTokenCount(r.output_tokens) : null));
+      tr.appendChild(cell("生成速度", r.decode_tok_s != null ? F.formatTps(r.decode_tok_s) + " tok/s" : null));
+      tr.appendChild(cell("Draft 接受率", r.draft_accept_rate != null ? F.formatPercent(r.draft_accept_rate * 100, 1) : null));
+      body.appendChild(tr);
+    }
+    var table = document.createElement("table");
+    table.className = "slot-table";
+    table.appendChild(head);
+    table.appendChild(body);
+    wrap.appendChild(table);
+    return wrap;
+  }
+
+  /* Strata Slot 表（与 llama.cpp 共用 #llmSlotList 容器；列：Slot / 状态 / 上下文） */
+  function renderStrataSlots(d) {
+    var box = $("llmSlotList");
+    if (!box) return;
+    var slots = d.slots || [];
+    box.innerHTML = "";
+    if (!slots.length) {
+      var empty = document.createElement("div");
+      empty.className = "stat-hint";
+      empty.textContent = "暂无 Slot 数据";
+      box.appendChild(empty);
+      return;
+    }
+    var wrap = document.createElement("div");
+    wrap.className = "slot-table-wrap";
+    var head = document.createElement("thead");
+    head.innerHTML = "<tr><th>Slot</th><th>状态</th><th class=\"num\">保留上下文</th><th class=\"num\">窗口上限</th></tr>";
+    var body = document.createElement("tbody");
+    for (var i = 0; i < slots.length; i++) {
+      var s = slots[i];
+      var active = !!s.is_processing;
+      var tr = document.createElement("tr");
+      tr.className = "slot-row" + (active ? " active" : " idle");
+      function cell(label, val, cls) {
+        var td = document.createElement("td");
+        td.className = (cls || "") + (val == null || val === "" ? " na" : " num");
+        td.setAttribute("data-label", label);
+        td.innerHTML = val == null || val === "" ? F.NA : val;
+        return td;
+      }
+      tr.appendChild(cell("Slot", "Slot " + (s.id == null ? "?" : s.id)));
+      tr.appendChild(cell("状态", '<span class="slot-state' + (active ? " busy" : "") + '">' + (active ? "处理中" : "空闲") + "</span>", ""));
+      var ctxHtml;
+      if (s.n_prompt_tokens != null && s.n_ctx != null) {
+        var pct = Math.min(100, s.n_prompt_tokens / s.n_ctx * 100);
+        var cls = pct >= 95 ? " crit" : (pct >= 85 ? " warn" : "");
+        ctxHtml = F.formatTokenCount(s.n_prompt_tokens) + ' / ' + F.formatTokenCount(s.n_ctx) +
+          '<span class="slot-ctx-pct"> · ' + F.formatPercent(pct) + "</span>";
+      } else if (s.n_prompt_tokens != null) {
+        ctxHtml = F.formatTokenCount(s.n_prompt_tokens);
+      } else {
+        ctxHtml = null;
+      }
+      tr.appendChild(cell("保留上下文", ctxHtml, "slot-ctx"));
+      tr.appendChild(cell("窗口上限", s.n_ctx != null ? F.formatTokenCount(s.n_ctx) : null));
+      body.appendChild(tr);
+    }
+    var table = document.createElement("table");
+    table.className = "slot-table";
+    table.appendChild(head);
+    table.appendChild(body);
+    wrap.appendChild(table);
+    box.appendChild(wrap);
+  }
+
   function refreshSlots() {
+    if (state.provider === "strata") return refreshStrataLive();
     return api.get("/api/llama/slots")
       .then(function (d) {
         state.slotsData = d;
@@ -2943,16 +3236,30 @@
       intervalMs: 2000, visibleIntervalMs: R, visibleOnly: true,
       run: function () { if (LM.nav.currentPage() === "performance") return refreshSlots(); },
     });
-    // 模型与运行环境（§216 静态：进页刷新 + 低频轮询兜底 server 重启/换模型）
+    // 模型与运行环境（§216 静态：进页刷新 + 低频轮询兜底 server 重启/换模型；
+    // 1.3.0：Strata 后端由 strataLive 驱动 F 段，这里跳过避免互相覆盖）
     LM.poll.register("perfModel", {
       intervalMs: 2000, visibleIntervalMs: 2000, visibleOnly: true,
-      run: function () { if (LM.nav.currentPage() === "performance" && LM.system) return LM.system.refreshLlamaInfo(); },
+      run: function () {
+        if (LM.nav.currentPage() === "performance" && LM.system && state.provider !== "strata") {
+          return LM.system.refreshLlamaInfo();
+        }
+      },
     });
-    // MTP 区间（§218-§220：today 快更，历史 60s；仅性能页前台）
+    // 1.3.0：Strata 实时监控（性能页专属段 G-J + Slot + 模型环境；仅 strata 后端）
+    LM.poll.register("strataLive", {
+      intervalMs: 2000, visibleIntervalMs: 2000, visibleOnly: true,
+      run: function () {
+        if (LM.nav.currentPage() === "performance" && state.provider === "strata") {
+          return refreshStrataLive();
+        }
+      },
+    });
+    // MTP 区间（§218-§220：today 快更，历史 60s；仅性能页前台；1.3.0：Strata 无 MTP 段）
     LM.poll.register("mtpRange", {
       intervalMs: 2000, visibleIntervalMs: 2000, visibleOnly: true,
       run: function () {
-        if (LM.nav.currentPage() !== "performance") return;
+        if (LM.nav.currentPage() !== "performance" || state.provider === "strata") return;
         // today 范围：MTP 数据随推理累积变化快，前台 30s
         if (state.mtpRange === "today") return refreshMtpRange();
         return refreshMtpRange();
