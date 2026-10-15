@@ -122,9 +122,9 @@ predicted_seconds / n_decode / draft_tokens / accepted_tokens / draft_sequences`
 
 ### 8.2 llama Runtime 遥测（/health /slots /props /v1/models，分频调度）
 
-- **运行时状态**：`ready` / `unavailable`。**连续 2 次** health 抓取失败才
-  判 `unavailable`（AUDIT-1.1.1 REL-1111-005：单次瞬时失败不翻转，防抖）；
-  任一次成功立即复位。
+- **运行时状态**：`ready` / `unavailable`。**连续 5 次** health 抓取失败才
+  判 `unavailable`（AUDIT-1.1.1 REL-1111-005 防抖；1.3.1 起与 Token 采集器 /
+  前端 streak 的 OFFLINE_TOLERANCE=5 统一）；任一次成功立即复位。
 - **Slot 槽位**（`/slots`，`is_processing` 区分忙/闲）：
   - 术语统一（见 docs/UI_TERMINOLOGY.md）：上下文窗口上限 / 输入 Token /
     缓存复用 Token / 已处理提示 Token / 输出 Token / 剩余输出 Token /
