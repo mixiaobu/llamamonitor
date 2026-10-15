@@ -43,7 +43,13 @@ def _run(coro):
 
 
 def _mk_client(responses: dict):
-    """构造一个 httpx.AsyncClient 替身：get(url) 按 URL 子串返回固定 JSON。"""
+    """构造一个 httpx.AsyncClient 替身：get(url) 按 URL 子串返回固定 JSON。
+
+    1.3.2：value 为 ("EXC", None) 时 get 抛 ConnectError（模拟网络层失败，
+    区别于"HTTP 层有响应但状态码异常"）。
+    """
+    import httpx
+
     import json as _json
 
     class _Resp:
@@ -59,6 +65,8 @@ def _mk_client(responses: dict):
         async def get(self, url):
             for key, (status, payload) in self._r.items():
                 if key in url:
+                    if status == "EXC":
+                        raise httpx.ConnectError("simulated network failure")
                     return _Resp(status, payload)
             return _Resp(404, {})
 
@@ -117,6 +125,35 @@ class SlotSanitizeTests(unittest.TestCase):
         self.assertEqual(sanitize_slot("not-a-dict"), {})
         self.assertEqual(sanitize_slot([]), {})
 
+    def test_next_token_object_form(self):
+        """1.3.2：next_token 官方形态是对象（此前只认数组，对象被丢弃）。"""
+        raw = {
+            "id": 1, "is_processing": True, "n_ctx": 8192,
+            "next_token": {
+                "has_next_token": True, "has_new_line": False,
+                "n_remain": 128, "n_decoded": 512,
+            },
+        }
+        snap = sanitize_slot(raw)
+        self.assertTrue(snap["next_token"]["has_next_token"])
+        self.assertFalse(snap["next_token"]["has_new_line"])
+        self.assertEqual(snap["next_token"]["n_remain"], 128)
+        self.assertEqual(snap["next_token"]["n_decoded"], 512)
+
+    def test_next_token_list_form_compat(self):
+        """旧版本数组形态仍兼容（取第一个位置的数字字段）。"""
+        raw = {
+            "id": 2, "is_processing": True,
+            "next_token": [
+                {"has_next_token": True, "has_new_line": True, "n_remain": 7, "n_decoded": 3},
+                {"has_next_token": False, "n_remain": 0, "n_decoded": 0},
+            ],
+        }
+        snap = sanitize_slot(raw)
+        self.assertTrue(snap["next_token"]["has_next_token"])
+        self.assertEqual(snap["next_token"]["n_remain"], 7)
+        self.assertEqual(snap["next_token"]["n_decoded"], 3)
+
 
 class ModelInfoTests(unittest.TestCase):
     def test_privacy_fields_never_enter_info(self):
@@ -172,28 +209,92 @@ class ServerStateTests(unittest.TestCase):
         self.assertEqual(c.server_state, "loading")
 
     def test_health_network_fail_is_unavailable(self):
-        # 1.3.1：连续 5 次失败才判定不可用（与 OFFLINE_TOLERANCE 统一）
-        c = self._collector({"/health": (404, {})})  # 404 -> 非 200
+        # 1.3.1：连续 5 次**网络层**失败才判定不可用（与 OFFLINE_TOLERANCE 统一）
+        c = self._collector({"/health": ("EXC", None)})  # 网络层失败
         _run(c.fetch_health())
-        self.assertEqual(c.server_state, "unavailable")  # 第 1 次：计数=1，尚未翻转
+        self.assertEqual(c.server_state, "unavailable")  # 初始即 unavailable；计数=1
+        self.assertEqual(c._health_fail_count, 1)
         # 重新置回 ready 再连续失败，验证"连续"语义
         c2 = self._collector({"/health": (200, {"status": "ok"})})
         _run(c2.fetch_health())
         self.assertEqual(c2.server_state, "ready")
-        c2._http = _mk_client({"/health": (404, {})})  # 之后开始失败
+        c2._http = _mk_client({"/health": ("EXC", None)})  # 之后网络层失败
         for i in range(1, 5):
             _run(c2.fetch_health())  # 第 1-4 次失败：去抖，保持 ready
             self.assertEqual(c2.server_state, "ready")
         _run(c2.fetch_health())  # 第 5 次失败：判定 unavailable
         self.assertEqual(c2.server_state, "unavailable")
 
+    def test_health_http_error_is_degraded_not_unavailable(self):
+        """1.3.2：HTTP 层有响应（端口可达）不算网络失败——500 是服务异常（degraded）。"""
+        c = self._collector({"/health": (500, {})})
+        _run(c.fetch_health())
+        self.assertEqual(c.server_state, "degraded")
+        self.assertEqual(c._health_fail_count, 0)
+        # 恢复
+        c._http = _mk_client({"/health": (200, {"status": "ok"})})
+        _run(c.fetch_health())
+        self.assertEqual(c.server_state, "ready")
+
+    def test_health_503_loading_model_is_loading(self):
+        """1.3.2：/health 503 {"error":{"code":503,"message":"Loading model"}} = 加载中。"""
+        c = self._collector({
+            "/health": (503, {"error": {"code": 503, "message": "Loading model"}}),
+        })
+        _run(c.fetch_health())
+        self.assertEqual(c.server_state, "loading")
+
+    def test_health_503_other_is_degraded(self):
+        c = self._collector({
+            "/health": (503, {"error": {"code": 503, "message": "Service unavailable"}}),
+        })
+        _run(c.fetch_health())
+        self.assertEqual(c.server_state, "degraded")
+
+    def test_health_401_is_auth_error(self):
+        c = self._collector({"/health": (401, {"detail": "Not authenticated"})})
+        _run(c.fetch_health())
+        self.assertEqual(c.server_state, "auth_error")
+
+    def test_sleeping_state_from_props(self):
+        """1.3.2：props.is_sleeping=true 且 health ready -> sleeping；false -> ready。"""
+        cfg = make_config(url="http://127.0.0.1:9")
+        c = LlamaRuntimeCollector(cfg, db=None, clock=FakeClock(1_700_000_000.0),
+                                  http_client=_mk_client({
+                                      "/health": (200, {"status": "ok"}),
+                                      "/props": (200, {"model_alias": "m", "is_sleeping": True}),
+                                      "/v1/models": (200, {"data": []}),
+                                  }))
+        _run(c.fetch_health())
+        self.assertEqual(c.server_state, "ready")
+        _run(c.fetch_props_and_models(force=True))
+        self.assertEqual(c.server_state, "sleeping")
+        self.assertTrue(c.model_info["is_sleeping"])
+        # 唤醒：is_sleeping=false -> 回到 ready
+        c._http = _mk_client({
+            "/props": (200, {"model_alias": "m", "is_sleeping": False}),
+            "/v1/models": (200, {"data": []}),
+        })
+        _run(c.fetch_props_and_models(force=True))
+        self.assertEqual(c.server_state, "ready")
+        self.assertFalse(c.model_info["is_sleeping"])
+
+    def test_is_sleeping_field_official_name(self):
+        """1.3.2：官方字段是 is_sleeping（此前误读 sleeping 恒为 None）。"""
+        info = build_model_info({"model_alias": "m", "is_sleeping": True}, None)
+        self.assertTrue(info["is_sleeping"])
+        info2 = build_model_info({"model_alias": "m", "is_sleeping": False}, None)
+        self.assertFalse(info2["is_sleeping"])
+        info3 = build_model_info({"model_alias": "m"}, None)
+        self.assertIsNone(info3["is_sleeping"])  # 缺失 = None（不猜）
+
     def test_health_single_transient_fail_does_not_flip(self):
-        """AUDIT-1.1.1 REL-1111-005 回归：单次偶发失败不翻转 Server State。"""
+        """AUDIT-1.1.1 REL-1111-005 回归：单次偶发**网络层**失败不翻转 Server State。"""
         c = self._collector({"/health": (200, {"status": "ok"})})
         _run(c.fetch_health())
         self.assertEqual(c.server_state, "ready")
-        # 一次偶发 500（网络抖动）：计数=1，仍 ready（不记 unavailable 事件）
-        c._http = _mk_client({"/health": (500, {})})
+        # 一次偶发网络层失败（端口短暂不可达）：计数=1，仍 ready
+        c._http = _mk_client({"/health": ("EXC", None)})
         _run(c.fetch_health())
         self.assertEqual(c.server_state, "ready")
         self.assertEqual(c._health_fail_count, 1)

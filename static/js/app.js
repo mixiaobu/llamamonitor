@@ -51,6 +51,8 @@
     mtpData: null,         // /api/mtp/range 响应（summary + days + positions）
     throughputRangeMinutes: 60, // Token 吞吐率范围：15/60/360/1440
     throughputData: null,  // /api/throughput 响应（samples + window_avg）
+    strataLive: null,          // 1.3.0：/api/strata/live 最近响应（性能页 Strata 段数据源）
+    strataReqsExpanded: null,  // 1.3.2："查看更多"全量请求列表（null=用轮询缓存）
     slotsData: null,       // /api/llama/slots 响应（活跃 Slot 统计来源）
     pollIntervalSec: 5,    // 采集间隔（缺口阈值 = poll*3；新鲜度 > 3*interval）
     quality: null,         
@@ -192,18 +194,28 @@
     // 全局状态徽章（Overview 顶部 + 页面内 server 卡）。
     // 1.1：优先用 server_state（ready/loading/unavailable 三态，来自 llama-server 探活）；
     // 无该字段时回退既有 online/offline 逻辑（旧后端兼容）。
-    // 1.3.0：Strata 七态（server_state + server_state_label 后端已给中文文案）。
+    // 1.3.0：Strata 多态（server_state + server_state_label 后端已给中文文案）。
+    // 1.3.2：llama.cpp 扩展态（sleeping/auth_error/degraded）+ Strata 全态统一映射。
+    // 后端提供的 server_state_label 优先（Strata 文案来自后端）；llama 态前端兜底。
+    var SS_STATE_BADGES = {
+      ready: ["online", "就绪"],
+      loading: ["warning", "模型加载中"],
+      unavailable: ["offline", "不可用"],
+      sleeping: ["paused", "休眠中"],
+      auth_error: ["error", "认证失败"],
+      degraded: ["warning", "运行异常"],
+      busy: ["online", "忙碌"],
+      monitoring_error: ["error", "监控异常"],
+      unreachable: ["offline", "不可达"],
+      waiting: ["paused", "等待连接"],
+      detecting: ["paused", "检测中"]
+    };
     var ss = data.server_state;
     var ssLabel = data.server_state_label;
     var ssBadge = null;
-    if (ss === "ready" || ss === "loading" || ss === "unavailable") {
-      ssBadge = ss === "ready" ? "online" : ss === "loading" ? "warning" : "offline";
-      ssLabel = ss === "ready" ? "就绪" : ss === "loading" ? "模型加载中" : "不可用";
-    } else if (ss) {
-      // Strata 扩展态
-      ssBadge = { busy: "online", loading: "warning", sleeping: "paused",
-                  monitoring_error: "error", unreachable: "offline",
-                  waiting: "paused", detecting: "paused" }[ss] || "paused";
+    if (ss && SS_STATE_BADGES[ss]) {
+      ssBadge = SS_STATE_BADGES[ss][0];
+      if (!ssLabel) ssLabel = SS_STATE_BADGES[ss][1];
     }
     if (ssBadge) {
       ui.setStatusBadge($("ovServerState"), ssBadge, ssLabel || undefined);
@@ -2618,10 +2630,13 @@
     _stText("stTokS", live.tok_s != null ? F.formatTps(live.tok_s) + " tok/s" : null);
     _stText("stTokSMean", live.tok_s_mean != null ? F.formatTps(live.tok_s_mean) + " tok/s" : null);
     _stText("stPrefill", live.prefill_tok_s_mean != null ? F.formatTps(live.prefill_tok_s_mean) + " tok/s" : null);
-    _stText("stRunning", (live.running != null ? live.running : 0) +
-      (live.outside_slots ? " + " + live.outside_slots + "（Slot 外）" : ""));
-    _stText("stWaiting", (live.waiting != null ? live.waiting : 0) +
-      (live.queued ? " + " + live.queued : ""));
+    // 处理中请求 = running 总数（不叠加 outside_slots——outside 是 running 的子集）
+    var running = live.running != null ? live.running : 0;
+    _stText("stRunning", live.running == null ? null
+      : running + (live.outside_slots ? "（Slot 外 " + live.outside_slots + "）" : ""));
+    // 等待请求 = waiting_total（waiting + queued 后端已合并；admitting 单独语义不并入）
+    _stText("stWaiting", live.waiting_total != null ? String(live.waiting_total)
+      : (live.waiting != null ? String(live.waiting) : null));
     var gen = live.generated, max = live.max_tokens;
     _stText("stProgress", busy && gen != null && max ? F.formatInt(gen) + " / " + F.formatInt(max)
       : busy && gen != null ? F.formatInt(gen) : null);
@@ -2630,24 +2645,78 @@
       hint.textContent = (busy && live.elapsed_s != null) ? "已持续 " + Math.round(live.elapsed_s) + " 秒" : "";
     }
     _stText("stRecoveries", busy && live.reasoning_recoveries != null ? String(live.reasoning_recoveries) : null);
+    // 引擎运行时长 + 并发（/v1/status 5 分钟低频；null=尚未取到）
+    var up = d.uptime || {};
+    _stText("stUptime", up.uptime_s != null ? F.formatDuration(Math.round(up.uptime_s)) : null);
+    if (up.concurrency_serving != null || up.concurrency_requested != null) {
+      var conc = $("stConcurrency");
+      if (conc) {
+        conc.textContent = (up.concurrency_serving != null ? up.concurrency_serving : "--")
+          + " / " + (up.concurrency_requested != null ? up.concurrency_requested : "--");
+        conc.classList.remove("dim");
+      }
+    } else {
+      _stText("stConcurrency", null);
+    }
 
-    // ---- H. 会话缓存与 Draft ----
+    // ---- H. 会话缓存与 Draft（1.3.2：完整块 + Draft 加权口径） ----
     var cc = d.conversation_cache;
     _stText("stCCEnabled", cc ? (cc.enabled ? "已启用" : "未启用") : null);
+    _stText("stCCBudget", cc && cc.budget_mib != null ? F.formatInt(cc.budget_mib) + " MiB" : null);
+    if (cc && (cc.slots != null || cc.parked != null)) {
+      var cs = $("stCCSlots");
+      if (cs) {
+        cs.textContent = (cc.slots != null ? F.formatInt(cc.slots) : "--")
+          + " / parked " + (cc.parked != null ? F.formatInt(cc.parked) : "--");
+        cs.classList.remove("dim");
+      }
+    } else {
+      _stText("stCCSlots", null);
+    }
+    _stText("stCCBytes", cc && cc.bytes != null ? F.formatMemory(cc.bytes) : null);
+    if (cc && (cc.parks != null || cc.restores != null)) {
+      var pr = $("stCCParkRestore");
+      if (pr) {
+        pr.textContent = (cc.parks != null ? F.formatInt(cc.parks) : "--")
+          + " / " + (cc.restores != null ? F.formatInt(cc.restores) : "--");
+        pr.classList.remove("dim");
+      }
+    } else {
+      _stText("stCCParkRestore", null);
+    }
+    _stText("stCCEvictions", cc && cc.evictions != null ? F.formatInt(cc.evictions) : null);
+    // 最后事件（park/restore/eviction + 相对时间）
+    if (cc && cc.last_event) {
+      _stText("stCCLastEvent", cc.last_event);
+      var leTime = $("stCCLastEventTime");
+      if (leTime) {
+        leTime.textContent = cc.last_at != null
+          ? "· " + F.formatAgo(Math.max(0, Math.round(Date.now() / 1000 - cc.last_at))) + " 前"
+          : "";
+      }
+    } else {
+      _stText("stCCLastEvent", null);
+      var leTime2 = $("stCCLastEventTime");
+      if (leTime2) leTime2.textContent = "";
+    }
     _stText("stCCReused", cc && cc.reused_tokens != null ? F.formatTokenCount(cc.reused_tokens) : null);
     _stText("stCCRequests", cc && cc.requests != null
       ? F.formatInt(cc.requests) + (cc.requests_reused != null ? " / " + F.formatInt(cc.requests_reused) + " 复用" : "") : null);
-    // Draft 接受率：最近请求均值（无请求则 --）
-    var reqs = d.recent_requests || [];
-    var rates = [];
-    for (var i = 0; i < reqs.length; i++) {
-      if (reqs[i].draft_accept_rate != null) rates.push(reqs[i].draft_accept_rate);
+    // Draft 接受率：加权口径（Σ accepted / Σ offered，后端聚合；
+    // 不是各请求接受率的算术平均——A(1/1)+B(1000/500) = 501/1001 ≈ 50%，不是 75%）
+    var agg = d.draft_aggregate;
+    var draftHint = $("stDraftHint");
+    if (agg && agg.offered > 0 && agg.rate != null) {
+      _stText("stDraftRate", F.formatPercent(agg.rate * 100, 1));
+      if (draftHint) draftHint.textContent = F.formatInt(agg.accepted) + " / " + F.formatInt(agg.offered) + "（加权）";
+    } else {
+      _stText("stDraftRate", null);
+      if (draftHint) draftHint.textContent = "";
     }
-    _stText("stDraftRate", rates.length
-      ? F.formatPercent(rates.reduce(function (a, b) { return a + b; }, 0) / rates.length * 100, 1)
-      : null);
 
-    // ---- I. 最近请求（DOM 构建，data-label 供移动端卡片化） ----
+    // ---- I. 最近请求（DOM 构建，data-label 供移动端卡片化；
+    //      1.3.2：用户"查看更多"后以全量列表为准，轮询不覆写） ----
+    var reqs = state.strataReqsExpanded || (d.recent_requests || []);
     var box = $("stReqList");
     if (box) {
       box.innerHTML = "";
@@ -2659,6 +2728,12 @@
       } else {
         box.appendChild(_strataReqTable(reqs));
       }
+    }
+    var moreBtn = $("stReqMoreBtn");
+    if (moreBtn) {
+      // 缓存请求数 > 0 才显示；展开后显示"收起"
+      moreBtn.hidden = !(d.recent_requests || []).length && !state.strataReqsExpanded;
+      moreBtn.textContent = state.strataReqsExpanded ? "收起" : "查看更多";
     }
 
     // ---- J. 后端硬件（Strata 主机） ----
@@ -2673,8 +2748,78 @@
     _stText("stHwCpuName", hwStatic.cpu_name || null);
     _stText("stHwRam", hwLive.ram_used != null && hwLive.ram_total
       ? F.formatMemory(hwLive.ram_used) + " / " + F.formatMemory(hwLive.ram_total) : null);
+    // PCIe 实时 RX/TX（MB/s）+ 链路代际/宽度（实际/最大）
+    _stText("stHwPcieRx", hwLive.gpu_pcie_rx_mb != null
+      ? F.formatTps(hwLive.gpu_pcie_rx_mb) + " MB/s" : null);
+    _stText("stHwPcieTx", hwLive.gpu_pcie_tx_mb != null
+      ? F.formatTps(hwLive.gpu_pcie_tx_mb) + " MB/s" : null);
+    if (hwLive.gpu_pcie_gen != null || hwLive.gpu_pcie_width != null) {
+      var linkParts = [];
+      if (hwLive.gpu_pcie_gen != null) linkParts.push("Gen" + hwLive.gpu_pcie_gen);
+      if (hwLive.gpu_pcie_width != null) linkParts.push("x" + hwLive.gpu_pcie_width);
+      var linkStr = linkParts.join(" ");
+      if (hwLive.gpu_pcie_gen_max != null && hwLive.gpu_pcie_width_max != null
+          && (hwLive.gpu_pcie_gen_max !== hwLive.gpu_pcie_gen
+              || hwLive.gpu_pcie_width_max !== hwLive.gpu_pcie_width)) {
+        linkStr += "（最大 Gen" + hwLive.gpu_pcie_gen_max + " x" + hwLive.gpu_pcie_width_max + "）";
+      }
+      _stText("stHwPcieLink", linkStr || null);
+    } else {
+      _stText("stHwPcieLink", null);
+    }
     var hwSub = $("stHwSub");
     if (hwSub) hwSub.textContent = d.server_local ? "本机（" + (d.server_id || "") + "）" : "Strata 主机（" + (d.server_id || "") + "）";
+
+    // ---- K. 引擎与资源详情（/metrics engine 白名单） ----
+    var eng2 = d.engine || {};
+    if (eng2.expert_slots != null || eng2.expert_slots_primary != null) {
+      var ex = $("stEngExpert");
+      if (ex) {
+        ex.textContent = F.formatInt(eng2.expert_slots != null ? eng2.expert_slots : null);
+        if (eng2.expert_slots_primary != null) {
+          ex.textContent += "（主 " + F.formatInt(eng2.expert_slots_primary) + "）";
+        }
+        ex.classList.remove("dim");
+      }
+    } else {
+      _stText("stEngExpert", null);
+    }
+    // KV：kv_resident（驻留槽位）+ kv（量化类型如 "int8"，或数字上限）
+    if (eng2.kv_resident != null || eng2.kv != null) {
+      var kvParts = [];
+      if (eng2.kv_resident != null) kvParts.push(F.formatInt(eng2.kv_resident));
+      if (eng2.kv != null) {
+        if (typeof eng2.kv === "number" && isFinite(eng2.kv)) {
+          kvParts.push("/ " + F.formatInt(eng2.kv));
+        } else {
+          kvParts.push("（" + eng2.kv + "）");
+        }
+      }
+      _stText("stEngKv", kvParts.join(" ") || null);
+    } else {
+      _stText("stEngKv", null);
+    }
+    _stText("stEngBatch", (eng2.batch_slots != null || eng2.batch_groups != null)
+      ? (eng2.batch_slots != null ? F.formatInt(eng2.batch_slots) : "--")
+          + " / " + (eng2.batch_groups != null ? F.formatInt(eng2.batch_groups) : "--") : null);
+    // 推测解码：spec 可能是字符串（如 "mtp"）或数字代码；附 MTP/lookup 深度
+    if (eng2.spec != null || eng2.mtp_max != null || eng2.lookup != null) {
+      var specParts = [];
+      if (eng2.spec != null) {
+        specParts.push(typeof eng2.spec === "number" ? "spec " + eng2.spec : String(eng2.spec));
+      }
+      if (eng2.mtp_max != null) specParts.push("MTP ×" + eng2.mtp_max);
+      if (eng2.lookup != null) specParts.push("lookup ×" + eng2.lookup);
+      _stText("stEngSpec", specParts.join(" · ") || null);
+    } else {
+      _stText("stEngSpec", null);
+    }
+    _stText("stEngPool", eng2.pool_workers != null ? F.formatInt(eng2.pool_workers) : null);
+    _stText("stEngVramFree", eng2.vram_free_mib != null ? F.formatInt(eng2.vram_free_mib) + " MiB" : null);
+    _stText("stEngArena", eng2.arena_mib != null ? F.formatInt(eng2.arena_mib) + " MiB" : null);
+    // pcie_frac 可能是字符串（如 "0.20"）
+    var pcieFrac = parseFloat(eng2.pcie_frac);
+    _stText("stEngPcieFrac", isFinite(pcieFrac) ? F.formatPercent(pcieFrac * 100, 0) : null);
 
     // ---- Slot 监控（E 段，与 llama.cpp 共用容器） ----
     renderStrataSlots(d);
@@ -2711,7 +2856,9 @@
     }
   }
 
-  /* Strata 请求表（DOM 构建；列：时间 / 结束 / Prompt / 缓存复用率 / 生成 / 生成速度 / Draft） */
+  /* Strata 请求表（DOM 构建；列：时间 / 结束 / Prompt / 缓存复用率 / 生成 /
+     生成速度 / Prefill 速度 / Draft / Expert 命中率 / PCIe 份额；
+     1.3.2：Expert 字段为每请求原始值（不做跨请求加权平均） */
   function _strataReqTable(reqs) {
     var nowSec = Date.now() / 1000;
     function relTime(t) {
@@ -2725,7 +2872,8 @@
     var head = document.createElement("thead");
     head.innerHTML = "<tr>" +
       "<th>时间</th><th>结束</th><th class=\"num\">Prompt</th><th class=\"num\">缓存复用率</th>" +
-      "<th class=\"num\">生成</th><th class=\"num\">生成速度</th><th class=\"num\">Draft 接受率</th>" +
+      "<th class=\"num\">生成</th><th class=\"num\">生成速度</th><th class=\"num\">Prefill 速度</th>" +
+      "<th class=\"num\">Draft 接受率</th><th class=\"num\">Expert 命中</th><th class=\"num\">PCIe 份额</th>" +
       "</tr>";
     var body = document.createElement("tbody");
     for (var i = 0; i < reqs.length; i++) {
@@ -2745,7 +2893,11 @@
       tr.appendChild(cell("缓存复用率", r.prompt_reuse_rate != null ? F.formatPercent(r.prompt_reuse_rate * 100, 1) : null));
       tr.appendChild(cell("生成", r.output_tokens != null ? F.formatTokenCount(r.output_tokens) : null));
       tr.appendChild(cell("生成速度", r.decode_tok_s != null ? F.formatTps(r.decode_tok_s) + " tok/s" : null));
+      tr.appendChild(cell("Prefill 速度", r.prefill_tok_s != null ? F.formatTps(r.prefill_tok_s) + " tok/s" : null));
       tr.appendChild(cell("Draft 接受率", r.draft_accept_rate != null ? F.formatPercent(r.draft_accept_rate * 100, 1) : null));
+      // Expert VRAM 命中率 / PCIe 份额：每请求原始值（0-1）
+      tr.appendChild(cell("Expert 命中", r.expert_hit_rate != null ? F.formatPercent(r.expert_hit_rate * 100, 1) : null));
+      tr.appendChild(cell("PCIe 份额", r.expert_pcie_share != null ? F.formatPercent(r.expert_pcie_share * 100, 1) : null));
       body.appendChild(tr);
     }
     var table = document.createElement("table");
@@ -2809,6 +2961,254 @@
     table.appendChild(body);
     wrap.appendChild(table);
     box.appendChild(wrap);
+  }
+
+  /* ================= 1.3.2：Strata 延迟分布 / PCIe 趋势 / 查看更多请求 ================= */
+
+  var strataLatencyMinutes = 60;
+  var strataHwTrendMinutes = 60;
+  var strataReqsLoading = false;
+
+  function _fmtLatencyMs(sec) {
+    if (sec == null) return F.NA;
+    var ms = sec * 1000;
+    if (ms < 1) return ms.toFixed(2) + " ms";
+    if (ms < 1000) return ms.toFixed(0) + " ms";
+    // >=1s：秒 + 1~2 位小数（formatDuration 会取整成"2秒"丢精度）
+    if (sec < 60) return sec.toFixed(2).replace(/\.?0+$/, "") + " s";
+    return F.formatDuration(sec, 1);
+  }
+
+  function refreshStrataLatency() {
+    if (state.provider !== "strata") return Promise.resolve();
+    return api.get("/api/strata/latency?minutes=" + strataLatencyMinutes)
+      .then(function (d) {
+        if (state.provider !== "strata") return;
+        var m = d.metrics || {};
+        function put(prefix, key) {
+          var v = m[key];
+          var p50 = v && v.p50 != null ? _fmtLatencyMs(v.p50) : null;
+          var p95 = v && v.p95 != null ? "P95 " + _fmtLatencyMs(v.p95) : null;
+          var cnt = v ? v.count : 0;
+          _stText(prefix + "P50", p50);
+          var h = $(prefix + "P95");
+          if (h) {
+            h.textContent = p95 != null ? p95 + (cnt ? " · " + F.formatInt(cnt) + " 样本" : " · 无样本") : "";
+            h.style.display = h.textContent ? "" : "none";
+          }
+        }
+        put("stLatTtft", "ttft");
+        put("stLatItl", "itl");
+        put("stLatE2e", "e2e");
+        // 总样本提示（三指标窗口样本数）
+        var hint = $("stLatSampleHint");
+        if (hint) {
+          var parts = [];
+          if (m.ttft && m.ttft.count) parts.push("TTFT " + F.formatInt(m.ttft.count));
+          if (m.itl && m.itl.count) parts.push("ITL " + F.formatInt(m.itl.count));
+          if (m.e2e && m.e2e.count) parts.push("E2E " + F.formatInt(m.e2e.count));
+          hint.textContent = parts.length
+            ? "窗口样本：" + parts.join(" / ") + (d.itl_is_estimate ? "（ITL 为每请求平均间隙估计）" : "")
+            : "窗口内暂无延迟样本（-- 表示无数据，不是 0ms）";
+        }
+      })
+      .catch(function (e) { console.warn("strata latency failed:", e.message || e); });
+  }
+
+  function refreshStrataHwTrend() {
+    if (state.provider !== "strata") return Promise.resolve();
+    return api.get("/api/strata/hardware-trend?minutes=" + strataHwTrendMinutes)
+      .then(function (d) {
+        if (state.provider !== "strata") return;
+        if (LM.charts) LM.charts.renderPcieTrendChart("chartPcie", d.series || []);
+      })
+      .catch(function (e) { console.warn("strata hw trend failed:", e.message || e); });
+  }
+
+  /* 最近请求"查看更多"（?requests=all，后端 30s TTL 缓存 + 上限 200） */
+  function toggleStrataReqsMore() {
+    var btn = $("stReqMoreBtn");
+    if (btn && btn.textContent === "收起") {
+      state.strataReqsExpanded = null;
+      renderStrataLive(state.strataLive || {});
+      return;
+    }
+    if (strataReqsLoading) return;
+    strataReqsLoading = true;
+    if (btn) btn.disabled = true;
+    api.get("/api/strata/requests?limit=200")
+      .then(function (d) {
+        strataReqsLoading = false;
+        var reqs = (d && d.requests) || [];
+        if (reqs.length) {
+          state.strataReqsExpanded = reqs;
+        }
+        renderStrataLive(state.strataLive || {});
+      })
+      .catch(function (e) {
+        strataReqsLoading = false;
+        console.warn("strata requests all failed:", e.message || e);
+        if (btn) { btn.disabled = false; }
+      });
+  }
+
+  /* ================= 1.3.2：llama.cpp Router 实例 / LoRA ================= */
+
+  function _routerEventDetail(ev) {
+    var bits = [];
+    if (ev.model) bits.push(ev.model);
+    if (ev.status) bits.push(ev.status);
+    if (ev.stage_value != null) {
+      // progress 是阶段内 0~1（不是整模型百分比）
+      bits.push("阶段 " + (ev.stage_index != null ? ev.stage_index : "?") + " " +
+        Math.round(ev.stage_value * 100) + "%");
+    }
+    return bits.join(" · ");
+  }
+
+  function refreshLlamaRouter() {
+    if (state.provider !== "llamacpp") return Promise.resolve();
+    return api.get("/api/llama/router")
+      .then(function (d) {
+        if (state.provider !== "llamacpp") return;
+        var sub = $("routerSub");
+        var sel = $("routerSelected");
+        var sse = $("routerSseState");
+        var list = $("routerModelList");
+        var feed = $("routerEventFeed");
+        if (!d || !d.is_router) {
+          // 非 Router 模式：段内容收起（保留段标题 + "未检测到"）
+          if (sub) sub.textContent = "未检测到 Router 模式";
+          if (sel) { sel.textContent = "--"; sel.classList.add("dim"); }
+          if (sse) { sse.textContent = "--"; sse.classList.add("dim"); }
+          if (list) list.innerHTML = "";
+          if (feed) { feed.hidden = true; feed.innerHTML = ""; }
+          return;
+        }
+        if (sub) sub.textContent = d.models.length + " 个实例";
+        if (sel) { sel.textContent = d.selected || "（选择中）"; sel.classList.remove("dim"); }
+        if (sse) {
+          sse.textContent = d.sse_connected ? "已连接" : "重连中";
+          sse.classList.remove("dim");
+        }
+        // 实例列表（basename + 状态 + 阶段进度）
+        if (list) {
+          list.innerHTML = "";
+          var wrap = document.createElement("div");
+          wrap.className = "slot-table-wrap router-models";
+          var head = document.createElement("thead");
+          head.innerHTML = "<tr><th>实例</th><th>状态</th><th class=\"num\">进度</th></tr>";
+          var body = document.createElement("tbody");
+          for (var i = 0; i < d.models.length; i++) {
+            var m = d.models[i];
+            var tr = document.createElement("tr");
+            tr.className = "slot-row" + (m.id === d.selected ? " active" : "");
+            var nameTd = document.createElement("td");
+            nameTd.setAttribute("data-label", "实例");
+            nameTd.textContent = (m.name || m.id || "--") +
+              (m.path_name ? "（" + m.path_name + "）" : "") +
+              (m.id === d.selected ? " · 监控中" : "");
+            tr.appendChild(nameTd);
+            var stTd = document.createElement("td");
+            stTd.setAttribute("data-label", "状态");
+            var stCls = m.status === "loaded" ? "loaded" :
+              (m.status === "unloaded" ? "unloaded" : "other");
+            var stLabel = m.status === "loaded" ? "已加载" :
+              (m.status === "unloaded" ? "未加载" : (m.status || "--"));
+            stTd.innerHTML = '<span class="slot-state model-status ' + stCls + '">' + stLabel + "</span>";
+            tr.appendChild(stTd);
+            var pgTd = document.createElement("td");
+            pgTd.className = "num";
+            pgTd.setAttribute("data-label", "进度");
+            if (m.progress_stage_value != null) {
+              pgTd.textContent = "阶段 " + (m.progress_stage_index != null ? m.progress_stage_index : "?") +
+                " " + Math.round(m.progress_stage_value * 100) + "%";
+            } else {
+              pgTd.textContent = F.NA;
+              pgTd.classList.add("na");
+            }
+            tr.appendChild(pgTd);
+            body.appendChild(tr);
+          }
+          var table = document.createElement("table");
+          table.className = "slot-table";
+          table.appendChild(head);
+          table.appendChild(body);
+          wrap.appendChild(table);
+          list.appendChild(wrap);
+        }
+        // SSE 事件流（尾部最多 30 条；新 -> 旧）
+        if (feed) {
+          var evs = (d.sse_events || []).slice(-30).reverse();
+          if (!evs.length) {
+            feed.hidden = true;
+            feed.innerHTML = "";
+          } else {
+            feed.hidden = false;
+            feed.innerHTML = '<div class="re-title"><span>加载 / 状态事件（去重，最多 100 条）</span></div>';
+            var nowMs = Date.now();
+            for (var ei = 0; ei < evs.length; ei++) {
+              var ev = evs[ei];
+              var row = document.createElement("div");
+              row.className = "re-item";
+              var tSpan = document.createElement("span");
+              tSpan.className = "re-time";
+              tSpan.textContent = F.formatAgo(Math.max(0, Math.round((nowMs / 1000) - ev.t)));
+              var eSpan = document.createElement("span");
+              eSpan.className = "re-event";
+              eSpan.textContent = ev.event || "message";
+              var dSpan = document.createElement("span");
+              dSpan.className = "re-detail";
+              var detail = _routerEventDetail(ev);
+              dSpan.textContent = detail || "—";
+              dSpan.title = detail || "";
+              row.appendChild(tSpan);
+              row.appendChild(eSpan);
+              row.appendChild(dSpan);
+              feed.appendChild(row);
+            }
+          }
+        }
+      })
+      .catch(function (e) { console.warn("llama router failed:", e.message || e); });
+  }
+
+  function refreshLlamaLora() {
+    if (state.provider !== "llamacpp") return Promise.resolve();
+    return api.get("/api/llama/lora")
+      .then(function (d) {
+        if (state.provider !== "llamacpp") return;
+        var box = $("loraList");
+        if (!box) return;
+        box.innerHTML = "";
+        var adapters = (d && d.adapters) || [];
+        if (!adapters.length) {
+          var empty = document.createElement("div");
+          empty.className = "stat-hint";
+          empty.textContent = d && d.available ? "未加载 LoRA" : "暂无 LoRA 数据";
+          box.appendChild(empty);
+          return;
+        }
+        var list = document.createElement("div");
+        list.className = "lora-list";
+        for (var i = 0; i < adapters.length; i++) {
+          var a = adapters[i];
+          var row = document.createElement("div");
+          row.className = "lora-item";
+          var name = document.createElement("span");
+          name.className = "lora-name";
+          name.textContent = a.name || a.id || "--";
+          name.title = a.name || a.id || "";
+          var scale = document.createElement("span");
+          scale.className = "lora-scale";
+          scale.textContent = a.scale != null ? "scale " + a.scale : "";
+          row.appendChild(name);
+          row.appendChild(scale);
+          list.appendChild(row);
+        }
+        box.appendChild(list);
+      })
+      .catch(function (e) { console.warn("llama lora failed:", e.message || e); });
   }
 
   function refreshSlots() {
@@ -3035,6 +3435,35 @@
             refreshMtpRange();
           })
         : null;
+      // 1.3.2：Strata 延迟分布范围（15分钟/1小时/6小时，默认 1 小时）
+      var stLatEl = $("stLatencyRange");
+      if (stLatEl) {
+        ui.segmented(stLatEl, [
+          { value: 15, label: "15 分钟" },
+          { value: 60, label: "1 小时" },
+          { value: 360, label: "6 小时" },
+        ], strataLatencyMinutes, function (v) {
+          strataLatencyMinutes = v;
+          refreshStrataLatency();
+        });
+      }
+      // 1.3.2：Strata PCIe 吞吐趋势范围（15分钟/1小时/6小时，默认 1 小时）
+      var stHwEl = $("stHwTrendRange");
+      if (stHwEl) {
+        ui.segmented(stHwEl, [
+          { value: 15, label: "15 分钟" },
+          { value: 60, label: "1 小时" },
+          { value: 360, label: "6 小时" },
+        ], strataHwTrendMinutes, function (v) {
+          strataHwTrendMinutes = v;
+          refreshStrataHwTrend();
+        });
+      }
+      // 1.3.2：最近请求"查看更多"
+      var stReqMore = $("stReqMoreBtn");
+      if (stReqMore) {
+        stReqMore.addEventListener("click", function () { toggleStrataReqsMore(); });
+      }
       // /api/config 是 loopback-only。远程（局域网 IP）客户端不发该请求，
       // 直接用内置默认值——手机 DevTools 网络面板不再出现 403。
       var c = LM.api.isLocal() ? await api.get("/api/config") : null;
@@ -3165,7 +3594,7 @@
       if (state.dailyRangeMode === "today" && state.trendGran === "hour") refreshTodayHourly();
     });
     LM.nav.registerPage("performance", function () {
-      charts.ensurePageCharts(["chartTps", "chartMtp", "chartMtpPos"]);
+      charts.ensurePageCharts(["chartTps", "chartMtp", "chartMtpPos", "chartPcie"]);
       // Round 5 推理性能页：实时摘要 + 运行时 + 活跃Slot（status/runtime/slots 同源刷新）
       refreshStatus(); refreshRuntime();
       // Slot 监控（一次 /api/llama/slots 驱动：顶部活跃 Slot + 运行时活跃/总 Slot +
@@ -3175,6 +3604,12 @@
       refreshThroughput();
       // MTP（当前范围，控制整个 Section）
       refreshMtpRange();
+      // 1.3.2：Strata 延迟分布 + PCIe 吞吐趋势（仅 strata 后端）
+      refreshStrataLatency();
+      refreshStrataHwTrend();
+      // 1.3.2：llama.cpp Router 实例 + LoRA（仅 llama 后端）
+      refreshLlamaRouter();
+      refreshLlamaLora();
       // 模型与运行环境（静态；进页刷新即可，不高频轮询）
       if (LM.system) LM.system.refreshLlamaInfo();
     });
@@ -3252,6 +3687,42 @@
       run: function () {
         if (LM.nav.currentPage() === "performance" && state.provider === "strata") {
           return refreshStrataLive();
+        }
+      },
+    });
+    // 1.3.2：Strata 延迟分布（histogram 聚合；30s 慢节奏，仅性能页前台 + strata）
+    LM.poll.register("strataLatency", {
+      intervalMs: 2000, visibleIntervalMs: 30000, visibleOnly: true,
+      run: function () {
+        if (LM.nav.currentPage() === "performance" && state.provider === "strata") {
+          return refreshStrataLatency();
+        }
+      },
+    });
+    // 1.3.2：Strata PCIe 吞吐趋势（15s 采样落库；30s 慢节奏，仅性能页前台 + strata）
+    LM.poll.register("strataHwTrend", {
+      intervalMs: 2000, visibleIntervalMs: 30000, visibleOnly: true,
+      run: function () {
+        if (LM.nav.currentPage() === "performance" && state.provider === "strata") {
+          return refreshStrataHwTrend();
+        }
+      },
+    });
+    // 1.3.2：llama.cpp Router 实例 + SSE 事件（30s 慢节奏，仅性能页前台 + llama）
+    LM.poll.register("llamaRouter", {
+      intervalMs: 2000, visibleIntervalMs: 30000, visibleOnly: true,
+      run: function () {
+        if (LM.nav.currentPage() === "performance" && state.provider === "llamacpp") {
+          return refreshLlamaRouter();
+        }
+      },
+    });
+    // 1.3.2：llama.cpp LoRA（5 分钟后端节流；前端 30s 慢节奏兜底，仅性能页前台 + llama）
+    LM.poll.register("llamaLora", {
+      intervalMs: 2000, visibleIntervalMs: 30000, visibleOnly: true,
+      run: function () {
+        if (LM.nav.currentPage() === "performance" && state.provider === "llamacpp") {
+          return refreshLlamaLora();
         }
       },
     });

@@ -283,6 +283,7 @@ def _model_summary_public(runtime, request: Request) -> dict | None:
         "parameter_count": info.get("parameter_count"),
         "model_size_bytes": info.get("model_size_bytes"),
         "context_size": info.get("context_size"),
+        "training_context_size": info.get("training_context_size"),
         "total_slots": info.get("total_slots"),
         "vision_supported": info.get("vision_supported"),
         "video_supported": info.get("video_supported"),
@@ -743,6 +744,12 @@ def build_app(
         runtime_task = None
         if runtime is not None:
             runtime.set_metrics_online(bool((collector.last_snapshot or {}).get("online")))
+            # 1.3.2：Router 模型变化 -> 主采集器 /metrics 查询参数
+            # （model=<id>&autoload=false；只读，绝不自动加载）
+            try:
+                runtime.on_router_model_change = lambda m: collector.set_router_model(m)
+            except Exception:
+                pass
             runtime_task = asyncio.create_task(runtime.run())
 
         gpu_task = None
@@ -1447,6 +1454,47 @@ def build_app(
             "last_update": runtime.last_slots_update,
         }
 
+    @app.get("/api/llama/lora")
+    async def api_llama_lora() -> dict:
+        """
+        LoRA 适配器只读状态（1.3.2；/lora-adapters，basename only）。
+
+        - 只读：绝不 POST（不加载/卸载/切换）；
+        - 端点不存在（404）-> adapters=[]（能力不可用，不报错）；
+        - 完整路径不进 API（只保留 id / 文件名 / scale）。
+        """
+        if runtime is None:
+            return {"available": False, "adapters": []}
+        return {
+            "available": True,
+            "adapters": list(getattr(runtime, "lora_adapters", [])),
+        }
+
+    @app.get("/api/llama/router")
+    async def api_llama_router() -> dict:
+        """
+        Router 多模型状态 + 加载事件（1.3.2）。
+
+        - is_router=false 时 models=[]（普通 llama-server 无 Router 语义）；
+        - 被监控模型 selected 由采集器选择（第一个 loaded；无 loaded 时保持
+          旧选择）；server 层据此给 /metrics 追加 model=<id>&autoload=false；
+        - sse_events：/models/sse 最近事件（有界，去重；progress 为**阶段内**
+          0~1，不是整模型百分比）；sse_connected 指示当前是否有活动 SSE 连接；
+        - 全部内存态（不落库）。
+        """
+        if runtime is None:
+            return {"available": False, "is_router": False, "models": [],
+                    "selected": None, "sse_events": [], "sse_connected": False}
+        router = getattr(runtime, "router", None) or {}
+        return {
+            "available": True,
+            "is_router": bool(router.get("is_router")),
+            "models": router.get("models") or [],
+            "selected": router.get("selected"),
+            "sse_events": list(getattr(runtime, "router_events", ())),
+            "sse_connected": bool(getattr(runtime, "_sse_connected", False)),
+        }
+
     # ---------- 1.1 System Telemetry（CPU/内存/磁盘/网络/功耗/传感器） ----------
 
     @app.get("/api/system/status")
@@ -1735,7 +1783,7 @@ def build_app(
         c = collector
         hardware = c.backend_hardware
         # 本机 vs Strata 主机标签（§62/§78）：server_id 与本机回环/主机名关系
-        from strata_parser import server_identity
+        from strata_parser import aggregate_draft_stats, server_identity
         server_id = c.server_id
         local_host = _is_local_server(server_id)
         return {
@@ -1751,11 +1799,16 @@ def build_app(
                 for s in (c._slots or []) if isinstance(s, dict)
             ],
             "recent_requests": c.recent_requests,
+            # 1.3.2：Draft 加权接受率（sum(accepted)/sum(offered)，跨请求口径；
+            # 不是各请求接受率的算术平均——单请求小样本会扭曲均值）
+            "draft_aggregate": aggregate_draft_stats(c.recent_requests),
             "conversation_cache": c.conversation_cache,
             "engine": c.engine_info,
             "hardware": hardware,
             "hardware_static": (hardware or {}).get("static") if hardware else None,
             "model": _strata_model_public(c),
+            # 1.3.2：uptime + 并发（/v1/status 低频；内存态）
+            "uptime": getattr(c, "_uptime_info", None),
             "capabilities": c.capabilities,
             "last_update": c.last_update,
         }
@@ -1783,6 +1836,120 @@ def build_app(
             "model_file_name": info.get("model_file_name"),
         }
         return out
+
+    # ---------- 1.3.2：Strata 延迟直方图 / 按需请求 / uptime / 硬件趋势 ----------
+
+    @app.get("/api/strata/latency")
+    async def api_strata_latency(request: Request, minutes: int = 60) -> dict:
+        """
+        请求延迟分位数（1.3.2；TTFT / ITL / E2E 的 P50/P95）。
+
+        - 数据源：latency_histogram 表（采集层 15s 采样的 bucket delta）；
+          窗口内按 le 对 delta 求和后用经典 histogram_quantile 估计；
+        - ITL 是**每请求平均 token 间隔**的估计分布（decode_s/(output-1) 构造），
+          不是逐 token 采样——UI 必须标注；
+        - count=0 的窗口 p50/p95=null（不是 0ms）；
+        - minutes 上限 24h（防大查询）；非 Strata 后端 404。
+        """
+        provider = getattr(collector, "provider_id", "llamacpp")
+        if provider != "strata":
+            raise HTTPException(status_code=404, detail="not a Strata backend")
+        from prometheus_parser import histogram_quantile, le_sort_key
+        minutes = max(1, min(int(minutes or 60), 1440))
+        end = collector.clock.now()
+        start = end - minutes * 60
+        # 零 delta 桶不落库：用采集器已知的完整 le 轴补零，
+        # 否则窗口聚合丢失桶下界，histogram_quantile 插值偏低
+        # （如 (1, 2.5] 的样本被当成 (0, 2.5]）。
+        le_axes = {}
+        if hasattr(collector, "known_le_axes"):
+            le_axes = collector.known_le_axes()
+        out: dict = {}
+        for mkey in ("ttft", "itl", "e2e"):
+            bucket_totals = db.get_latency_histogram(mkey, start, end)
+            axis = le_axes.get(mkey) or []
+            if axis:
+                for le_raw in axis:
+                    bucket_totals.setdefault(le_raw, 0.0)
+            total = sum(v for k, v in bucket_totals.items() if k != "+Inf")
+            out[mkey] = {
+                "p50": histogram_quantile(0.50, bucket_totals, total_count=total),
+                "p95": histogram_quantile(0.95, bucket_totals, total_count=total),
+                "count": int(total) if total else 0,
+            }
+        return {
+            "provider": "strata",
+            "minutes": minutes,
+            "metrics": out,
+            "itl_is_estimate": True,
+            "server_id": collector.server_id,
+        }
+
+    @app.get("/api/strata/requests")
+    async def api_strata_requests(request: Request, limit: int = 60) -> dict:
+        """
+        按需"查看更多"最近请求（1.3.2；/metrics?requests=all，30s 内存缓存）。
+
+        - limit<=20 时直接复用轮询循环已抓的内存数据（不发额外请求）；
+        - limit>20 时触发一次按需全量抓取（TTL 缓存防抖）；
+        - 非 Strata 后端 404。
+        """
+        provider = getattr(collector, "provider_id", "llamacpp")
+        if provider != "strata":
+            raise HTTPException(status_code=404, detail="not a Strata backend")
+        limit = max(1, min(int(limit or 60), 200))
+        c = collector
+        entries, ok = c.recent_requests, True
+        if limit > len(c.recent_requests):
+            entries, ok = await c.fetch_all_requests(limit=limit)
+        return {
+            "provider": "strata",
+            "available": ok,
+            "count": len(entries),
+            "limit": limit,
+            "requests": entries,
+        }
+
+    @app.get("/api/strata/uptime")
+    async def api_strata_uptime() -> dict:
+        """
+        Strata 服务 uptime + 并发（1.3.2；/v1/status，5 分钟低频）。
+        服务重启后 uptime 从 0 重新计（不跨重启累加）。非 Strata 后端 404。
+        """
+        provider = getattr(collector, "provider_id", "llamacpp")
+        if provider != "strata":
+            raise HTTPException(status_code=404, detail="not a Strata backend")
+        info = getattr(collector, "_uptime_info", None)
+        return {
+            "provider": "strata",
+            "available": info is not None,
+            "uptime": info,
+        }
+
+    @app.get("/api/strata/hardware-trend")
+    async def api_strata_hardware_trend(request: Request, minutes: int = 60) -> dict:
+        """
+        Strata 主机硬件历史趋势（1.3.2；PCIe RX/TX / GPU 利用率等）。
+
+        - 数据源：strata_hardware 表（采集层 15s 采样落库）；
+        - 与本机「系统」页的 system_samples 明确区分（来源=Strata 主机，
+          可能远程）；超过 2000 点自动降采样；非 Strata 后端 404。
+        """
+        provider = getattr(collector, "provider_id", "llamacpp")
+        if provider != "strata":
+            raise HTTPException(status_code=404, detail="not a Strata backend")
+        minutes = max(1, min(int(minutes or 60), 1440))
+        end = collector.clock.now()
+        start = end - minutes * 60
+        rows = db.get_strata_hardware_range(collector.server_id, start, end)
+        return {
+            "provider": "strata",
+            "server_id": collector.server_id,
+            "server_local": _is_local_server(collector.server_id),
+            "minutes": minutes,
+            "points": len(rows),
+            "series": rows,
+        }
 
     # ---------- 数据管理（Phase 8） ----------
 
@@ -2245,8 +2412,10 @@ def build_app(
                 service_status = "ready"  # 就绪
             elif online is False:
                 # 健康检查仍正常但指标端点不可达 = 监测异常；健康也失败 = 不可达
+                # （1.3.2：sleeping/degraded 也属于"服务层有响应"，指标不可达=监测异常）
                 service_status = (
-                    "monitoring_error" if server_state in ("ready", "loading")
+                    "monitoring_error"
+                    if server_state in ("ready", "loading", "sleeping", "degraded")
                     else "unreachable"
                 )
             else:

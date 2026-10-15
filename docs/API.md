@@ -36,7 +36,19 @@
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/api/llama/info` | 模型 / 服务信息（/props + /v1/models + build，隐私白名单过滤） |
-| GET | `/api/llama/slots` | 当前 Slot 状态（/slots，whitelist 字段） |
+| GET | `/api/llama/slots` | 当前 Slot 状态（/slots，whitelist 字段；`next_token` 对象形态归一化） |
+| GET | `/api/llama/lora` | LoRA 适配器列表（1.3.2，/lora-adapters 只读；basename + scale，无完整路径） |
+| GET | `/api/llama/router` | Router 多实例（1.3.2，仅 Router 模式）：实例列表（status/阶段进度，basename）+ selected + SSE 事件流（有界 100，去重）+ 连接状态 |
+
+### Strata 后端遥测（1.3.0+，只读；非 Strata 后端 404）
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/strata/live` | Strata 实时快照：live（阶段/速度/请求，含 `waiting_total`）/ 引擎 / 会话缓存 / 最近请求（每请求 expert_hit_rate/pcie_share/prefill_tok_s）/ 后端硬件 / uptime + 并发 / `draft_aggregate`（跨请求加权接受率） |
+| GET | `/api/strata/latency?minutes=60` | 1.3.2：TTFT/ITL/E2E 的 P50/P95（vLLM histogram bucket delta 按窗口聚合 + 补零 + 经典分位数插值；`itl_is_estimate=true`；count=0 时 null） |
+| GET | `/api/strata/requests?limit=60` | 1.3.2：最近请求（≤20 复用轮询内存态；>20 触发 `/metrics?requests=all` 按需抓取，30s TTL + 上限 200） |
+| GET | `/api/strata/uptime` | 1.3.2：引擎 uptime + 并发（/v1/status，5 分钟低频；重启后归零） |
+| GET | `/api/strata/hardware-trend?minutes=60` | 1.3.2：Strata 主机硬件历史（strata_hardware 表，15s 采样；`server_local` 标注来源；>2000 点降采样） |
 
 ### 系统监控（1.1，只读）
 

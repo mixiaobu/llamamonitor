@@ -90,9 +90,11 @@ DB_HEALTH_PROTECTIVE = (DB_HEALTH_CORRUPT, DB_HEALTH_UNAVAILABLE, DB_HEALTH_INCO
 # v2 = Phase 9（GPU 表 + runtime 列扩展）；v3 = Phase 11（可靠性/数据质量表）；
 # v4 = Phase 13（app_state runtime metadata）；
 # v5 = 1.1.0（System & Hardware Telemetry：system_samples / system_daily +
-#       gpu_samples 高级遥测列扩展）
+#       gpu_samples 高级遥测列扩展）；
+# v6 = 1.2.2（gpu_samples 高级遥测）；v7 = 1.3.0（daily_usage_by_source 来源级统计）；
+# v8 = 1.3.2（latency_histogram 延迟直方图 delta + strata_hardware 后端硬件采样）
 # 版本机制见 _connect/_migrate
-CURRENT_SCHEMA_VERSION = 7
+CURRENT_SCHEMA_VERSION = 8
 
 # live_samples 默认保留时长：48 小时（实际值来自配置 collector.live_retention_hours）
 LIVE_SAMPLE_RETENTION_SECONDS = 48 * 3600
@@ -134,6 +136,12 @@ _DAILY_COLUMNS = (
     "prompt_seconds",
     "predicted_seconds",
     "draft_sequences",        # v2 新增（llamacpp:spec_decode_num_drafts_total 日累计 delta）
+)
+
+# 1.3.2：strata_hardware 表的硬件遥测列（缺失字段保持 NULL，不写 0 冒充读数）
+_STRATA_HW_COLUMNS = (
+    "gpu_util", "gpu_mem_used", "gpu_mem_total", "gpu_temp", "gpu_power",
+    "pcie_rx_mb", "pcie_tx_mb", "cpu", "ram_used", "ram_total",
 )
 
 _SCHEMA_V1 = """
@@ -475,6 +483,65 @@ def _migrate_v6_to_v7(conn: sqlite3.Connection) -> None:
         logger.warning("写入 migration 事件失败（不影响迁移本身）", exc_info=True)
 
 
+def _migrate_v7_to_v8(conn: sqlite3.Connection) -> None:
+    """
+    v7 -> v8（1.3.2 双 Provider 增强）：新建两张**追加式**采样表。
+
+    - latency_histogram：Strata 延迟 Histogram 的**窗口 delta**（TTFT / ITL /
+      E2E）。每行是"某采样时刻、某 (metric, model, le) 桶的样本数增量"，
+      由相邻 Prometheus 累计桶值相减（Counter Reset 感知）得到。P50/P95 在
+      查询时按窗口对 delta 求和后用经典 histogram_quantile 估计——
+      不重复写入 Strata 的原始 history，也不把累计值跨窗口相减。
+    - strata_hardware：Strata 主机（可能远程）硬件遥测的低频采样
+      （GPU 利用率/显存/温度/功耗/PCIe 吞吐/CPU/内存），用于 PCIe 趋势等
+      历史图。与本机「系统」页的 system_samples 明确区分（来源身份
+      server_id + 本表只写 Strata 后端数据）。
+
+    幂等：IF NOT EXISTS；不 DROP、不 DELETE、不动旧数据。
+    来源隔离：两表都带 server_id（host:port）；provider 隐含为 strata
+    （llama.cpp 无官方延迟 Histogram，不写入本表）。
+    """
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS latency_histogram (
+            timestamp REAL NOT NULL,
+            server_id TEXT NOT NULL,
+            metric TEXT NOT NULL,          -- ttft / itl / e2e
+            model TEXT NOT NULL,           -- model_name 标签（无标签时 ""）
+            le TEXT NOT NULL,              -- 桶上界（原始字符串；+Inf 允许）
+            delta REAL NOT NULL            -- 该采样窗口的样本数增量（>=0）
+        );
+        CREATE INDEX IF NOT EXISTS idx_latency_histogram_query
+            ON latency_histogram (metric, server_id, timestamp);
+
+        CREATE TABLE IF NOT EXISTS strata_hardware (
+            timestamp REAL NOT NULL,
+            server_id TEXT NOT NULL,
+            gpu_util REAL,
+            gpu_mem_used REAL,
+            gpu_mem_total REAL,
+            gpu_temp REAL,
+            gpu_power REAL,
+            pcie_rx_mb REAL,
+            pcie_tx_mb REAL,
+            cpu REAL,
+            ram_used REAL,
+            ram_total REAL
+        );
+        CREATE INDEX IF NOT EXISTS idx_strata_hardware_ts
+            ON strata_hardware (server_id, timestamp);
+        """
+    )
+    try:
+        conn.execute(
+            "INSERT INTO monitor_events(timestamp, event_type, severity, source, details_json) "
+            "VALUES(?, 'migration', 'info', 'database', ?)",
+            (int(time.time()), _json_dumps({"from": 7, "to": 8})),
+        )
+    except Exception:
+        logger.warning("写入 migration 事件失败（不影响迁移本身）", exc_info=True)
+
+
 # 数据库版本 -> 迁移函数（执行后库从该版本升到 version+1）
 _MIGRATIONS: dict[int, object] = {
     1: _migrate_v1_to_v2,
@@ -483,6 +550,7 @@ _MIGRATIONS: dict[int, object] = {
     4: _migrate_v4_to_v5,
     5: _migrate_v5_to_v6,
     6: _migrate_v6_to_v7,
+    7: _migrate_v7_to_v8,
 }
 
 
@@ -2000,6 +2068,129 @@ class Database:
     def get_system_sample_count(self) -> int:
         conn = self._connect()
         return conn.execute("SELECT COUNT(*) FROM system_samples").fetchone()[0]
+
+    # ---------- 1.3.2：延迟直方图 delta + Strata 后端硬件采样 ----------
+
+    def record_latency_histogram(
+        self,
+        server_id: str,
+        metric: str,
+        model: str,
+        bucket_deltas: dict[str, float],
+        now: float | None = None,
+    ) -> None:
+        """
+        写一个采样窗口的 histogram bucket delta（P50/P95 查询时按窗口聚合）。
+
+        - bucket_deltas: {le_raw: 样本数增量}（Counter Reset 已在采集层处理）；
+          delta=0 的桶不写行（控制行数；查询缺桶=无样本，语义一致）；
+        - 保留时长复用 live 保留配置（retention_seconds）。
+        失败只 WARNING（延迟遥测丢失不影响 Token 主流程）。
+        """
+        conn = self._connect()
+        now = time.time() if now is None else now
+        rows = [
+            (now, server_id, metric, model, le, float(d))
+            for le, d in (bucket_deltas or {}).items()
+            if d is not None and float(d) > 0
+        ]
+        if not rows:
+            return
+
+        def _do() -> None:
+            with conn:
+                conn.executemany(
+                    "INSERT INTO latency_histogram(timestamp, server_id, metric, model, le, delta) "
+                    "VALUES(?, ?, ?, ?, ?, ?)",
+                    rows,
+                )
+                conn.execute(
+                    "DELETE FROM latency_histogram WHERE timestamp < ?",
+                    (now - self.retention_seconds,),
+                )
+
+        try:
+            with self._write_lock:
+                self._tx_with_retry(_do, what="record_latency_histogram")
+        except Exception:
+            logger.warning("写入 latency_histogram 失败（本轮延迟样本丢弃）", exc_info=True)
+
+    def get_latency_histogram(
+        self,
+        metric: str,
+        start_ts: float,
+        end_ts: float,
+        server_id: str | None = None,
+        model: str | None = None,
+    ) -> dict[str, float]:
+        """窗口内各 le 的 delta 总和：{le_raw: 样本总数}（无样本的 le 不在结果中）。"""
+        conn = self._connect()
+        sql = (
+            "SELECT le, SUM(delta) AS d FROM latency_histogram "
+            "WHERE metric = ? AND timestamp >= ? AND timestamp <= ?"
+        )
+        params: list = [metric, start_ts, end_ts]
+        if server_id is not None:
+            sql += " AND server_id = ?"
+            params.append(server_id)
+        if model is not None:
+            sql += " AND model = ?"
+            params.append(model)
+        sql += " GROUP BY le"
+        rows = conn.execute(sql, params).fetchall()
+        return {r["le"]: float(r["d"] or 0.0) for r in rows}
+
+    def record_strata_hardware(
+        self,
+        server_id: str,
+        sample: dict,
+        now: float | None = None,
+    ) -> None:
+        """写一条 Strata 主机硬件采样（缺失字段保持 NULL，绝不写 0 冒充读数）。"""
+        conn = self._connect()
+        now = time.time() if now is None else now
+        cols = [c for c in _STRATA_HW_COLUMNS if c in sample]
+
+        def _do() -> None:
+            with conn:
+                conn.execute(
+                    "INSERT INTO strata_hardware(timestamp, server_id, "
+                    + ", ".join(cols)
+                    + ") VALUES("
+                    + ", ".join(["?"] * (len(cols) + 2))
+                    + ")",
+                    [now, server_id] + [_num(sample.get(c)) for c in cols],
+                )
+                conn.execute(
+                    "DELETE FROM strata_hardware WHERE timestamp < ?",
+                    (now - self.retention_seconds,),
+                )
+
+        try:
+            with self._write_lock:
+                self._tx_with_retry(_do, what="record_strata_hardware")
+        except Exception:
+            logger.warning("写入 strata_hardware 失败（本轮硬件样本丢弃）", exc_info=True)
+
+    def get_strata_hardware_range(
+        self,
+        server_id: str,
+        start_ts: float,
+        end_ts: float,
+        max_points: int = 2000,
+    ) -> list[dict]:
+        """窗口内的硬件采样（时间升序；超过 max_points 均匀降采样）。"""
+        conn = self._connect()
+        rows = conn.execute(
+            "SELECT * FROM strata_hardware WHERE server_id = ? AND timestamp >= ? AND timestamp <= ? "
+            "ORDER BY timestamp ASC",
+            (server_id, start_ts, end_ts),
+        ).fetchall()
+        out = [dict(r) for r in rows]
+        if len(out) > max_points:
+            step = len(out) / max_points
+            out = [out[int(i * step)] for i in range(max_points)]
+        return out
 
     def close(self) -> None:
         if self._conn is not None:

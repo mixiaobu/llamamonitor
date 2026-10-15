@@ -48,6 +48,7 @@ __all__ = [
     "build_engine_info",
     "build_conversation_cache",
     "build_recent_requests",
+    "aggregate_draft_stats",
     "build_model_info",
     "build_health_info",
     "map_phase",
@@ -106,6 +107,11 @@ STRATA_CAPABILITY_BASE: dict[str, str] = {
     "conversation_cache": CAP_SUPPORTED,       # metrics.conversation_cache
     "engine_diagnostics": CAP_SUPPORTED,       # metrics.engine + /props
     "backend_hardware": CAP_SUPPORTED,         # metrics.hardware（Strata 主机）
+    # ---- 1.3.2 增强能力 ----
+    "latency_histogram": CAP_SUPPORTED,        # TTFT/ITL/E2E P50/P95（prometheus 端点）
+    "hardware_history": CAP_SUPPORTED,         # PCIe/GPU 历史趋势（后端硬件采样）
+    "uptime_concurrency": CAP_SUPPORTED,       # /v1/status uptime + 并发
+    "expert_cache": CAP_SUPPORTED,             # 每请求 VRAM 命中率 / PCIe 占比
 }
 
 # phase 显示映射（核对自真实 Strata 0.1.43.1：观察到的取值
@@ -514,6 +520,9 @@ def build_live_state(
         "running": int(running),
         "waiting": int(waiting),
         "queued": int(queued),
+        # 1.3.2：官方 vLLM 口径的等待合计 = queued + waiting（num_requests_waiting）。
+        # admitting 是准入过程指标，**不**并入该合计（不能再加一次）。
+        "waiting_total": int(waiting) + int(queued),
         "outside_slots": int(outside),
         "parallel": _num(_lv("parallel")),
         "admitting": int(_num_nonneg(_lv("admitting")) or 0),
@@ -619,6 +628,12 @@ def build_recent_requests(metrics: dict | None, limit: int = 20) -> list[dict]:
                   "output_tokens", "prompt_ms", "decode_ms", "decode_tok_s",
                   "drafts_offered", "drafts_accepted", "reasoning_recoveries"):
             entry[k] = _num(entry.get(k)) if k in entry else None
+        # 1.3.2：Expert 遥测（重命名避免误读为 Prompt 缓存命中率）：
+        # - hit_rate = VRAM Expert Hit Rate（专家驻留命中率，0~1）
+        # - pcie_share = 路由专家走 PCIe/其它 GPU 计算的比例（0~1，非物理吞吐）
+        # 两者聚合都需要真实分母，无分母时只展示每请求原始值（不伪造加权平均）。
+        entry["expert_hit_rate"] = _clamp01(raw.get("hit_rate"))
+        entry["expert_pcie_share"] = _clamp01(raw.get("pcie_share"))
         prompt_total = entry.get("prompt_total")
         if prompt_total is None:
             prompt_total = entry.get("prompt_tokens")
@@ -641,8 +656,62 @@ def build_recent_requests(metrics: dict | None, limit: int = 20) -> list[dict]:
             if offered not in (None, 0) and accepted is not None and offered > 0
             else None
         )
+        # 1.3.2：请求级平均 Prefill TPS = 新读取 Prompt / Prompt 处理耗时
+        # （要求 fresh_prompt > 0 且 prompt_ms > 0，否则 None——不猜）
+        prompt_ms = entry.get("prompt_ms")
+        entry["prefill_tok_s"] = (
+            new_prompt / (prompt_ms / 1000.0)
+            if new_prompt is not None and prompt_ms not in (None, 0)
+            and new_prompt > 0 and prompt_ms > 0
+            else None
+        )
         out.append(entry)
     return out
+
+
+def _clamp01(value: Any) -> float | None:
+    """0~1 区间的比率净化（NaN/负/>1/非数字 -> None）。"""
+    v = _num(value)
+    if v is None or math.isnan(v):
+        return None
+    if v < 0 or v > 1:
+        return None
+    return v
+
+
+def aggregate_draft_stats(requests: list[dict]) -> dict | None:
+    """
+    最近 N 条请求的 **Draft 加权接受率**（1.3.2 修正）：
+
+        rate = sum(drafts_accepted) / sum(drafts_offered)
+
+    不得对每条请求的百分比做算术平均（请求 A offered=1/accepted=1 与
+    请求 B offered=1000/accepted=500 的总体接受率是 501/1001≈0.5005，
+    不是 (100%+50%)/2=75%）。
+
+    输入是 build_recent_requests 的规范化条目（drafts_offered/accepted 已净化）。
+    分母 <= 0 时返回 None（没有 Draft 样本，不显示 0%）。
+    """
+    offered = 0.0
+    accepted = 0.0
+    have = False
+    for entry in requests or []:
+        if not isinstance(entry, dict):
+            continue
+        o = _num(entry.get("drafts_offered"))
+        a = _num(entry.get("drafts_accepted"))
+        if o is not None and o > 0:
+            have = True
+            offered += o
+            if a is not None and a > 0:
+                accepted += min(a, o)
+    if not have or offered <= 0:
+        return None
+    return {
+        "offered": offered,
+        "accepted": accepted,
+        "rate": max(0.0, min(1.0, accepted / offered)),
+    }
 
 
 def build_model_info(
@@ -770,16 +839,23 @@ def strata_capabilities(
     _degrade("context", ok=ep.get("health"), unknown=True)
     if ep.get("health") is False:
         caps["context"] = CAP_TEMPORARILY_UNAVAILABLE
+    # 1.3.2：低频遥测端点能力（prometheus / v1status 由采集器探测后写入 endpoint_ok）
+    _degrade("latency_histogram", ok=ep.get("prometheus"), unknown=True)
+    _degrade("uptime_concurrency", ok=ep.get("v1status"), unknown=True)
+    _degrade("hardware_history", ok=ep.get("metrics"), unknown=True)
+    _degrade("expert_cache", ok=ep.get("metrics"), unknown=True)
     # 字段级降级：metrics 可读但缺某段
     if ep.get("metrics") and isinstance(metrics, dict):
         if not isinstance(metrics.get("requests"), list):
             caps["request_history"] = CAP_TEMPORARILY_UNAVAILABLE
+            caps["expert_cache"] = CAP_TEMPORARILY_UNAVAILABLE
         if not isinstance(metrics.get("conversation_cache"), dict):
             caps["conversation_cache"] = CAP_TEMPORARILY_UNAVAILABLE
         if not isinstance(metrics.get("engine"), dict):
             caps["engine_diagnostics"] = CAP_TEMPORARILY_UNAVAILABLE
         if not isinstance(metrics.get("hardware"), dict):
             caps["backend_hardware"] = CAP_TEMPORARILY_UNAVAILABLE
+            caps["hardware_history"] = CAP_TEMPORARILY_UNAVAILABLE
         if not isinstance(metrics.get("totals"), dict):
             caps["usage_counters"] = CAP_TEMPORARILY_UNAVAILABLE
     return caps

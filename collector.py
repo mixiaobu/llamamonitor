@@ -248,6 +248,25 @@ class MetricsCollector:
         # 1.3.1：连续抓取失败 / 连续无效 metrics 计数（<OFFLINE_TOLERANCE 保留上次快照）
         self._offline_streak = 0
         self._invalid_streak = 0
+        # 1.3.2：Router 多模型模式——runtime collector 检测到 llama Router 后
+        # 注入被监控模型：/metrics?model=<urlencoded>&autoload=false
+        # （autoload=false 保证只读：绝不触发模型自动加载）
+        self.router_model: str | None = None
+
+    # ---- 1.3.2：Router 模型查询参数 ----
+
+    def set_router_model(self, model_id: str | None) -> None:
+        """由 server 层在 runtime collector 报告 Router 模型变化时调用。"""
+        self.router_model = (model_id or None)
+
+    @property
+    def metrics_fetch_url(self) -> str:
+        """实际抓取的 /metrics 地址（Router 模式追加 model + autoload=false）。"""
+        if not self.router_model:
+            return self.metrics_url
+        from urllib.parse import quote
+        sep = "&" if "?" in self.metrics_url else "?"
+        return f"{self.metrics_url}{sep}model={quote(self.router_model, safe='')}&autoload=false"
 
     # ---- Phase 11：缺口 / 重启 钩子（1.3.0：实现下沉到共享 gap_tracker.GapTracker）----
 
@@ -348,7 +367,8 @@ class MetricsCollector:
         """
         try:
             client = self._get_client()
-            async with client.stream("GET", self.metrics_url) as response:
+            fetch_url = self.metrics_fetch_url
+            async with client.stream("GET", fetch_url) as response:
                 response.raise_for_status()
                 chunks: list[bytes] = []
                 total = 0
@@ -357,7 +377,7 @@ class MetricsCollector:
                     if total > MAX_METRICS_BYTES:
                         logger.warning(
                             "/metrics 响应超过 %.0f MB 上限，按离线处理: %s",
-                            MAX_METRICS_BYTES / 1048576, self.metrics_url,
+                            MAX_METRICS_BYTES / 1048576, fetch_url,
                         )
                         return None
                     chunks.append(chunk)

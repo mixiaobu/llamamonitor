@@ -66,6 +66,12 @@ MAX_SMALL_BYTES = 1 * 1024 * 1024
 SLOTS_EVERY = 2      # /slots 每 2 轮
 HEALTH_EVERY = 5     # /health 每 5 轮
 PROPS_EVERY = 300    # /props + /v1/models 每 300 轮（~10 分钟）
+# 1.3.2 低频遥测（monotonic 节流，不占主采集路径）
+HISTOGRAM_INTERVAL = 15.0    # /metrics?format=prometheus 延迟 Histogram 采样
+                             # + Strata 主机硬件落库（spec 建议 10~15s）
+V1_STATUS_INTERVAL = 300.0   # /v1/status（uptime/concurrency；低频 5 分钟）
+REQUESTS_ALL_TTL = 30.0      # 按需"查看更多"请求的内存缓存 TTL
+REQUESTS_ALL_MAX = 200       # 按需拉取的最大请求数
 
 # 核心 Counter（namespaced）：缺口 possible_token_loss 判定用
 _CORE_COUNTERS = ("totals.prompt_tokens", "totals.output_tokens")
@@ -146,6 +152,15 @@ class StrataCollector:
         self._gaps = GapTracker(self.interval, self.clock)
         self._gaps._gap_source = "strata"
         self._restart_pending_done = False
+        # ---- 1.3.2：延迟 Histogram / 后端硬件遥测 / /v1/status ----
+        self._last_histo_mono: float = 0.0
+        self._last_v1status_mono: float = 0.0
+        self._v1status_done: bool = False
+        # per (metric, model) 的上一次累计 bucket 快照（delta 计算基线）
+        self._histo_prev: dict[tuple, dict] = {}
+        self._histo_capable: bool | None = None  # prometheus 端点可达性探测
+        self._uptime_info: dict | None = None    # /v1/status 摘要（内存态）
+        self._requests_all_cache: tuple | None = None  # (mono, [entries])
 
     # ---- 缺口 API（与 MetricsCollector 同名，server 层统一调用） ----
 
@@ -189,11 +204,12 @@ class StrataCollector:
             self._http_loop = loop
         return self._http
 
-    async def _fetch_text(self, path: str, limit: int) -> tuple:
+    async def _fetch_text(self, path: str, limit: int,
+                          headers: dict | None = None) -> tuple:
         """GET base+path -> (text, ok)。任何失败 (None, False)。"""
         try:
             client = self._get_client()
-            response = await client.get(self.base_url + path)
+            response = await client.get(self.base_url + path, headers=headers or None)
             if response.status_code != 200:
                 return None, False
             if len(response.content) > limit:
@@ -360,6 +376,22 @@ class StrataCollector:
                                    {"provider": "strata", "url": self.metrics_url}, now_wall)
         self._last_online = online
 
+        # 7) 1.3.2：低频遥测——延迟 Histogram + 后端硬件（15s 节流）；
+        #    /v1/status uptime/concurrency（5 分钟 + 重连）。失败不影响主流程。
+        if now_mono - self._last_histo_mono >= HISTOGRAM_INTERVAL:
+            self._last_histo_mono = now_mono
+            try:
+                await self._poll_histogram_and_hardware()
+            except Exception as exc:
+                logger.debug("Strata 遥测轮错误（延迟/硬件）: %r", exc)
+        if (not self._v1status_done) or \
+                (now_mono - self._last_v1status_mono >= V1_STATUS_INTERVAL):
+            self._last_v1status_mono = now_mono
+            try:
+                await self._poll_v1_status()
+            except Exception as exc:
+                logger.debug("Strata /v1/status 轮错误: %r", exc)
+
         self.last_snapshot = snapshot
         self.last_update = self.clock.now()
         return snapshot
@@ -376,6 +408,161 @@ class StrataCollector:
             "static": {k: v for k, v in (hw_static or {}).items()
                        if k in _HARDWARE_STATIC_ALLOWED},
         }
+
+    # ---- 1.3.2：低频遥测（延迟 Histogram + 后端硬件 + /v1/status） ----
+
+    async def _poll_histogram_and_hardware(self) -> None:
+        """
+        15s 低频遥测（spec §8/§10/§13）：
+        1) GET /metrics?format=prometheus -> 解析 3 个 vLLM 延迟 Histogram
+           （TTFT / ITL / E2E），按 (metric, model) 对相邻采样求 bucket delta
+           （Counter Reset 感知）落库 latency_histogram；
+        2) 上一轮 /metrics 的 hardware 摘要落库 strata_hardware（PCIe 趋势用；
+           复用已抓数据，不发额外请求）。
+
+        失败只记 debug——延迟/硬件遥测缺失不影响 Token 主流程。
+        """
+        if self.db is None:
+            return
+        # 1) 延迟 Histogram（content negotiation：?format=prometheus + Accept text/plain）
+        try:
+            text, ok = await self._fetch_text(
+                "/metrics?format=prometheus", MAX_METRICS_BYTES,
+                headers={"Accept": "text/plain"})
+        except Exception:
+            ok, text = False, None
+        if ok and text is not None:
+            self._histo_capable = True
+            self.endpoint_ok["prometheus"] = True
+            from prometheus_parser import (
+                bucket_interval_deltas, histogram_bucket_delta,
+                parse_histogram_series, parse_prometheus,
+            )
+            fams = parse_prometheus(text)
+            _METRIC_MAP = {
+                "vllm:time_to_first_token_seconds": "ttft",
+                "vllm:inter_token_latency_seconds": "itl",
+                "vllm:e2e_request_latency_seconds": "e2e",
+            }
+            seen: set = set()
+            now = self.clock.now()
+            for fname, mkey in _METRIC_MAP.items():
+                fam = fams.get(fname)
+                if fam is None:
+                    continue
+                for series in parse_histogram_series(fam):
+                    model = series.labels.get("model_name") or ""
+                    key = (mkey, model)
+                    seen.add(key)
+                    prev = self._histo_prev.get(key)
+                    # 首次采样只建基线（delta 全 0，不落库）
+                    if prev is not None:
+                        # 每 le 累计差（reset 感知）-> 每桶区间 delta（落库形态）
+                        le_deltas = histogram_bucket_delta(
+                            prev["buckets"], series.buckets)
+                        deltas = bucket_interval_deltas(le_deltas)
+                        if any(d > 0 for d in deltas.values()):
+                            self.db.record_latency_histogram(
+                                self.server_id, mkey, model, deltas, now=now)
+                    self._histo_prev[key] = {"buckets": dict(series.buckets)}
+            # 周期重置/模型切换：消失的序列基线作废（避免跨周期错误 delta）
+            for key in list(self._histo_prev.keys()):
+                if key not in seen:
+                    del self._histo_prev[key]
+        else:
+            if self._histo_capable is None:
+                self._histo_capable = False
+                self.endpoint_ok["prometheus"] = False
+
+        # 2) 后端硬件采样（复用本轮 /metrics 的 hardware，无额外请求）
+        hw_live = (self.backend_hardware or {}).get("live") or {}
+        from strata_parser import _num
+        sample = {
+            "gpu_util": _num(hw_live.get("gpu_util")),
+            "gpu_mem_used": _num(hw_live.get("gpu_mem_used")),
+            "gpu_mem_total": _num(hw_live.get("gpu_mem_total")),
+            "gpu_temp": _num(hw_live.get("gpu_temp")),
+            "gpu_power": _num(hw_live.get("gpu_power")),
+            "pcie_rx_mb": _num(hw_live.get("gpu_pcie_rx_mb")),
+            "pcie_tx_mb": _num(hw_live.get("gpu_pcie_tx_mb")),
+            "cpu": _num(hw_live.get("cpu")),
+            "ram_used": _num(hw_live.get("ram_used")),
+            "ram_total": _num(hw_live.get("ram_total")),
+        }
+        sample = {k: v for k, v in sample.items() if v is not None}
+        if sample:
+            self.db.record_strata_hardware(self.server_id, sample,
+                                           now=self.clock.now())
+
+    def known_le_axes(self) -> dict[str, list[str]]:
+        """
+        每 metric 已知的完整 le 轴（来自最近一次 /metrics?format=prometheus
+        解析的**全部分桶**，含零 delta 桶）。
+
+        用途：latency_histogram 只落 d>0 的桶，窗口聚合会丢失零桶——
+        /api/strata/latency 用本轴对聚合结果补零，保证 histogram_quantile
+        的桶下界正确（否则 (1, 2.5] 的样本会被当成 (0, 2.5]，P50 偏低）。
+
+        返回 {mkey: [le_raw, ...]}（按 le 数值升序；多模型取并集）。
+        从未采样成功时返回 {}。
+        """
+        from prometheus_parser import le_sort_key
+        axes: dict[str, set] = {}
+        for (mkey, _model), prev in self._histo_prev.items():
+            buckets = prev.get("buckets") if isinstance(prev, dict) else None
+            if buckets:
+                axes.setdefault(mkey, set()).update(buckets.keys())
+        return {
+            mkey: sorted(les, key=le_sort_key)
+            for mkey, les in axes.items()
+        }
+
+    async def _poll_v1_status(self) -> None:
+        """
+        /v1/status 低频轮询（5 分钟 + 重连）：uptime / concurrency /
+        last_request_at（内存态；服务重启后 uptime 归零——不跨重启累加）。
+        """
+        payload, ok = await self._fetch_json("/v1/status", MAX_SMALL_BYTES)
+        if not ok or not isinstance(payload, dict):
+            if self._v1status_done:
+                self.endpoint_ok["v1status"] = False
+            return
+        self.endpoint_ok["v1status"] = True
+        from strata_parser import _num
+        conc = payload.get("concurrency")
+        act = payload.get("activity")
+        info = {
+            "uptime_s": _num(payload.get("uptime_s")),
+            "started": _num(payload.get("started")),
+            "concurrency_serving": _num(conc.get("serving"))
+            if isinstance(conc, dict) else None,
+            "concurrency_requested": _num(conc.get("requested"))
+            if isinstance(conc, dict) else None,
+            "last_request_at": _num(act.get("last_request_at"))
+            if isinstance(act, dict) else None,
+        }
+        # 全部为 None（结构不认识）-> 保持上一次，不覆盖
+        if any(v is not None for v in info.values()):
+            self._uptime_info = info
+        self._v1status_done = True
+
+    async def fetch_all_requests(self, limit: int = 60) -> tuple[list, bool]:
+        """
+        按需"查看更多"最近请求（spec §15）：/metrics?requests=all 一次性拉取
+        （**只**在本端点被调用时发请求——不进轮询循环），30s 内存缓存防抖。
+        返回 (entries, ok)；ok=False 时 entries=[]。
+        """
+        mono = self.clock.monotonic()
+        cached = self._requests_all_cache
+        if cached is not None and (mono - cached[0]) < REQUESTS_ALL_TTL:
+            return cached[1], True
+        payload, ok = await self._fetch_json("/metrics?requests=all", MAX_METRICS_BYTES)
+        entries: list = []
+        if ok and isinstance(payload, dict):
+            entries = build_recent_requests(payload, limit=REQUESTS_ALL_MAX)
+        if ok:
+            self._requests_all_cache = (mono, entries)
+        return entries, ok
 
     # ---- 静态信息（props/models/health 合并） ----
 

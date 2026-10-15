@@ -589,7 +589,7 @@
         var m = d && d.model;
         lastModel = m;
         if (!m) {
-          ["llmAlias", "llmFtype", "llmParams", "llmSize", "llmContext", "llmSlots", "llmModal", "llmBuild"].forEach(function (id) {
+          ["llmAlias", "llmFtype", "llmParams", "llmSize", "llmContext", "llmContextTrain", "llmSlots", "llmModal", "llmBuild"].forEach(function (id) {
             setText(id, F.NA);
           });
           setOverviewModelLine(null);
@@ -600,6 +600,8 @@
         setText("llmParams", m.parameter_count == null ? F.NA : (m.parameter_count / 1e9).toFixed(2) + "B");
         setText("llmSize", m.model_size_bytes == null ? F.NA : F.formatMemory(m.model_size_bytes));
         setText("llmContext", m.context_size == null ? F.NA : F.formatTokenCount(m.context_size));
+        // 1.3.2：训练上下文（n_ctx_train）vs 运行时上下文（n_ctx）
+        setText("llmContextTrain", m.training_context_size == null ? F.NA : F.formatTokenCount(m.training_context_size));
         setText("llmSlots", m.total_slots == null ? F.NA : String(m.total_slots));
         var modal = [];
         if (m.vision_supported) modal.push("视觉");

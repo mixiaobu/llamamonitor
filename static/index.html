@@ -658,7 +658,47 @@
                     <div class="stat-label">思考恢复 <span class="info-tip-slot" data-tip="当前请求 Reasoning 恢复次数。来源：/status reasoning_recoveries（仅处理中有效）。"></span></div>
                     <div class="stat-value mid" id="stRecoveries">--</div>
                   </div>
+                  <div class="stat">
+                    <div class="stat-label">引擎运行时长 <span class="info-tip-slot" data-tip="Strata 引擎进程运行时长（/v1/status uptime_s，5 分钟低频刷新）。"></span></div>
+                    <div class="stat-value mid" id="stUptime">--</div>
+                  </div>
+                  <div class="stat">
+                    <div class="stat-label">并发 <span class="info-tip-slot" data-tip="服务中 / 已请求并发数（/v1/status concurrency.serving / requested，5 分钟低频刷新）。"></span></div>
+                    <div class="stat-value mid" id="stConcurrency">--</div>
+                  </div>
                 </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- G2. 延迟分布（TTFT / ITL / E2E 的 P50/P95；1.3.2；histogram 分桶） -->
+          <div class="section" id="stLatencySection">
+            <div class="section-header">
+              <span class="sh-title">延迟分布 <span class="info-tip-slot" data-tip="基于 vLLM 延迟 histogram（Prometheus 分桶）按窗口聚合的 P50/P95。无样本时显示 --（不是 0ms）。ITL 为逐请求平均间隙估计值（decode_s / (output-1)），非逐 token 实测。"></span></span>
+              <span class="sh-actions">
+                <div class="seg" id="stLatencyRange" role="group" aria-label="延迟统计范围"></div>
+              </span>
+            </div>
+            <div class="section-body">
+              <div class="card">
+                <div class="stat-grid strata-latency-grid">
+                  <div class="stat">
+                    <div class="stat-label">TTFT P50 <span class="info-tip-slot" data-tip="Time To First Token：首 Token 延迟中位数。"></span></div>
+                    <div class="stat-value mid" id="stLatTtftP50">--</div>
+                    <div class="stat-hint" id="stLatTtftP95"></div>
+                  </div>
+                  <div class="stat">
+                    <div class="stat-label">ITL P50（估计） <span class="info-tip-slot" data-tip="Inter-Token Latency：Token 间延迟中位数（逐请求平均间隙估计值，非逐 token 实测）。"></span></div>
+                    <div class="stat-value mid" id="stLatItlP50">--</div>
+                    <div class="stat-hint" id="stLatItlP95"></div>
+                  </div>
+                  <div class="stat">
+                    <div class="stat-label">E2E P50 <span class="info-tip-slot" data-tip="端到端请求延迟（从收到请求到完成）中位数。"></span></div>
+                    <div class="stat-value mid" id="stLatE2eP50">--</div>
+                    <div class="stat-hint" id="stLatE2eP95"></div>
+                  </div>
+                </div>
+                <div class="stat-hint" id="stLatSampleHint"></div>
               </div>
             </div>
           </div>
@@ -676,6 +716,31 @@
                     <div class="stat-value mid" id="stCCEnabled">--</div>
                   </div>
                   <div class="stat">
+                    <div class="stat-label">缓存预算 <span class="info-tip-slot" data-tip="会话缓存内存预算（conversation_cache.budget_mib，MiB）。"></span></div>
+                    <div class="stat-value mid" id="stCCBudget">--</div>
+                  </div>
+                  <div class="stat">
+                    <div class="stat-label">缓存 Slot <span class="info-tip-slot" data-tip="会话缓存总 Slot 数 / 当前 parked（已停泊、可恢复）Slot 数（conversation_cache.slots / parked）。"></span></div>
+                    <div class="stat-value mid" id="stCCSlots">--</div>
+                  </div>
+                  <div class="stat">
+                    <div class="stat-label">当前占用 <span class="info-tip-slot" data-tip="会话缓存当前实际内存占用（conversation_cache.bytes）。"></span></div>
+                    <div class="stat-value mid" id="stCCBytes">--</div>
+                  </div>
+                  <div class="stat">
+                    <div class="stat-label">Park / Restore <span class="info-tip-slot" data-tip="累计会话停泊（park）/ 恢复（restore）次数。"></span></div>
+                    <div class="stat-value mid" id="stCCParkRestore">--</div>
+                  </div>
+                  <div class="stat">
+                    <div class="stat-label">驱逐 <span class="info-tip-slot" data-tip="累计缓存驱逐（eviction）次数。"></span></div>
+                    <div class="stat-value mid" id="stCCEvictions">--</div>
+                  </div>
+                  <div class="stat">
+                    <div class="stat-label">最后事件 <span class="info-tip-slot" data-tip="最近一次会话缓存事件（park/restore/eviction）及发生时间（conversation_cache.last_event / last_at）。"></span></div>
+                    <div class="stat-value mid" id="stCCLastEvent">--</div>
+                    <div class="stat-hint" id="stCCLastEventTime"></div>
+                  </div>
+                  <div class="stat">
                     <div class="stat-label">缓存复用 Token <span class="info-tip-slot" data-tip="会话缓存累计复用 Token 数（conversation_cache.reused_tokens）。与 Prompt 缓存复用是不同概念。"></span></div>
                     <div class="stat-value mid" id="stCCReused">--</div>
                   </div>
@@ -684,19 +749,23 @@
                     <div class="stat-value mid" id="stCCRequests">--</div>
                   </div>
                   <div class="stat">
-                    <div class="stat-label">Draft 接受率 <span class="info-tip-slot" data-tip="最近请求的平均 Draft Token 接受率（drafts_accepted / drafts_offered）。推测解码草稿由主模型验证，接受率反映草稿质量，不等同于加速比例。"></span></div>
+                    <div class="stat-label">Draft 接受率 <span class="info-tip-slot" data-tip="最近请求的加权 Draft Token 接受率（Σ accepted / Σ offered，跨请求汇总口径，避免单请求小样本扭曲均值）。推测解码草稿由主模型验证，接受率反映草稿质量，不等同于加速比例。"></span></div>
                     <div class="stat-value mid" id="stDraftRate">--</div>
+                    <div class="stat-hint" id="stDraftHint"></div>
                   </div>
                 </div>
               </div>
             </div>
           </div>
 
-          <!-- I. 最近请求（Strata 内存态；不落库；§49-§54） -->
+          <!-- I. 最近请求（Strata 内存态；不落库；§49-§54；1.3.2：查看更多 -> ?requests=all） -->
           <div class="section">
             <div class="section-header">
               <span class="sh-title">最近请求</span>
-              <span class="sh-actions"><span class="sh-sub">Strata 内存态（不落库）</span></span>
+              <span class="sh-actions">
+                <button class="btn subtle small" id="stReqMoreBtn" type="button" hidden>查看更多</button>
+                <span class="sh-sub" id="stReqSub">Strata 内存态（不落库）</span>
+              </span>
             </div>
             <div class="section-body">
               <div class="card">
@@ -705,11 +774,14 @@
             </div>
           </div>
 
-          <!-- J. 后端硬件（Strata 主机；§62：与本机系统页区分） -->
+          <!-- J. 后端硬件（Strata 主机；§62：与本机系统页区分；1.3.2：PCIe 实时 + 趋势） -->
           <div class="section">
             <div class="section-header">
-              <span class="sh-title">后端硬件 <span class="info-tip-slot" data-tip="以下数据来自 Strata 服务主机（/metrics hardware），不一定是 LlamaMonitor 所在机器。本机监控请使用「系统」页。"></span></span>
-              <span class="sh-actions"><span class="sh-sub" id="stHwSub">Strata 主机</span></span>
+              <span class="sh-title">后端硬件 <span class="info-tip-slot" data-tip="以下数据来自 Strata 服务主机（/metrics hardware），不一定是 LlamaMonitor 所在机器。本机监控请使用「系统」页。PCIe 趋势由 LlamaMonitor 每 15 秒采样（实时保留窗口内）。"></span></span>
+              <span class="sh-actions">
+                <div class="seg" id="stHwTrendRange" role="group" aria-label="PCIe 吞吐趋势范围"></div>
+                <span class="sh-sub" id="stHwSub">Strata 主机</span>
+              </span>
             </div>
             <div class="section-body">
               <div class="card">
@@ -718,8 +790,68 @@
                   <div class="stat"><div class="stat-label">GPU 利用率</div><div class="stat-value mid" id="stHwGpuUtil">--</div></div>
                   <div class="stat"><div class="stat-label">GPU 显存</div><div class="stat-value mid" id="stHwGpuMem">--</div></div>
                   <div class="stat"><div class="stat-label">GPU 温度 / 功耗</div><div class="stat-value mid" id="stHwGpuTemp">--</div></div>
+                  <div class="stat">
+                    <div class="stat-label">PCIe RX <span class="info-tip-slot" data-tip="GPU PCIe 接收带宽（MB/s，实时值）。Expert 卸载场景下 RX 反映 CPU 内存 -> GPU 的专家权重加载流量。"></span></div>
+                    <div class="stat-value mid" id="stHwPcieRx">--</div>
+                  </div>
+                  <div class="stat">
+                    <div class="stat-label">PCIe TX <span class="info-tip-slot" data-tip="GPU PCIe 发送带宽（MB/s，实时值）。"></span></div>
+                    <div class="stat-value mid" id="stHwPcieTx">--</div>
+                  </div>
+                  <div class="stat">
+                    <div class="stat-label">PCIe 链路 <span class="info-tip-slot" data-tip="PCIe 代际与通道宽度（实际 / 最大）。"></span></div>
+                    <div class="stat-value small" id="stHwPcieLink">--</div>
+                  </div>
                   <div class="stat"><div class="stat-label">CPU</div><div class="stat-value small" id="stHwCpuName">--</div></div>
                   <div class="stat"><div class="stat-label">主机内存</div><div class="stat-value mid" id="stHwRam">--</div></div>
+                </div>
+                <div class="card-title" style="margin-top:14px">PCIe 吞吐趋势 <span class="card-sub">RX / TX（MB/s）</span></div>
+                <div class="chart" id="chartPcie" data-chart="chartPcie" style="height:180px"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- K. 引擎与资源详情（Strata /metrics engine；1.3.2） -->
+          <div class="section" id="stEngineSection">
+            <div class="section-header">
+              <span class="sh-title">引擎与资源详情 <span class="info-tip-slot" data-tip="Strata 引擎运行配置（/metrics engine 块）。Expert Slots 为专家权重驻留 GPU 的槽位；KV 驻留为常驻显存的 KV cache 槽位。"></span></span>
+              <span class="sh-actions"><span class="sh-sub">Strata 引擎</span></span>
+            </div>
+            <div class="section-body">
+              <div class="card">
+                <div class="stat-grid strata-engine-grid">
+                  <div class="stat">
+                    <div class="stat-label">Expert Slots <span class="info-tip-slot" data-tip="专家权重驻留 GPU 的槽位数（expert_slots / 主分区 expert_slots_primary）。"></span></div>
+                    <div class="stat-value small" id="stEngExpert">--</div>
+                  </div>
+                  <div class="stat">
+                    <div class="stat-label">KV 驻留 / 上限 <span class="info-tip-slot" data-tip="常驻显存的 KV cache 槽位（kv_resident / kv）。"></span></div>
+                    <div class="stat-value small" id="stEngKv">--</div>
+                  </div>
+                  <div class="stat">
+                    <div class="stat-label">Batch Slots / 组 <span class="info-tip-slot" data-tip="批处理槽位与批处理组数（batch_slots / batch_groups）。"></span></div>
+                    <div class="stat-value small" id="stEngBatch">--</div>
+                  </div>
+                  <div class="stat">
+                    <div class="stat-label">推测解码 <span class="info-tip-slot" data-tip="引擎推测解码方式（spec，如 mtp）与最大 MTP 深度（mtp_max）。"></span></div>
+                    <div class="stat-value small" id="stEngSpec">--</div>
+                  </div>
+                  <div class="stat">
+                    <div class="stat-label">Pool Workers <span class="info-tip-slot" data-tip="引擎线程池 worker 数（pool_workers）。"></span></div>
+                    <div class="stat-value small" id="stEngPool">--</div>
+                  </div>
+                  <div class="stat">
+                    <div class="stat-label">VRAM 空闲 <span class="info-tip-slot" data-tip="GPU 显存空闲（vram_free_mib，MiB）。"></span></div>
+                    <div class="stat-value small" id="stEngVramFree">--</div>
+                  </div>
+                  <div class="stat">
+                    <div class="stat-label">Arena <span class="info-tip-slot" data-tip="KV arena 大小（arena_mib，MiB）。"></span></div>
+                    <div class="stat-value small" id="stEngArena">--</div>
+                  </div>
+                  <div class="stat">
+                    <div class="stat-label">PCIe 占用比 <span class="info-tip-slot" data-tip="引擎声明的 PCIe 带宽占用比（pcie_frac，0-1）。"></span></div>
+                    <div class="stat-value small" id="stEngPcieFrac">--</div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -746,6 +878,10 @@
                   <div class="stat-value small" id="llmContext">--</div>
                 </div>
                 <div class="stat">
+                  <div class="stat-label" id="llmCtxTrainLabel">训练上下文 <span class="info-tip-slot" data-tip="模型训练时的上下文长度上限（n_ctx_train）。运行时窗口超过该值不代表错误，但超出部分通常质量下降。"></span></div>
+                  <div class="stat-value small" id="llmContextTrain">--</div>
+                </div>
+                <div class="stat">
                   <div class="stat-label">并行 Slot <span class="info-tip-slot" data-tip="配置的总 Slot 数量（llama.cpp 或 Strata）。"></span></div>
                   <div class="stat-value small" id="llmSlots">--</div>
                 </div>
@@ -755,6 +891,41 @@
                   <div class="stat-value small" id="llmBuild">--</div>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+        <!-- K-llama. Router 实例与事件流（llama.cpp Router 模式；1.3.2；只读 + SSE 单连接） -->
+        <div class="section js-llama-only" id="routerSection">
+          <div class="section-header">
+            <span class="sh-title">Router 实例 <span class="info-tip-slot" data-tip="检测到 llama-server 运行在 Router 模式（/models 返回多实例列表）。LlamaMonitor 只读监控第一个已加载实例：/metrics、/props、/v1/models 均带 model=&amp;autoload=false，从不触发模型加载/卸载/重载。事件流来自 /models/sse（单连接、断线自动重连、事件去重）。"></span></span>
+            <span class="sh-actions"><span class="sh-sub" id="routerSub">--</span></span>
+          </div>
+          <div class="section-body">
+            <div class="card">
+              <div class="stat-grid router-grid">
+                <div class="stat">
+                  <div class="stat-label">监控实例 <span class="info-tip-slot" data-tip="当前被监控（/metrics 数据来源）的 Router 实例；优先选已加载实例，加载变化时自动切换。"></span></div>
+                  <div class="stat-value small" id="routerSelected">--</div>
+                </div>
+                <div class="stat">
+                  <div class="stat-label">SSE 事件流 <span class="info-tip-slot" data-tip="/models/sse 连接状态（单连接管理；指数退避重连 1s→30s；事件去重，最多保留 100 条）。"></span></div>
+                  <div class="stat-value small" id="routerSseState">--</div>
+                </div>
+              </div>
+              <div id="routerModelList"></div>
+              <div class="router-events" id="routerEventFeed" hidden></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- L-llama. LoRA 适配器（llama.cpp 只读；1.3.2；仅 basename，不触发加载） -->
+        <div class="section js-llama-only" id="loraSection">
+          <div class="section-header">
+            <span class="sh-title">LoRA 适配器 <span class="info-tip-slot" data-tip="llama-server 已加载的 LoRA 适配器（/lora-adapters，只读 GET；只显示文件名，不含本地路径；绝不触发 POST 加载）。"></span></span>
+          </div>
+          <div class="section-body">
+            <div class="card">
+              <div id="loraList"><div class="stat-hint">暂无 LoRA 数据</div></div>
             </div>
           </div>
         </div>

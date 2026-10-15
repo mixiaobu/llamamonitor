@@ -1,0 +1,46 @@
+{
+  "llama_server": {
+    "url": "http://127.0.0.1:9092",
+    "metrics_path": "/metrics",
+    "timeout_seconds": 3,
+    "provider": "llamacpp"
+  },
+  "collector": {
+    "poll_interval_seconds": 2,
+    "live_retention_hours": 48
+  },
+  "gpu": {
+    "enabled": false
+  },
+  "web": {
+    "host": "127.0.0.1",
+    "port": 8791
+  },
+  "database": {
+    "path": "C:\\Users\\mixiaobu\\AppData\\Local\\Temp\\lm_fake_llama_ui.db",
+    "wal": true
+  },
+  "ui": {
+    "refresh_interval_seconds": 2,
+    "daily_default_days": 7,
+    "theme": "system"
+  },
+  "logging": {
+    "level": "WARNING",
+    "max_size_mb": 10,
+    "backup_count": 5
+  },
+  "backup": {
+    "automatic": false,
+    "interval_hours": 24,
+    "keep_count": 14
+  },
+  "updates": {
+    "check_enabled": false,
+    "check_interval_hours": 24,
+    "auto_download": false
+  },
+  "system": {
+    "enabled": false
+  }
+}

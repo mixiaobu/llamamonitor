@@ -7,6 +7,78 @@
 > 互相视为"不同系列"：安装器降级保护按数值比较（1.0.0 > 0.13.x），从 1.0.0 安装
 > 0.13.x 会被识别为降级并拒绝（实测行为，非缺陷）。
 
+## [1.3.2] - 2026-10-17
+
+**Strata 延迟直方图 + PCIe 实时/趋势 + 引擎详情；llama.cpp Router 多实例只读监控 + SSE 事件流 + LoRA；数据准确性与隐私加固**。
+
+### 新增
+- **Strata 延迟分布（TTFT / ITL / E2E 的 P50/P95）**：从 vLLM 延迟
+  histogram（`/metrics?format=prometheus` 的 `_bucket/_sum/_count` 分桶）
+  每 15 秒采样 bucket delta 落库（新增 `latency_histogram` 表），按窗口
+  聚合后用经典 histogram_quantile（桶边界线性插值）估计 P50/P95；
+  Counter 重置（服务重启）自动按新周期重建基线，不产生负 delta；
+  无样本窗口显示 `--`（不是 0ms）。ITL 是**逐请求平均 token 间隙**的
+  估计分布（`decode_s/(output-1)`），UI 明确标注"估计"。
+  性能页新增「延迟分布」段（15 分钟/1 小时/6 小时范围切换）。
+- **Strata PCIe 实时 + 吞吐趋势**：后端硬件段新增 PCIe RX/TX 实时带宽
+  与 PCIe 链路代际/宽度（实际/最大）；新增 PCIe 吞吐趋势图
+  （`/api/strata/hardware-trend`，每 15 秒采样落库到新增 `strata_hardware`
+  表，实时保留窗口内）。
+- **Strata 引擎与资源详情**：新增「引擎与资源详情」段（Expert Slots /
+  KV 驻留 / Batch Slots 与组 / 推测解码方式与 MTP 深度 / Pool Workers /
+  VRAM 空闲 / Arena / PCIe 占用比，来自 `/metrics` engine 块白名单）。
+- **Strata 引擎运行时长 + 并发**：实时推理状态段新增引擎 uptime 与
+  服务中/已请求并发（`/v1/status`，5 分钟低频，服务重启后从 0 重新计）。
+- **Strata 最近请求增强**：请求表新增 Prefill 速度、Expert VRAM 命中率、
+  PCIe 份额（均为每请求原始值，不做跨请求加权平均）；新增「查看更多」
+  按钮（按需触发 `/metrics?requests=all`，30 秒内存缓存 + 上限 200 条）。
+- **Strata 会话缓存完整块**：会话缓存段扩展为完整块（缓存预算 MiB /
+  缓存 Slot 与 parked / 当前占用 / Park·Restore 次数 / 驱逐次数 /
+  最后事件及时间 / 复用 Token / 缓存请求）。
+- **llama.cpp Router 多实例只读监控**：检测到 llama-server 运行在
+  Router 模式（`/models` 返回带 status 的对象列表）时，只读监控第一个
+  已加载实例——`/metrics`、`/props`、`/v1/models` 均带
+  `model=<id>&autoload=false`，绝不触发模型加载/卸载/重载；加载实例
+  变化时自动切换。性能页新增「Router 实例」段（实例列表 + 状态 +
+  阶段进度；basename only，不含完整路径）。
+- **llama.cpp Router SSE 事件流**：受管单连接订阅 `/models/sse`
+  （指数退避重连 1s→30s、事件按 `(event,model,status,stage)` 去重、
+  有界缓冲 100 条）；性能页展示连接状态与最近事件（阶段进度为
+  **阶段内** 0~1，不是整模型百分比）。
+- **llama.cpp LoRA 适配器只读**：新增「LoRA 适配器」段
+  （`/lora-adapters`，只读 GET，basename + scale，绝不 POST 触发加载）。
+- **llama.cpp 训练上下文 vs 运行时上下文**：「模型与运行环境」新增
+  训练上下文（`n_ctx_train`），与运行时上下文（`n_ctx`）并列展示。
+
+### 修复
+- **llama.cpp `is_sleeping` 字段名**：此前读取错误字段名，休眠状态
+  无法识别；现按官方字段名解析，Server State 新增 `sleeping`（休眠中）。
+- **llama.cpp Health 503 "Loading model"**：此前被当成"不可达"，
+  现正确识别为 `loading`（模型加载中）而非 offline。
+- **llama.cpp Server State 扩展**：新增 `auth_error`（401 鉴权失败）
+  与 `degraded`（4xx/5xx 服务异常）状态；HTTP 层响应（4xx/5xx）计入
+  服务异常，只有网络层失败才累计"不可达"计数（5 次容忍不变）。
+- **llama.cpp slot `next_token` 对象形态**：新版 llama-server 的
+  `next_token` 为对象（`has_next_token/has_new_line/n_remain/n_decoded`），
+  现按对象解析（兼容旧 list 形态）。
+- **Strata `running`/`outside_slots` 不再双计**：处理中请求显示为
+  真实总数（`outside_slots` 是 `running` 的子集，以"（Slot 外 N）"
+  标注，不再相加显示成 N+M）。
+- **Strata Draft 加权接受率**：会话缓存段的 Draft 接受率改为跨请求
+  加权口径（`Σ accepted / Σ offered`），不再是各请求接受率的算术
+  平均——避免单请求小样本（如 1/1）扭曲均值。
+- **Strata `queued`/`waiting`/`admitting` 语义**：等待请求显示
+  `waiting + queued` 合并值（`waiting_total`），`admitting` 保持独立
+  语义不并入等待。
+
+### 数据与隐私
+- **非破坏性 DB 迁移 v7→v8**：新增 `latency_histogram` 与
+  `strata_hardware` 两张表（`CREATE TABLE IF NOT EXISTS`），旧数据
+  原样保留（含 daily_usage / state / live_samples），迁移事件记录。
+- **隐私自动测试**：`SECRET_PROMPT/SECRET_OUTPUT/SECRET_REASONING/
+  SECRET_API_KEY` 不得泄漏进 API 响应 / SQLite / 日志 / CSV 导出 /
+  诊断导出（新增集成测试扫描）。
+
 ## [1.3.1] - 2026-10-16
 
 **修复：单次抓取失败不再把数据打 0 / 翻状态——5 次容忍覆盖到采集层**。

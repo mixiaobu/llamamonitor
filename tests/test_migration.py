@@ -60,7 +60,7 @@ class FreshDatabaseTests(unittest.TestCase):
             d = Database(Path(td) / "fresh.db", wal=False)
             try:
                 self.assertEqual(d.get_schema_version(), CURRENT_SCHEMA_VERSION)
-                self.assertEqual(d.get_schema_version(), 7)  # 1.3.0：v7（daily_usage_by_source）
+                self.assertEqual(d.get_schema_version(), 8)  # 1.3.2：v8（latency_histogram + strata_hardware）
                 tables = {
                     r[0]
                     for r in d._connect().execute(
@@ -78,6 +78,8 @@ class FreshDatabaseTests(unittest.TestCase):
                     "system_samples", "system_daily",
                     # v7（1.3.0）双推理后端来源级每日统计
                     "daily_usage_by_source",
+                    # v8（1.3.2）Strata 延迟 histogram 分桶 + 硬件/PCIe 采样
+                    "latency_histogram", "strata_hardware",
                 ):
                     self.assertIn(expected, tables)
                 # v7 来源表关键列
@@ -86,6 +88,15 @@ class FreshDatabaseTests(unittest.TestCase):
                             "cached_tokens", "output_tokens", "prompt_seconds",
                             "predicted_seconds"):
                     self.assertIn(col, src_cols)
+                # v8（1.3.2）延迟 histogram 分桶表 + 硬件采样表关键列
+                histo_cols = {r[1] for r in d._connect().execute("PRAGMA table_info(latency_histogram)")}
+                for col in ("timestamp", "server_id", "metric", "model", "le", "delta"):
+                    self.assertIn(col, histo_cols)
+                hw_cols = {r[1] for r in d._connect().execute("PRAGMA table_info(strata_hardware)")}
+                for col in ("timestamp", "server_id", "gpu_util", "gpu_mem_used",
+                            "gpu_mem_total", "pcie_rx_mb", "pcie_tx_mb",
+                            "cpu", "ram_used", "ram_total"):
+                    self.assertIn(col, hw_cols)
                 # v5 系统遥测表关键列
                 sys_sample_cols = {r[1] for r in d._connect().execute("PRAGMA table_info(system_samples)")}
                 for col in ("timestamp", "cpu_usage_percent", "cpu_frequency_mhz",
@@ -195,11 +206,11 @@ class LegacyMigrationTests(unittest.TestCase):
             try:
                 self.assertEqual(d2.get_schema_version(), CURRENT_SCHEMA_VERSION)
                 # no-op：不再插入额外 migration 事件
-                # （v0 -> 当前：2->3/3->4/4->5/5->6/6->7 共 5 条；1->2 不记事件）
+                # （v0 -> 当前：2->3/3->4/4->5/5->6/6->7/7->8 共 6 条；1->2 不记事件）
                 self.assertEqual(
                     d2._connect().execute(
                         "SELECT COUNT(*) FROM monitor_events WHERE event_type='migration'"
-                    ).fetchone()[0], 5,
+                    ).fetchone()[0], 6,
                 )
                 self.assertEqual(_snapshot(p), before)
             finally:
@@ -417,6 +428,85 @@ class V2V3MigrationFixtureTests(unittest.TestCase):
                     conn.execute("SELECT COUNT(*) FROM gpu_samples").fetchone()[0], 1)
             finally:
                 d.close()
+
+
+class V7V8MigrationFixtureTests(unittest.TestCase):
+    """1.3.2：v7 旧库（带旧数据）-> v8（latency_histogram + strata_hardware），
+    旧数据原样保留（非破坏性迁移），新表可写可读。"""
+
+    def _make_v7_db(self, path: Path) -> None:
+        """v1 schema + _MIGRATIONS[1..6] -> user_version=7（带旧数据）。
+        _MIGRATIONS 的键是"迁移前版本"：1->2 ... 6->7。"""
+        conn = sqlite3.connect(path)
+        conn.executescript(_SCHEMA_V1)
+        for v in range(1, 7):  # 应用 1..6 -> user_version=7
+            db_module._MIGRATIONS[v](conn)
+            conn.execute(f"PRAGMA user_version = {v + 1}")
+        conn.execute(
+            "INSERT INTO daily_usage(date, prompt_tokens, cached_tokens, "
+            "output_tokens) VALUES('2026-10-15', 100, 20, 50)"
+        )
+        conn.execute(
+            "INSERT INTO state(metric_name, value) "
+            "VALUES('llamacpp:prompt_tokens_total', 1234.0)"
+        )
+        conn.execute(
+            "INSERT INTO live_samples(timestamp, prompt_delta, output_delta, decode_tps) "
+            "VALUES(1700000000, 7, 3, 2.5)"
+        )
+        conn.execute("PRAGMA user_version = 7")
+        conn.commit()
+        conn.close()
+
+    def test_v7_db_with_data_migrates_to_v8_intact(self):
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td) / "v7.db"
+            self._make_v7_db(p)
+            d = Database(p, wal=False)
+            try:
+                self.assertEqual(d.get_schema_version(), 8)
+                conn = d._connect()
+                # v1/v7 旧数据原样保留
+                self.assertEqual(
+                    tuple(conn.execute(
+                        "SELECT prompt_tokens, cached_tokens, output_tokens "
+                        "FROM daily_usage WHERE date='2026-10-15'"
+                    ).fetchone()),
+                    (100, 20, 50),
+                )
+                self.assertEqual(
+                    conn.execute(
+                        "SELECT value FROM state "
+                        "WHERE metric_name='llamacpp:prompt_tokens_total'"
+                    ).fetchone()[0],
+                    1234.0,
+                )
+                self.assertEqual(
+                    tuple(conn.execute(
+                        "SELECT prompt_delta, output_delta, decode_tps "
+                        "FROM live_samples WHERE timestamp=1700000000"
+                    ).fetchone()),
+                    (7, 3, 2.5),
+                )
+                # v8 新表就位
+                tables = {
+                    r[0] for r in conn.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table'"
+                    )
+                }
+                self.assertIn("latency_histogram", tables)
+                self.assertIn("strata_hardware", tables)
+            finally:
+                d.close()
+            # 新表可写可读
+            d2 = Database(p, wal=False)
+            try:
+                d2.record_latency_histogram("srv:1", "ttft", "m", {"0.1": 1.0},
+                                            now=1000.0)
+                self.assertEqual(
+                    d2.get_latency_histogram("ttft", 0, 9999), {"0.1": 1.0})
+            finally:
+                d2.close()
 
 
 if __name__ == "__main__":

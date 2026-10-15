@@ -15,7 +15,7 @@ from pathlib import Path
 from clock import FakeClock
 from collector import MetricsCollector
 from configutil import make_config
-from db import Database
+from db import CURRENT_SCHEMA_VERSION, Database
 from metrics_parser import parse_metrics
 from strata_collector import StrataCollector
 
@@ -235,7 +235,8 @@ class V6ToV7MigrationTests(unittest.TestCase):
             self._make_v6_db(p)
             d = Database(p, wal=False)
             try:
-                self.assertEqual(d.get_schema_version(), 7)
+                # v6 打开后迁移到当前版本（1.3.2 起 = v8；含 6->7 + 7->8）
+                self.assertEqual(d.get_schema_version(), CURRENT_SCHEMA_VERSION)
                 conn = d._connect()
                 # 旧数据逐值保留
                 self.assertEqual(

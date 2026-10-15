@@ -547,6 +547,85 @@
   }
 
   /* ================================================================
+  1.3.2 图表：PCIe 吞吐趋势（Strata 主机；RX/TX MB/s，15s 采样落库）
+  points: /api/strata/hardware-trend 的 {timestamp, pcie_rx_mb, pcie_tx_mb, ...}
+  ================================================================ */
+  function renderPcieTrendChart(id, points) {
+    var c = chart(id);
+    if (!c) return;
+    var p = pal(), col = colors();
+    var pts = (points || []).filter(function (s) {
+      return s && s.timestamp != null &&
+        (s.pcie_rx_mb != null || s.pcie_tx_mb != null);
+    });
+    if (pts.length === 0) {
+      c.setOption({
+        animation: false,
+        title: {
+          text: "暂无 PCIe 采样（15 秒/点，实时保留窗口内）",
+          left: "center", top: "middle",
+          textStyle: { color: p.empty, fontSize: 12, fontWeight: "normal" },
+        },
+        xAxis: { show: false, type: "value" },
+        yAxis: { show: false, type: "value" },
+        series: [],
+      }, true);
+      return;
+    }
+    c.setOption({
+      animation: false,
+      title: {},
+      tooltip: Object.assign(baseTooltip(), {
+        trigger: "axis",
+        formatter: function (params) {
+          if (!params || !params.length) return "";
+          var ts0 = Math.round(params[0].value[0] / 1000);
+          var head = "<div style='font-weight:600;margin-bottom:4px'>" + F.formatHM(ts0) + "</div>";
+          var lines = head;
+          params.forEach(function (it) {
+            lines += "<div style='display:flex;justify-content:space-between;gap:16px'>" +
+              "<span>" + it.marker + it.seriesName + "</span><span style='font-variant-numeric:tabular-nums'>" +
+              (it.value[1] == null ? "--" : (it.value[1]).toFixed(2) + " MB/s") + "</span></div>";
+          });
+          return lines;
+        },
+      }),
+      legend: mobileLegend(p, ["PCIe RX", "PCIe TX"]),
+      grid: { left: 8, right: 8, top: 28, bottom: 4, containLabel: true },
+      xAxis: _gpuTimeAxis(p, id, pts),
+      yAxis: {
+        type: "value",
+        axisLabel: baseAxisLabel(p, { formatter: function (v) { return v; } }),
+        splitLine: { lineStyle: { color: p.split } },
+      },
+      series: [
+        _pcieSeries("PCIe RX", "pcie_rx_mb", col.gpu[0], pts),
+        _pcieSeries("PCIe TX", "pcie_tx_mb", col.gpu[1], pts),
+      ],
+    }, true);
+  }
+
+  function _pcieSeries(name, field, color, pts) {
+    var data = [];
+    for (var i = 0; i < pts.length; i++) {
+      data.push([
+        Math.round(pts[i].timestamp * 1000),
+        pts[i][field] == null ? null : Number(pts[i][field]),
+      ]);
+    }
+    return {
+      name: name, type: "line",
+      symbol: "circle", symbolSize: 4,
+      showSymbol: pts.length <= 40,
+      emphasis: { focus: "series" },
+      lineStyle: { width: 2, color: color },
+      itemStyle: { color: color },
+      connectNulls: false,
+      data: data,
+    };
+  }
+
+  /* ================================================================
  图表 3：MTP Acceptance Rate 趋势（按天）
  rows: /api/daily 行（date, draft_tokens, accepted_tokens, mtp_accept_rate）
  ================================================================ */
@@ -1307,5 +1386,6 @@
     renderSysDiskChart: renderSysDiskChart,
     renderSysNetChart: renderSysNetChart,
     renderSysPowerChart: renderSysPowerChart,
+    renderPcieTrendChart: renderPcieTrendChart,
   };
 })();

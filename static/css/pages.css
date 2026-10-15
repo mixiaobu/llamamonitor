@@ -2611,3 +2611,71 @@ details.core-heat[open] summary::before { content: "▾ "; }
 @media (min-width: 761px) {
   .setting-row { min-height: 56px; }
 }
+
+/* ============ 1.3.2：性能页新段（Strata 延迟/PCIe/引擎；llama Router/LoRA） ============ */
+
+/* Router 实例列表（复用 slot-table 视觉；状态徽标与 Slot 监控一致） */
+.router-models .slot-row .model-status.loaded { color: var(--success); }
+.router-models .slot-row .model-status.unloaded { color: var(--text-secondary); }
+.router-models .slot-row .model-status.other { color: var(--warning); }
+
+/* SSE 事件流（有界 deque 尾部；倒序新->旧；阶段进度标注） */
+.router-events {
+  margin-top: var(--spacing-md);
+  border-top: 1px solid var(--border-subtle);
+  padding-top: var(--spacing-sm);
+  max-height: 240px;
+  overflow-y: auto;
+  font-size: var(--font-size-caption);
+}
+.router-events .re-title {
+  color: var(--text-secondary);
+  font-weight: var(--font-weight-semibold);
+  margin-bottom: var(--spacing-xs);
+  display: flex;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+}
+.router-events .re-item {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-sm);
+  padding: 2px 0;
+  border-bottom: 1px dashed var(--border-subtle);
+  min-width: 0;
+}
+.router-events .re-time { color: var(--text-muted); flex: none; font-variant-numeric: tabular-nums; }
+.router-events .re-event { flex: none; font-weight: var(--font-weight-semibold); }
+.router-events .re-detail {
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.router-events .re-progress {
+  flex: none;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* LoRA 列表（basename + scale；只读） */
+.lora-list { display: flex; flex-direction: column; gap: 2px; }
+.lora-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--spacing-md);
+  padding: 4px 0;
+  border-bottom: 1px dashed var(--border-subtle);
+  font-size: var(--font-size-caption);
+  min-width: 0;
+}
+.lora-item .lora-name {
+  word-break: break-all;
+  font-variant-numeric: tabular-nums;
+}
+.lora-item .lora-scale { color: var(--text-secondary); flex: none; }
+
+/* 延迟分布：P95 提示行（无样本时整段隐藏，由 JS 控制 display） */
+.strata-latency-grid .stat-hint { min-height: 14px; }
+#stLatSampleHint { margin-top: var(--spacing-sm); }

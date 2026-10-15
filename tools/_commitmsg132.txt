@@ -1,0 +1,46 @@
+feat(strata,llama): 1.3.2 Strata 延迟直方图/PCIe/引擎详情 + llama Router/SSE/LoRA
+
+Strata 后端增强（全部只读 GET；数据源 /metrics JSON + /metrics?format=prometheus
++ /v1/status，15s/300s 分频）：
+- 延迟分布：vLLM histogram（TTFT/ITL/E2E）每 15s 采 bucket delta 落库新表
+  latency_histogram（Counter reset 感知），窗口聚合用完整 le 轴补零后经典
+  histogram_quantile 插值（P50/P95）；零样本窗口 = null（不是 0ms）；
+  ITL 为每请求平均间隙估计分布，API 字段 itl_is_estimate + UI 标注
+- PCIe 实时 RX/TX + 链路代际/宽度（实际/最大）；PCIe 吞吐趋势图
+  （新表 strata_hardware 15s 采样，/api/strata/hardware-trend，
+  server_local 标注来源主机）
+- 引擎与资源详情段（expert_slots/kv_resident/batch/spec/mtp_max/
+  pool_workers/vram_free/arena/pcie_frac；kv 支持 "int8" 量化字符串、
+  spec 支持数字代码）
+- 会话缓存完整块（预算/Slot/parked/bytes/park/restore/eviction/最后事件）
+  + Draft 加权接受率（Σaccepted/Σoffered，非算术平均）
+- 最近请求增强：每请求 prefill 速度/Expert 命中率/PCIe 份额（不跨请求
+  加权平均）+「查看更多」按需 ?requests=all（30s TTL、上限 200）
+- 引擎 uptime + 并发（/v1/status 5min 低频，重启归零）
+- running/outside_slots 不再双计（outside 是 running 子集，标注「Slot 外 N」）；
+  waiting_total = waiting+queued，admitting 独立
+
+llama.cpp 后端增强（Router 模式全程只读：model=<id>&autoload=false，
+绝不 /models?reload=1 / POST lora / POST slots）：
+- is_sleeping 字段名修复（Server State 新增 sleeping 休眠中）
+- Health 503 "Loading model" -> loading（不再误判不可达）；新增
+  auth_error(401)/degraded(4xx/5xx)；仅网络层失败累计不可达（5 次容忍不变）
+- slot next_token 对象形态（has_next_token/has_new_line/n_remain/n_decoded）
+- Router 多实例：/models 检测 + 选中首个 loaded + 实例列表/状态/阶段进度
+  （basename only）；受管单连接 SSE /models/sse（退避 1->30s、
+  (event,model,status,stage) 去重、deque(100) 有界）
+- LoRA 只读段（/lora-adapters，basename + scale）
+- 训练上下文 n_ctx_train vs 运行时 n_ctx 并列；modalities（视觉/视频/音频）
+
+数据与隐私：
+- DB v7 -> v8 非破坏迁移（CREATE TABLE IF NOT EXISTS 两张新表，旧数据
+  原样保留；pre-migration backup 文件名 v2_to_v8；迁移事件断言更新）
+- 隐私自动测试：SECRET_PROMPT/OUTPUT/REASONING/API_KEY 不得进入
+  API/SQLite/日志/CSV（Fake 服务器 + TestClient portal 线程模式）
+
+测试：748/748 OK（新增 prometheus_parser 18 / fake 服务器集成 21
+（含零桶补零回归）/ 迁移 v7->v8 数据完整 / 隐私扫描等）。
+UI：CDP Edge 7 视口（320x568/360x800/390x844/430x932/988x1394/
+1920x1080/2560x1440）× 8 页零 console 错误；活体 Strata 9091 +
+fake llama router 双后端 UI 验证通过（延迟 P50/P95 实数、PCIe 趋势、
+查看更多 200 条、Router 2 实例 + SSE 阶段进度、LoRA、训练上下文）。
