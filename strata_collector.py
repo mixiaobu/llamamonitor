@@ -39,7 +39,7 @@ import httpx
 from clock import Clock, default_clock
 from config import AppConfig, trust_env_for
 from db import Database, local_date
-from gap_tracker import GapTracker
+from gap_tracker import OFFLINE_TOLERANCE, GapTracker
 from stats import mtp_accept_rate, tps
 from strata_parser import (
     STRATA_COUNTERS,
@@ -141,6 +141,8 @@ class StrataCollector:
         self.endpoint_ok: dict[str, bool] = {}
         self._last_state: str | None = None
         self._invalid_streak = 0  # 连续 invalid /metrics 轮数（监测异常判定）
+        # 1.3.1：连续 /metrics 抓取失败计数（<OFFLINE_TOLERANCE 保留上次数据与状态）
+        self._offline_streak = 0
         self._gaps = GapTracker(self.interval, self.clock)
         self._gaps._gap_source = "strata"
         self._restart_pending_done = False
@@ -301,30 +303,49 @@ class StrataCollector:
             self._refresh_static()
             self._reconnect_pending = False
 
-        # 4) 内存态规范化
-        self.live = build_live_state(metrics, self._status)
-        self.engine_info = build_engine_info(metrics, self._props)
-        self.conversation_cache = build_conversation_cache(metrics)
-        self.recent_requests = build_recent_requests(metrics, limit=20)
-        self._metrics = metrics
-        if metrics is not None:
-            self.backend_hardware = self._sanitize_hardware(metrics)
-        self._update_capabilities()
-        self._update_server_state(metrics, health_polled)
-
-        # 5) Token 落库路径
+        # 4) 内存态规范化 + 5) Token 落库路径
+        # 1.3.1 容忍：连续 <OFFLINE_TOLERANCE(5) 次 /metrics 抓取失败保留上一轮
+        # 全部内存态（live/引擎/会话缓存/最近请求/硬件/server_state 不变），
+        # 快照按保留数据构建（online 保持 True）；连续 >=5 次才切离线表现。
         has_totals = metrics is not None and isinstance(metrics.get("totals"), dict)
         if metrics is None:
-            snapshot = self._offline_snapshot()
+            self._offline_streak += 1
+            # 离线轮：开启 server_offline 缺口（GapTracker 幂等，起点=最后有效样本）
             self._gaps.on_offline(now_wall, now_mono)
-        elif not has_totals:
-            # /metrics 可读但无 totals（结构不符）：在线但样本无效
-            snapshot = self._online_snapshot(metrics)
-            snapshot["_valid"] = False
-            self._invalid_streak += 1
-            self._gaps.on_invalid(now_wall, now_mono)
+            if self._offline_streak < OFFLINE_TOLERANCE:
+                if self.last_snapshot is not None and self.last_snapshot.get("online"):
+                    # 保留最近一次有效数据与状态（状态机不翻转、不记事件）
+                    snapshot = self._online_snapshot(None)
+                else:
+                    # 从未在线过：保持离线表现（waiting 状态机表达"等待服务响应"）
+                    snapshot = self._offline_snapshot()
+            else:
+                self.live = build_live_state(metrics, self._status)
+                self.engine_info = build_engine_info(metrics, self._props)
+                self.conversation_cache = build_conversation_cache(metrics)
+                self.recent_requests = build_recent_requests(metrics, limit=20)
+                self._metrics = metrics
+                self._update_capabilities()
+                self._update_server_state(metrics, health_polled)
+                snapshot = self._offline_snapshot()
         else:
-            snapshot = self._handle_metrics_sample(metrics, now_wall, now_mono)
+            self._offline_streak = 0
+            self.live = build_live_state(metrics, self._status)
+            self.engine_info = build_engine_info(metrics, self._props)
+            self.conversation_cache = build_conversation_cache(metrics)
+            self.recent_requests = build_recent_requests(metrics, limit=20)
+            self._metrics = metrics
+            self.backend_hardware = self._sanitize_hardware(metrics)
+            self._update_capabilities()
+            self._update_server_state(metrics, health_polled)
+            if not has_totals:
+                # /metrics 可读但无 totals（结构不符）：在线但样本无效
+                snapshot = self._online_snapshot(metrics)
+                snapshot["_valid"] = False
+                self._invalid_streak += 1
+                self._gaps.on_invalid(now_wall, now_mono)
+            else:
+                snapshot = self._handle_metrics_sample(metrics, now_wall, now_mono)
 
         # 6) 状态转换日志/事件（online/offline）
         online = bool(snapshot.get("online"))

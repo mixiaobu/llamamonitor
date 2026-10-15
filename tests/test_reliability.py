@@ -195,6 +195,97 @@ class CounterResetTests(TestBase):
             d.close()
 
 
+class OfflineToleranceTests(TestBase):
+    """1.3.1：连续 <5 次抓取失败保留最近一次有效快照（数据/状态不变、不记
+    server_offline 事件）；连续 >=5 次才切离线表现；成功一次立即清零。"""
+
+    def test_single_blip_keeps_last_values_and_state(self):
+        d = self.make_driver(poll=5.0)
+        try:
+            s0 = d.round(metrics_text(prompt=100, output=100))
+            d.advance(5)
+            # 单次失败：保留上次快照（online/字段不变），不记离线事件
+            s1 = d.round(None)
+            self.assertTrue(s1["online"])
+            self.assertEqual(s1, s0, "容忍期内必须逐字段保留上次快照")
+            self.assertEqual(d.collector._offline_streak, 1)
+            self.assertEqual(len(d.events("server_offline")), 0)
+            d.advance(5)
+            # 恢复：计数清零，数据继续
+            s2 = d.round(metrics_text(prompt=110, output=105))
+            self.assertTrue(s2["online"])
+            self.assertEqual(d.collector._offline_streak, 0)
+            self.assertEqual(len(d.events("server_offline")), 0)
+        finally:
+            d.close()
+
+    def test_four_failures_still_tolerated_fifth_flips(self):
+        d = self.make_driver(poll=5.0)
+        try:
+            d.round(metrics_text(prompt=100, output=100))
+            d.advance(5)
+            for i in range(1, 5):
+                snap = d.round(None)
+                d.advance(5)
+                self.assertTrue(snap["online"], f"第 {i} 次失败仍在容忍期")
+                self.assertEqual(len(d.events("server_offline")), 0, "容忍期不记事件")
+            # 连续第 5 次失败：切离线 + 记一条 server_offline
+            snap = d.round(None)
+            d.advance(5)
+            self.assertFalse(snap["online"])
+            self.assertEqual(len(d.events("server_offline")), 1)
+            # 恢复：只记一条 server_online
+            snap = d.round(metrics_text(prompt=101, output=100))
+            self.assertTrue(snap["online"])
+            self.assertEqual(len(d.events("server_online")), 1)
+        finally:
+            d.close()
+
+    def test_intermittent_failures_never_flip(self):
+        """失败 3 次 -> 成功 -> 再失败 3 次：计数被成功打断，永不切离线。"""
+        d = self.make_driver(poll=5.0)
+        try:
+            d.round(metrics_text(prompt=1, output=1))
+            d.advance(5)
+            for _ in range(3):
+                d.round(None)
+                d.advance(5)
+            d.round(metrics_text(prompt=2, output=1))  # 打断：计数清零
+            d.advance(5)
+            for _ in range(3):
+                d.round(None)
+                d.advance(5)
+            self.assertTrue(d.collector.last_snapshot["online"])
+            self.assertEqual(len(d.events("server_offline")), 0)
+        finally:
+            d.close()
+
+
+class InvalidMetricsToleranceTests(TestBase):
+    """1.3.1：连续 <5 次无效 metrics（200 但核心 Counter 缺失）保留上次快照。"""
+
+    def _invalid_round(self, d):
+        # 200 但没有任何可用 Counter（全部缺失）-> sample_invalid
+        return d.round(metrics_text(prompt=None, output=None, cached=None,
+                                     psec=None, osec=None,
+                                     draft=None, accepted=None, drafts=None))
+
+    def test_invalid_blip_keeps_last_snapshot(self):
+        d = self.make_driver(poll=5.0)
+        try:
+            s0 = d.round(metrics_text(prompt=50, output=50))
+            d.advance(5)
+            s1 = self._invalid_round(d)
+            self.assertEqual(s1, s0, "容忍期内无效 metrics 保留上次快照")
+            self.assertEqual(d.collector._invalid_streak, 1)
+            d.advance(5)
+            s2 = d.round(metrics_text(prompt=55, output=50))
+            self.assertTrue(s2["online"])
+            self.assertEqual(d.collector._invalid_streak, 0)
+        finally:
+            d.close()
+
+
 # ---------------------------------------------------------------------------
 # 离线 / 缺口 / possible_token_loss
 # ---------------------------------------------------------------------------
@@ -278,7 +369,9 @@ class OfflineGapTests(TestBase):
             d.close()
 
     def test_invalid_metrics_no_state_update(self):
-        """sample_invalid：HTTP 200 但无任何 Counter -> 不更新 state、不产生 delta。"""
+        """sample_invalid：HTTP 200 但无任何 Counter -> 不更新 state、不产生 delta。
+        1.3.1：容忍期内（连续 <5 次）保留上次快照、不记 invalid_metrics 事件；
+        连续第 5 次才记事件。"""
         d = self.make_driver(poll=5.0)
         try:
             d.round(metrics_text(prompt=100, output=100))
@@ -289,6 +382,11 @@ class OfflineGapTests(TestBase):
             self.assertEqual(sum(v["prompt"] for v in total.values()), 0)
             state = d.db.get_state()
             self.assertEqual(state["llamacpp:prompt_tokens_total"], 100.0)  # baseline 未动
+            self.assertEqual(len(d.events("invalid_metrics")), 0, "容忍期内不记事件")
+            # 连续第 5 次无效：记一条 invalid_metrics
+            for _ in range(4):
+                d.advance(5)
+                d.round("llamacpp:requests_processing 3\nllamacpp:requests_deferred 0\n")
             self.assertEqual(len(d.events("invalid_metrics")), 1)
             # 恢复后从旧 baseline 继续
             d.advance(5)

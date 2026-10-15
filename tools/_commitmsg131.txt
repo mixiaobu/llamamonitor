@@ -1,0 +1,26 @@
+fix(collectors): 1.3.1 单次抓取失败不再打 0/翻状态——5 次容忍下沉到采集层
+
+1.2.1 的「连续 <5 次失败保留上次数据」此前只覆盖前端 4 个数据源
+（/api/status 拉取、GPU、系统、传感器）。推理服务单次抓取失败时，
+采集器立即输出离线/清零表现：性能页数值归零/变 --、Strata 实时段
+归零、徽章直接翻 不可达/监测异常/不可用。
+
+本次修复（阈值统一为 gap_tracker.OFFLINE_TOLERANCE = 5）：
+- collector.py（llama.cpp /metrics）：连续 <5 次抓取失败或无效
+  metrics 保留最近一次有效快照（数值/online 不变、不记事件）；
+  第 5 次才切离线/无效；成功一次立即清零
+- strata_collector.py（Strata /metrics）：连续 <5 次失败保留全部
+  内存态（live/引擎/会话缓存/最近请求/硬件）且状态机不翻转；
+  第 5 次才切 不可达/监测异常；从未在线时首轮失败保持
+  等待服务响应+离线快照
+- llama_runtime_collector.py（/health）：Server State 判「不可用」
+  去抖阈值 2 -> 5，语义对齐
+
+缺口语义不变：首次失败轮即开启 server_offline/invalid_metrics 缺口
+（数据质量），容忍只影响展示层；baseline 失败轮不动，恢复后 delta
+覆盖整个断档期。
+
+测试：新增 OfflineToleranceTests / InvalidMetricsToleranceTests /
+StrataOfflineToleranceTests（700/700 OK），更新 4 处旧语义断言；
+tools/_e2e_blip.py 真实 HTTP 路径 E2E（本地假 Strata：4 轮保留、
+第 5 轮翻转、恢复清零，全部通过）。

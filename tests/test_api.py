@@ -99,9 +99,19 @@ class ApiTests(unittest.TestCase):
             client.__exit__(None, None, None)
 
     def test_status_offline(self):
+        """1.3.1 容忍：单次抓取失败保留上次数据（server_online 保持 True、
+        数值不变）；连续第 5 次失败才切离线表现；恢复后回到在线。"""
         db, collector, app, client = self._start(TEXT_A_POS)
         try:
+            # 单次失败：保留上次数据与在线状态
             self._round(client, collector, offline=True)
+            data = client.get("/api/status").json()
+            self.assertTrue(data["server_online"], "容忍期内保持在线表现")
+            self.assertEqual(data["requests_processing"], 1)
+            self.assertIsNotNone(data["last_update"])
+            # 连续第 5 次失败：切离线表现（全 None）
+            for _ in range(4):
+                self._round(client, collector, offline=True)
             data = client.get("/api/status").json()
             self.assertFalse(data["server_online"])
             self.assertIsNone(data["requests_processing"])
@@ -110,6 +120,11 @@ class ApiTests(unittest.TestCase):
             self.assertIsNone(data["decode_tps"])
             self.assertIsNone(data["mtp_accept_rate"])
             self.assertIsNotNone(data["last_update"])
+            # 恢复：回到在线 + 上次数值
+            self._round(client, collector, TEXT_A_POS)
+            data = client.get("/api/status").json()
+            self.assertTrue(data["server_online"])
+            self.assertEqual(data["requests_processing"], 1)
         finally:
             client.__exit__(None, None, None)
 

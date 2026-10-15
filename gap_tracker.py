@@ -30,6 +30,13 @@ logger = logging.getLogger("llamamonitor.gaps")
 
 GAP_THRESHOLD_FACTOR = 3.0
 
+# 1.3.1 连续失败容忍（1.2.1「<5 次保留上次数据」语义，两个后端采集器共用）：
+# 连续 <OFFLINE_TOLERANCE 次抓取失败（llama.cpp：抓取失败/无效 metrics；
+# Strata：/metrics 失败）保留最近一次有效数据与状态——不翻转状态、不记事件、
+# 字段不置空；连续 >=5 次才切换到失败表现。成功一次立即清零。
+# 与前端 LM.poll.streakFail（/api/status 拉取失败容忍）阈值一致。
+OFFLINE_TOLERANCE = 5
+
 
 class GapTracker:
     """缺口/断档追踪（内存态；写库才持久化）。db 为 None 时全部空转。"""

@@ -166,10 +166,16 @@ class PersistenceTests(StrataCollectorTestBase):
         self.run_round()
         self.set_endpoint("/metrics", None, ok=False)
         snap = self.run_round()
-        self.assertFalse(snap["online"])
+        # 1.3.1 容忍：单次失败保留上次数据（online 保持 True），但缺口立即开启
+        self.assertTrue(snap["online"])
         open_gap = self.collector.open_gap_property()
         self.assertIsNotNone(open_gap)
         self.assertEqual(open_gap["reason"], "server_offline")
+        # 连续 >=5 次失败才切离线表现
+        for _ in range(4):
+            self.run_round(advance=1)
+            snap = self.collector.last_snapshot
+        self.assertFalse(snap["online"])
         # 恢复后缺口关闭并落库
         self.set_endpoint("/metrics", loadj("metrics_idle.json"))
         self.run_round(advance=10)
@@ -205,6 +211,11 @@ class StateMachineTests(StrataCollectorTestBase):
         self.run_round()
         for p in ("/metrics", "/status", "/slots", "/health", "/props", "/v1/models"):
             self.set_endpoint(p, None, ok=False)
+        # 1.3.1 容忍：前 4 次失败状态机保持不变（不翻转）
+        for _ in range(4):
+            self.run_round()
+            self.assertEqual(self.collector.server_state, STATE_READY)
+        # 连续第 5 次失败才切 unreachable
         self.run_round()
         self.assertEqual(self.collector.server_state, "unreachable")
 
@@ -237,7 +248,15 @@ class EventTests(StrataCollectorTestBase):
     def test_online_offline_events(self):
         self.run_round()
         self.set_endpoint("/metrics", None, ok=False)
-        self.run_round()
+        # 1.3.1 容忍：单次失败不记事件；连续第 5 次失败才记 strata_offline
+        for i in range(5):
+            snap = self.run_round()
+            if i < 4:
+                self.assertTrue(snap["online"], "容忍期内保持在线表现")
+        events = self.db.get_events_range(limit=50)
+        types = [e["event_type"] for e in events]
+        self.assertIn("strata_offline", types)
+        self.assertNotIn("strata_online", types)
         self.set_endpoint("/metrics", loadj("metrics_idle.json"))
         self.run_round()
         events = self.db.get_events_range(limit=50)
@@ -294,6 +313,63 @@ class ApiSurfaceTests(StrataCollectorTestBase):
     def test_server_id(self):
         self.assertEqual(self.collector.server_id, "127.0.0.1:9091")
         self.assertEqual(self.collector.metrics_url, "http://127.0.0.1:9091/metrics")
+
+
+class StrataOfflineToleranceTests(StrataCollectorTestBase):
+    """1.3.1：连续 <5 次 /metrics 抓取失败保留上次 live 数据与 server_state；
+    连续 >=5 次才切离线；成功一次立即清零。"""
+
+    def _fail_all(self):
+        for p in ("/metrics", "/status", "/slots", "/health", "/props", "/v1/models"):
+            self.set_endpoint(p, None, ok=False)
+
+    def test_blip_keeps_live_and_state(self):
+        snap0 = self.run_round()
+        live0 = self.collector.live
+        self._fail_all()
+        # 单次失败：保留 live 数据 + ready 状态 + online 表现
+        snap = self.run_round()
+        self.assertTrue(snap["online"], "容忍期内保持在线表现")
+        self.assertIs(self.collector.live, live0, "内存 live 必须保留（同一对象）")
+        self.assertEqual(self.collector.server_state, STATE_READY)
+        self.assertEqual(snap["requests_processing"],
+                         snap0["requests_processing"],
+                         "快照值必须保留上次（不为 0/None）")
+        self.assertEqual(snap["strata"]["running"], snap0["strata"]["running"])
+
+    def test_four_tolerated_fifth_flips_unreachable(self):
+        self.run_round()
+        self._fail_all()
+        for i in range(1, 5):
+            snap = self.run_round()
+            self.assertTrue(snap["online"], f"第 {i} 次失败仍在容忍期")
+            self.assertEqual(self.collector.server_state, STATE_READY,
+                             "容忍期内状态机不翻转")
+        snap = self.run_round()  # 第 5 次
+        self.assertFalse(snap["online"])
+        self.assertEqual(self.collector.server_state, "unreachable")
+
+    def test_recovery_resets_streak(self):
+        self.run_round()
+        self._fail_all()
+        for _ in range(3):
+            self.run_round()
+        # 恢复一次：计数清零，状态回 ready
+        for p, name in (("/metrics", "metrics_idle.json"), ("/status", "status_idle.json"),
+                        ("/slots", "slots.json"), ("/health", "health_ok.json"),
+                        ("/props", "props.json"), ("/v1/models", "models.json")):
+            self.set_endpoint(p, loadj(name))
+        snap = self.run_round()
+        self.assertTrue(snap["online"])
+        self.assertEqual(self.collector.server_state, STATE_READY)
+        self.assertEqual(self.collector._offline_streak, 0)
+
+    def test_first_round_failure_waits_not_online(self):
+        # 从未在线：首轮失败保持 waiting + 离线快照（不假装在线）
+        self._fail_all()
+        snap = self.run_round()
+        self.assertFalse(snap["online"])
+        self.assertEqual(self.collector.server_state, STATE_WAITING)
 
 
 if __name__ == "__main__":

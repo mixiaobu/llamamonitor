@@ -172,7 +172,7 @@ class ServerStateTests(unittest.TestCase):
         self.assertEqual(c.server_state, "loading")
 
     def test_health_network_fail_is_unavailable(self):
-        # AUDIT-1.1.1 REL-1111-005：连续 2 次失败才判定不可用
+        # 1.3.1：连续 5 次失败才判定不可用（与 OFFLINE_TOLERANCE 统一）
         c = self._collector({"/health": (404, {})})  # 404 -> 非 200
         _run(c.fetch_health())
         self.assertEqual(c.server_state, "unavailable")  # 第 1 次：计数=1，尚未翻转
@@ -181,9 +181,10 @@ class ServerStateTests(unittest.TestCase):
         _run(c2.fetch_health())
         self.assertEqual(c2.server_state, "ready")
         c2._http = _mk_client({"/health": (404, {})})  # 之后开始失败
-        _run(c2.fetch_health())  # 第 1 次失败：去抖，保持 ready
-        self.assertEqual(c2.server_state, "ready")
-        _run(c2.fetch_health())  # 第 2 次失败：判定 unavailable
+        for i in range(1, 5):
+            _run(c2.fetch_health())  # 第 1-4 次失败：去抖，保持 ready
+            self.assertEqual(c2.server_state, "ready")
+        _run(c2.fetch_health())  # 第 5 次失败：判定 unavailable
         self.assertEqual(c2.server_state, "unavailable")
 
     def test_health_single_transient_fail_does_not_flip(self):

@@ -62,7 +62,7 @@ import httpx
 from clock import Clock, default_clock
 from config import AppConfig, apply_overrides, load_config, setup_logging, trust_env_for
 from db import Database, local_date
-from gap_tracker import GAP_THRESHOLD_FACTOR, GapTracker
+from gap_tracker import GAP_THRESHOLD_FACTOR, OFFLINE_TOLERANCE, GapTracker
 from metrics_parser import get_metric_by_label, get_metric_value, parse_metrics
 from stats import TRACKED_COUNTERS, COUNTER_SHORT_NAMES, compute_deltas, counter_delta, mtp_accept_rate, tps
 
@@ -81,6 +81,11 @@ CORE_COUNTERS = (
 # AUDIT-DATA-003：/metrics 响应大小上限（16 MB）。正常 llama-server 的 /metrics
 # 只有几 KB；超过即视为异常响应（防御性上限），按离线处理，保护 LlamaMonitor 内存。
 MAX_METRICS_BYTES = 16 * 1024 * 1024
+
+# 1.3.1 连续失败容忍（OFFLINE_TOLERANCE 定义在共享 gap_tracker，两个推理后端
+# 采集器与前端 LM.poll.streakFail 共用同一阈值）：
+# 连续 <5 次抓取失败（或无效 metrics）保留最近一次有效快照——数据与状态不变、
+# 不翻转 online 标志、不记离线/无效事件；连续 >=5 次才切换。成功一次立即清零。
 
 # llama.cpp 指标全名 -> 快照键名
 # 键名与后续阶段 UI / 数据库使用的字段保持一致；缺失的指标一律为 None。
@@ -240,6 +245,9 @@ class MetricsCollector:
         self._core_reset_on_last_sample: bool = False
         # 本轮值不可用（NaN/Inf/负值）的指标名集合（invalid_metric_value 状态转换去重用）
         self._invalid_metrics: set[str] = set()
+        # 1.3.1：连续抓取失败 / 连续无效 metrics 计数（<OFFLINE_TOLERANCE 保留上次快照）
+        self._offline_streak = 0
+        self._invalid_streak = 0
 
     # ---- Phase 11：缺口 / 重启 钩子（1.3.0：实现下沉到共享 gap_tracker.GapTracker）----
 
@@ -363,9 +371,12 @@ class MetricsCollector:
         抓取并解析一次，返回快照。任何失败返回离线快照，不抛异常。
 
         Phase 11 每轮流程（时钟：wall 用于时间戳/日期，monotonic 用于间隔判定）：
-        1. 抓取失败 -> 离线快照；若无未结束缺口则开启 server_offline 缺口
+        1. 抓取失败 -> 离线快照；若无未结束缺口则开启 server_offline 缺口。
+           1.3.1 容忍：连续 <OFFLINE_TOLERANCE(5) 次失败保留最近一次有效快照
+           （数据/状态不变、不记离线事件），连续 >=5 次才暴露离线快照
         2. HTTP 200 但核心 Counter（prompt/output）全缺失 -> sample_invalid：
-           不更新 state、不产生 delta；开启 invalid_metrics 缺口（状态转换才记事件）
+           不更新 state、不产生 delta；开启 invalid_metrics 缺口（状态转换才记事件）。
+           1.3.1 容忍：连续 <5 次无效保留最近一次快照（字段不置空、不记事件）
         3. 有效样本：
            - 先结束未结束缺口（用本轮是否检测到核心 reset 判定 possible_token_loss）
            - monotonic 间隔 > 阈值（本轮前一轮都有效、中间无离线轮）-> 补记
@@ -379,13 +390,24 @@ class MetricsCollector:
         parsed = await self._fetch_parsed()
 
         if parsed is None:
-            snapshot = offline_snapshot()
+            self._offline_streak += 1
             # 离线轮：开启 server_offline 缺口（起点 = 上一个有效样本的 wall+mono）
             start_wall, start_mono = (
                 (self._last_valid[0], self._last_valid[1]) if self._last_valid else (now_wall, now_mono)
             )
             self._maybe_open_gap(start_wall, start_mono, "server_offline")
+            if self._offline_streak < OFFLINE_TOLERANCE:
+                # 1.3.1 容忍：连续 <5 次抓取失败保留最近一次有效快照——
+                # 数据与 online 标志不变（/api/status 继续显示上次值），
+                # 不翻转状态、不记 server_offline 事件；连续 >=5 次才切离线。
+                snapshot = (self.last_snapshot
+                            if self.last_snapshot is not None
+                            else offline_snapshot())
+            else:
+                snapshot = offline_snapshot()
         else:
+            # 成功一次即清零连续失败计数（离线容忍 + 无效容忍）
+            self._offline_streak = 0
             snapshot = build_snapshot(parsed)
             self.capabilities = detect_capabilities(parsed)
             # sample_invalid 判定：HTTP 200 但**没有任何可用 Counter**（metrics 为空 /
@@ -396,13 +418,22 @@ class MetricsCollector:
             counter_values.extend(per_pos.values())
             valid = any(self._is_usable_number(v) for v in counter_values)
             if not valid:
+                self._invalid_streak += 1
                 # 不更新 state、不产生 delta（保持最后有效 baseline）
                 start_wall, start_mono = (
                     (self._last_valid[0], self._last_valid[1])
                     if self._last_valid else (now_wall, now_mono)
                 )
                 self._maybe_open_gap(start_wall, start_mono, "invalid_metrics")
+                if self._invalid_streak < OFFLINE_TOLERANCE:
+                    # 1.3.1 容忍：连续 <5 次无效 metrics 保留最近一次快照——
+                    # 字段不置空、online 保持（前端不清空），不记 invalid_metrics 事件；
+                    # 连续 >=5 次才按无效快照暴露（字段 None）。
+                    snapshot = (self.last_snapshot
+                                if self.last_snapshot is not None
+                                else snapshot)
             else:
+                self._invalid_streak = 0
                 snapshot = self._handle_valid_sample(parsed, snapshot, now_wall, now_mono)
 
         # 在线/离线 + 有效/无效 状态转换才写日志与事件（正常每轮采集不打日志）

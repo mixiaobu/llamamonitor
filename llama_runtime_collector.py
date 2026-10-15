@@ -49,6 +49,7 @@ import httpx
 
 from clock import Clock, default_clock
 from config import AppConfig, trust_env_for
+from gap_tracker import OFFLINE_TOLERANCE
 
 logger = logging.getLogger("llamamonitor.runtime")
 
@@ -278,9 +279,10 @@ class LlamaRuntimeCollector:
         self._reconnect_pending = True           # 启动即视为"重连"
         self._metrics_online: bool | None = None  # 供 metrics 失败 -> 立即 health 检查
         self._task: asyncio.Task | None = None
-        # AUDIT-1.1.1 REL-1111-005：/health 连续失败计数（去抖）。单次偶发网络
-        # 抖动不应立即把 Server State 翻转成"不可用"（+ 记一条 warning 事件）——
-        # 连续 2 次失败才判定，恢复一次即清零。
+        # AUDIT-1.1.1 REL-1111-005 + 1.3.1：/health 连续失败计数（去抖）。
+        # 单次偶发网络抖动不应立即把 Server State 翻转成"不可用"（+ 记一条
+        # warning 事件）——统一按 1.2.1 容忍语义：连续 5 次失败才判定，
+        # 恢复一次即清零（与 Token 采集器 OFFLINE_TOLERANCE 一致）。
         self._health_fail_count: int = 0
 
     # ---- HTTP ----
@@ -321,10 +323,11 @@ class LlamaRuntimeCollector:
         now = self.clock.now()
         payload, ok = await self._get_json("health")
         if not ok:
-            # AUDIT-1.1.1 REL-1111-005：连续 2 次失败才判定不可用（去抖，
-            # 防单次偶发网络抖动把 Server State 翻成"不可用"+ 记 warning 事件）。
+            # 1.3.1：连续 OFFLINE_TOLERANCE(5) 次失败才判定不可用（去抖，防
+            # 单次偶发网络抖动把 Server State 翻成"不可用"+ 记 warning 事件；
+            # 与 Token 采集器 / 前端 streak 阈值统一）。
             self._health_fail_count += 1
-            if self._health_fail_count >= 2:
+            if self._health_fail_count >= OFFLINE_TOLERANCE:
                 self._set_state("unavailable", now)
             return
         # 成功一次即清零失败计数
