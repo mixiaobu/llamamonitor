@@ -36,14 +36,26 @@ class Driver:
         self.db = Database(Path(tmp) / "dq.db", wal=False, retention_seconds=48 * 3600)
         self.collector = MetricsCollector(self.cfg, self.db, clock=self.clock)
 
-    def round(self, text: str | None, portal=None) -> dict:
+        # 1.3.3 默认 mock /slots（TestClient 期间 HOT 任务不碰真实网络）
+        async def _slots_default():
+            return None
+        self.collector._fetch_slots = _slots_default
+
+    def round(self, text: str | None, portal=None, slots=None) -> dict:
         """portal（TestClient.portal）提供时在应用的 event-loop 线程内执行
         （SQLite 连接线程约束）；否则独立 asyncio.run（纯 collector 测试）。"""
         def make_fetch(txt):
             async def fetch():
                 return parse_metrics(txt) if txt is not None else None
             return fetch
+        def make_slots(slots_payload):
+            async def fetch_slots():
+                return slots_payload
+            return fetch_slots
+        # 1.3.3：hot_round 并行抓 /slots——注入 mock（不碰真实网络，
+        # 否则 HOT 任务/每轮 collect_once 各 1.5s ConnectTimeout）
         self.collector._fetch_parsed = make_fetch(text)
+        self.collector._fetch_slots = make_slots(slots)
         if portal is not None:
             return portal.call(self.collector.collect_once)
         return asyncio.run(self.collector.collect_once())

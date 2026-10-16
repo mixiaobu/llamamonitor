@@ -100,9 +100,14 @@ class GpuApiTests(unittest.TestCase):
         self._dbs.append(db)
         collector = MetricsCollector(cfg, db)
 
+        # 1.3.3：/slots 不碰真实网络（黑孔每轮 1.5s ConnectTimeout 拖慢套件）
+        async def _slots_mock():
+            return None
+
         async def _fetch():
             return parse_metrics(text) if text else None
 
+        collector._fetch_slots = _slots_mock
         collector._fetch_parsed = _fetch
 
         gpu_obj = None
@@ -502,9 +507,13 @@ class GpuApiTests(unittest.TestCase):
         old_client = client
         collector2 = MetricsCollector(collector.config, db)
 
+        async def _slots_mock2():
+            return None
+
         async def _fetch_r6():
             return parse_metrics(base + p0.format(v=18) + p2.format(v=9))
 
+        collector2._fetch_slots = _slots_mock2
         collector2._fetch_parsed = _fetch_r6
         old_client.portal.call(collector2.collect_once)
 

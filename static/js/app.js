@@ -53,6 +53,9 @@
     throughputData: null,  // /api/throughput 响应（samples + window_avg）
     strataLive: null,          // 1.3.0：/api/strata/live 最近响应（性能页 Strata 段数据源）
     strataReqsExpanded: null,  // 1.3.2："查看更多"全量请求列表（null=用轮询缓存）
+    realtime: null,            // 1.3.3：/api/realtime 最近响应（1s 前台轮询；
+                               // 性能页"当前状态"区块 + 新鲜度 badge 的单一数据源；
+                               // sequence/sample_timestamp 竞态防护，§23）
     slotsData: null,       // /api/llama/slots 响应（活跃 Slot 统计来源）
     pollIntervalSec: 5,    // 采集间隔（缺口阈值 = poll*3；新鲜度 > 3*interval）
     quality: null,         
@@ -484,7 +487,8 @@
     var st = activeSlotStats();
     var text = st ? st.active + " / " + st.total : F.NA;
     setStatValue("perfActiveSlots", text);
-    setStatValue("rtSlots", text);
+    // 1.3.3：运行时状态「活跃/总 Slot」（rtSlots）由 1s 实时任务独占写入
+    //（§22 单一数据源）；这里只驱动顶部摘要（perfActiveSlots）。
   }
 
   /* 当前序列长度（§66/§133：所有活跃 Slot 的 n_prompt_tokens + n_decoded 最大值；
@@ -2247,33 +2251,115 @@
     renderOvMtpRate(); // Overview 摘要（三态）
   }
 
-  /* ================= 数据新鲜度 badge（Page Header 右侧；§31-§33） =================
-     在线且最近采样新鲜 -> "● 实时 · 刚刚"；
-     最近采样 age > 3*pollInterval -> "数据已过期 · X秒前"（warn）；
-     离线 -> "服务器不可用 · 历史值"（保留最近值但标注）。 */
+  /* ================= 1.3.3 实时主入口（§12/§21/§22/§23） =================
+     单一轮询任务 "realtime"（前台 1s，2s 超时，no-store）驱动性能页
+     "当前状态"区块 + 新鲜度 badge。竞态防护（§23）：迟到旧响应
+     （sample_timestamp 更旧，或同时间戳但 sequence 更小）不覆盖新数据。
+     失败时保留上次数据（stale），由新鲜度 badge 标注延迟状态——
+     stale 的 active 绝不翻 idle（§15：活动状态只由后端权威判定）。 */
+  function refreshRealtime() {
+    return api.realtime("/api/realtime")
+      .then(function (d) {
+        if (!d || !d.freshness) return;
+        var prev = state.realtime;
+        if (prev && prev.freshness) {
+          var newTs = d.freshness.sample_timestamp || 0;
+          var prevTs = prev.freshness.sample_timestamp || 0;
+          if (newTs < prevTs) return;                    // 旧响应迟到 -> 丢弃
+          if (newTs === prevTs && (d.sequence || 0) < (prev.sequence || 0)) return;
+        }
+        state.realtime = d;
+        LM.poll.streakOk("realtime");
+        renderRealtime(d);
+      })
+      .catch(function (e) {
+        console.warn("realtime failed:", e.message || e);
+        LM.poll.streakFail("realtime");
+        // 保留上次数据；badge 反映失败 streak（状态未知/数据延迟）
+        renderFreshnessBadge();
+      });
+  }
+
+  function renderRealtime(d) {
+    renderFreshnessBadge();
+    var act = d.activity || {};
+    var th = d.throughput || {};
+    var req = d.requests || {};
+    var tok = d.tokens || {};
+    var slots = d.slots || {};
+    var provider = state.provider;
+    if (provider === "strata") {
+      // G 段当前值（1s 节奏；会话缓存/请求/硬件/运行时长仍由 strataLive 驱动）
+      _stText("stPhase", act.phase || (act.active ? "处理中" : "空闲"));
+      _stText("stTokS", th.current_decode_tps != null ? F.formatTps(th.current_decode_tps) + " tok/s" : null);
+      _stText("stTokSMean", th.average_decode_tps != null ? F.formatTps(th.average_decode_tps) + " tok/s" : null);
+      _stText("stPrefill", th.average_prompt_tps != null ? F.formatTps(th.average_prompt_tps) + " tok/s" : null);
+      _stText("stRunning", req.processing == null ? null
+        : (req.processing || 0) + (slots.active ? "（Slot 外 " + slots.active + "）" : ""));
+      _stText("stWaiting", req.waiting != null ? String(req.waiting) : null);
+      var gen = tok.generated, max = tok.max_tokens;
+      _stText("stProgress", act.active && gen != null && max ? F.formatInt(gen) + " / " + F.formatInt(max)
+        : act.active && gen != null ? F.formatInt(gen) : null);
+    } else {
+      // llama.cpp：运行时状态「活跃/总 Slot」由实时任务独占（1s）；
+      // 当前序列长度（需逐 slot 明细）仍由 2s slots 任务驱动。
+      if (slots.active != null && slots.total != null) {
+        var st = $("rtSlots");
+        if (st) { st.textContent = slots.active + " / " + slots.total; st.classList.remove("dim"); }
+      }
+    }
+  }
+
+  /* ================= 数据新鲜度 badge（Page Header 右侧；1.3.3 §15 四态） =================
+     实时（<=2s）/ 轻微延迟（2~10s）/ 数据延迟（10~30s）/ 状态未知（>30s 或尚无数据）。
+     数据缺失绝不显示成"空闲"。离线 -> "服务器不可用 · 历史值"（保留最近值但标注）。
+     数据源：优先 /api/realtime freshness（1s）；未到达时回退 /api/status last_update。 */
   function renderFreshnessBadge() {
     var badge = $("perfFreshness");
     if (!badge) return;
     var dot = badge.querySelector(".fb-dot");
     var text = badge.querySelector(".fb-text");
     if (!dot || !text) return;
-    var interval = state.pollIntervalSec || 5;
-    var now = Date.now() / 1000;
     if (state.online === false) {
       badge.hidden = false;
       badge.className = "freshness-badge offline";
       text.textContent = "服务器不可用 · 历史值";
       return;
     }
+    var rt = state.realtime;
+    if (rt && rt.freshness && rt.freshness.sample_timestamp != null) {
+      var ageMs = Math.max(0, Date.now() - rt.freshness.sample_timestamp * 1000);
+      var ageS = ageMs / 1000;
+      if (ageMs <= 2000) {
+        badge.hidden = false;
+        badge.className = "freshness-badge live";
+        text.textContent = "实时 · " + F.formatAgo(Math.max(1, Math.round(ageS)));
+      } else if (ageMs <= 10000) {
+        badge.hidden = false;
+        badge.className = "freshness-badge slow";
+        text.textContent = "轻微延迟 · " + F.formatAgo(ageS);
+      } else if (ageMs <= 30000) {
+        badge.hidden = false;
+        badge.className = "freshness-badge stale";
+        text.textContent = "数据延迟 · " + F.formatAgo(ageS);
+      } else {
+        badge.hidden = false;
+        badge.className = "freshness-badge unknown";
+        text.textContent = "状态未知 · " + F.formatAgo(ageS);
+      }
+      return;
+    }
+    // 回退（/api/realtime 尚未到达）：/api/status 的 last_update
+    var interval = state.pollIntervalSec || 5;
     if (state.lastUpdateTs == null) {
       badge.hidden = true;
       return;
     }
-    var age = now - state.lastUpdateTs;
+    var age = Date.now() / 1000 - state.lastUpdateTs;
     if (age > interval * 3) {
       badge.hidden = false;
       badge.className = "freshness-badge stale";
-      text.textContent = "数据已过期 · " + F.formatAgo(age);
+      text.textContent = "数据延迟 · " + F.formatAgo(age);
     } else {
       badge.hidden = false;
       badge.className = "freshness-badge live";
@@ -2625,21 +2711,9 @@
     var live = d.live || {};
     var busy = !!live.busy;
     // ---- G. 实时推理状态 ----
-    var phase = strataPhaseLabel(live.phase);
-    _stText("stPhase", phase || (busy ? "处理中" : "空闲"));
-    _stText("stTokS", live.tok_s != null ? F.formatTps(live.tok_s) + " tok/s" : null);
-    _stText("stTokSMean", live.tok_s_mean != null ? F.formatTps(live.tok_s_mean) + " tok/s" : null);
-    _stText("stPrefill", live.prefill_tok_s_mean != null ? F.formatTps(live.prefill_tok_s_mean) + " tok/s" : null);
-    // 处理中请求 = running 总数（不叠加 outside_slots——outside 是 running 的子集）
-    var running = live.running != null ? live.running : 0;
-    _stText("stRunning", live.running == null ? null
-      : running + (live.outside_slots ? "（Slot 外 " + live.outside_slots + "）" : ""));
-    // 等待请求 = waiting_total（waiting + queued 后端已合并；admitting 单独语义不并入）
-    _stText("stWaiting", live.waiting_total != null ? String(live.waiting_total)
-      : (live.waiting != null ? String(live.waiting) : null));
-    var gen = live.generated, max = live.max_tokens;
-    _stText("stProgress", busy && gen != null && max ? F.formatInt(gen) + " / " + F.formatInt(max)
-      : busy && gen != null ? F.formatInt(gen) : null);
+    // 1.3.3：当前值（stPhase/stTokS/stTokSMean/stPrefill/stRunning/stWaiting/stProgress）
+    // 由 1s 实时任务 renderRealtime 独占写入（§22 单一数据源，避免两套轮询互相覆盖）；
+    // 这里只写本端点独有的低频/附加字段。
     var hint = $("stProgressHint");
     if (hint) {
       hint.textContent = (busy && live.elapsed_s != null) ? "已持续 " + Math.round(live.elapsed_s) + " 秒" : "";
@@ -3687,6 +3761,17 @@
       run: function () {
         if (LM.nav.currentPage() === "performance" && state.provider === "strata") {
           return refreshStrataLive();
+        }
+      },
+    });
+    // 1.3.3 §21/§22：实时主入口（前台 1s，2s 超时，no-store）——性能页
+    // "当前状态"区块（strata G 段 / llama 活跃 Slot）+ 新鲜度 badge 的单一
+    // 驱动任务。仅性能页前台运行（hidden 页不轮询，避免跨页重复请求）。
+    LM.poll.register("realtime", {
+      intervalMs: 1000, visibleIntervalMs: 1000, visibleOnly: true,
+      run: function () {
+        if (LM.nav.currentPage() === "performance") {
+          return refreshRealtime();
         }
       },
     });

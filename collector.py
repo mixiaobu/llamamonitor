@@ -62,8 +62,14 @@ import httpx
 from clock import Clock, default_clock
 from config import AppConfig, apply_overrides, load_config, setup_logging, trust_env_for
 from db import Database, local_date
+from endpoint_state import (
+    EndpointRegistry,
+    classify_exception,
+    classify_http_status,
+)
 from gap_tracker import GAP_THRESHOLD_FACTOR, OFFLINE_TOLERANCE, GapTracker
 from metrics_parser import get_metric_by_label, get_metric_value, parse_metrics
+from scheduling import DeadlineScheduler
 from stats import TRACKED_COUNTERS, COUNTER_SHORT_NAMES, compute_deltas, counter_delta, mtp_accept_rate, tps
 
 logger = logging.getLogger("llamamonitor.collector")
@@ -81,6 +87,18 @@ CORE_COUNTERS = (
 # AUDIT-DATA-003：/metrics 响应大小上限（16 MB）。正常 llama-server 的 /metrics
 # 只有几 KB；超过即视为异常响应（防御性上限），按离线处理，保护 LlamaMonitor 内存。
 MAX_METRICS_BYTES = 16 * 1024 * 1024
+
+# 1.3.3：/slots 响应大小上限（防御性；正常几十 slot * 几 KB 字段）
+MAX_SLOTS_BYTES = 1 * 1024 * 1024
+
+# ---- 1.3.3：分层调度（秒）----
+# HOT PATH（~1s）：/metrics + /slots **并行**（asyncio.gather；独立超时/故障隔离
+# §28/§29）——activity = metrics + slots 联合判定（§6），实时 TPS 来自
+# /slots 计数器 delta（§7）。慢 /slots 绝不阻塞 /metrics，反之亦然。
+HOT_INTERVAL = 1.0       # HOT 循环 deadline 锚定间隔
+HOT_TIMEOUT = 1.5        # HOT 端点请求超时（/metrics、/slots 各自独立）
+# slot TPS 基线保护：monotonic 间隔 <= 该值不计算（防除零/抖动）
+TPS_MIN_DT = 0.05
 
 # 1.3.1 连续失败容忍（OFFLINE_TOLERANCE 定义在共享 gap_tracker，两个推理后端
 # 采集器与前端 LM.poll.streakFail 共用同一阈值）：
@@ -252,6 +270,45 @@ class MetricsCollector:
         # 注入被监控模型：/metrics?model=<urlencoded>&autoload=false
         # （autoload=false 保证只读：绝不触发模型自动加载）
         self.router_model: str | None = None
+        # ---- 1.3.3：分层采集状态（HOT 并行 /metrics+/slots + 实时 TPS +
+        # ---- 端点健康 + 新鲜度；与 StrataCollector 同架构）----
+        self.hot_interval = HOT_INTERVAL
+        # 端点健康状态（§16 故障隔离：每端点独立 available/age/连续失败/错误分类）
+        self.endpoints = EndpointRegistry()
+        # 新鲜度（§14：live_last_update = 最近一次 HOT PATH 成功取得实时数据
+        # 的时刻——/metrics 与 /slots 任一成功即推进；COLD 任务不推进它）
+        self.sample_timestamp: float | None = None
+        self.live_last_update: float | None = None
+        self.sequence: int = 0          # 单调样本序号（前端竞态防护 §23）
+        # activity（§6 判定规则；每 HOT 轮重算，失败保留上一轮并标注 stale）
+        self.activity_state: dict | None = None
+        self._last_activity: dict | None = None
+        # requests/slots 摘要（§12；严格 0-vs-null）
+        self.requests_state: dict | None = None
+        # /slots 白名单快照（HOT 轮更新；/api/llama/slots 与 runtime 镜像共用）
+        self.slots: list[dict] = []
+        self.last_slots_update: float | None = None
+        # 实时 TPS（§7：/slots 计数器 delta / monotonic 间隔；None = 尚无新鲜 delta）
+        self.realtime_decode_tps: float | None = None
+        self.realtime_prompt_tps: float | None = None
+        # 每 slot 的 TPS 基线：{(slot_id, id_task): {"dec","prp","mono"}}
+        # slot id 或 id_task 变化 -> 重设基线（不跨任务混算）；server 重启清零
+        self._slot_tps_state: dict[tuple, dict] = {}
+        # HOT 循环诊断（§31：/api/realtime diagnostics）
+        self.last_hot_duration_s: float = 0.0
+        self.hot_overrun: bool = False
+        self.hot_overrun_count: int = 0
+        # 后台任务句柄（single-flight：每类任务最多一个 in-flight）
+        self._started = False
+        self._hot_task: asyncio.Task | None = None
+        self._warm_task: asyncio.Task | None = None
+        self._cold_tasks: list[asyncio.Task] = []
+        self._cold_inflight: set[str] = set()
+        # 每 HOT 轮完成后的回调（server 层刷新 app_state / runtime 同步）
+        self.on_hot_round = None
+        # HOT 预校验通过的待落库样本 (parsed, snapshot, now_wall, now_mono)；
+        # WARM 轮消费。失败/无效轮置 None——绝不拿旧样本重算 delta（会误关缺口）
+        self._pending_sample: tuple | None = None
 
     # ---- 1.3.2：Router 模型查询参数 ----
 
@@ -327,6 +384,9 @@ class MetricsCollector:
 
     async def aclose(self) -> None:
         """关闭 HTTP 客户端（幂等；由 lifespan 关闭路径调用）。"""
+        # 1.3.3：先取消全部后台采集任务（HOT/WARM），再关 HTTP client
+        if self._started:
+            await self.stop_tasks()
         if self._http is not None:
             try:
                 await self._http.aclose()
@@ -355,9 +415,33 @@ class MetricsCollector:
         except Exception as exc:
             logger.warning("写入 monitor_stop 事件失败: %r", exc)
 
+    @property
+    def slots_url(self) -> str:
+        """/slots 地址（与 /metrics 同基址；1.3.3 HOT PATH 并行抓取）。"""
+        base = (self.config.llama_server.url or "").rstrip("/")
+        return base + "/slots"
+
+    def _record_endpoint(self, name: str, now_wall: float, now_mono: float,
+                         error: str | None) -> None:
+        """记录端点尝试结果（状态转换才记日志，不逐轮刷屏 §32）。"""
+        st = self.endpoints.get(name)
+        prev_error = st.last_error
+        if error is None:
+            was_available = st.available
+            st.record_success(now_wall, now_mono)
+            if not was_available:
+                logger.info("llama 端点 %s 恢复可用", name)
+        else:
+            st.record_failure(now_wall, now_mono, error)
+            if not st.available and (prev_error != error
+                                     or st.consecutive_failures in (1, 5, 10, 30)):
+                logger.warning("llama 端点 %s 不可用（%s，连续 %d 次）",
+                               name, error, st.consecutive_failures)
+
     async def _fetch_parsed(self) -> dict | None:
         """
-        抓取并解析 /metrics。
+        抓取并解析 /metrics（1.3.3：HOT PATH，独立 HOT_TIMEOUT 超时 +
+        端点健康记录）。
 
         成功返回 parse_metrics 结果；任何失败（网络错误/超时/非 200）返回 None（按离线处理）。
         测试中可用同名属性覆盖此方法来注入固定文本。
@@ -365,11 +449,20 @@ class MetricsCollector:
         AUDIT-DATA-003：流式读取 + MAX_METRICS_BYTES 上限——原 `response.text` 无大小
         限制，异常 metrics server 一次返回数 GB 会把 LlamaMonitor 内存打爆。
         """
+        now_wall = self.clock.now()
+        now_mono = self.clock.monotonic()
         try:
             client = self._get_client()
             fetch_url = self.metrics_fetch_url
-            async with client.stream("GET", fetch_url) as response:
-                response.raise_for_status()
+            async with client.stream("GET", fetch_url,
+                                     timeout=HOT_TIMEOUT) as response:
+                # 显式状态码判定（501->unsupported 等，不能靠 raise_for_status
+                # 的 HTTPStatusError 兜底成 temporarily_unavailable）
+                if response.status_code != 200:
+                    self._record_endpoint(
+                        "metrics", now_wall, now_mono,
+                        classify_http_status(response.status_code))
+                    return None
                 chunks: list[bytes] = []
                 total = 0
                 async for chunk in response.aiter_bytes():
@@ -379,35 +472,111 @@ class MetricsCollector:
                             "/metrics 响应超过 %.0f MB 上限，按离线处理: %s",
                             MAX_METRICS_BYTES / 1048576, fetch_url,
                         )
+                        self._record_endpoint("metrics", now_wall, now_mono,
+                                              "response_too_large")
                         return None
                     chunks.append(chunk)
             text = b"".join(chunks).decode("utf-8", "replace")
+            self._record_endpoint("metrics", now_wall, now_mono, None)
             return parse_metrics(text)
-        except Exception:
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            self._record_endpoint("metrics", now_wall, now_mono,
+                                  classify_exception(exc))
             return None
 
-    async def collect_once(self) -> dict:
+    async def _fetch_slots(self) -> list | None:
         """
-        抓取并解析一次，返回快照。任何失败返回离线快照，不抛异常。
+        1.3.3 HOT PATH：GET /slots（与 /metrics **并行**、独立 HOT_TIMEOUT 超时、
+        独立端点健康记录——§28/§29 故障隔离：/slots 失败不影响 /metrics，
+        activity 由 metrics 侧独立判定；反之亦然）。
 
-        Phase 11 每轮流程（时钟：wall 用于时间戳/日期，monotonic 用于间隔判定）：
-        1. 抓取失败 -> 离线快照；若无未结束缺口则开启 server_offline 缺口。
-           1.3.1 容忍：连续 <OFFLINE_TOLERANCE(5) 次失败保留最近一次有效快照
-           （数据/状态不变、不记离线事件），连续 >=5 次才暴露离线快照
-        2. HTTP 200 但核心 Counter（prompt/output）全缺失 -> sample_invalid：
-           不更新 state、不产生 delta；开启 invalid_metrics 缺口（状态转换才记事件）。
-           1.3.1 容忍：连续 <5 次无效保留最近一次快照（字段不置空、不记事件）
-        3. 有效样本：
-           - 先结束未结束缺口（用本轮是否检测到核心 reset 判定 possible_token_loss）
-           - monotonic 间隔 > 阈值（本轮前一轮都有效、中间无离线轮）-> 补记
-             system_pause_or_sleep 缺口（睡眠/系统暂停：进程被挂起，无离线轮可记）
-           - persist_sample（单事务：state + daily + live；失败 -> 保持旧 baseline）
-           - 恢复 monitor_restart 缺口（启动时置位的上一进程断档）
-        4. 状态转换（online/offline、valid/invalid）才写日志 + 事件，不逐轮刷屏
+        成功返回白名单 slot list（sanitize_slot；prompt 文本一律丢弃）；
+        失败（网络/超时/非 200/超大/坏 JSON/非 list）返回 None。
         """
         now_wall = self.clock.now()
         now_mono = self.clock.monotonic()
-        parsed = await self._fetch_parsed()
+        try:
+            client = self._get_client()
+            response = await client.get(self.slots_url, timeout=HOT_TIMEOUT)
+            if response.status_code != 200:
+                self._record_endpoint(
+                    "slots", now_wall, now_mono,
+                    classify_http_status(response.status_code))
+                return None
+            body = response.content
+            if len(body) > MAX_SLOTS_BYTES:
+                self._record_endpoint("slots", now_wall, now_mono,
+                                      "response_too_large")
+                return None
+            payload = json.loads(body.decode("utf-8", "replace"))
+            if not isinstance(payload, list):
+                self._record_endpoint("slots", now_wall, now_mono,
+                                      "invalid_response")
+                return None
+            self._record_endpoint("slots", now_wall, now_mono, None)
+            from llama_runtime_collector import sanitize_slot
+            return [sanitize_slot(s) for s in payload if isinstance(s, dict)]
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            self._record_endpoint("slots", now_wall, now_mono,
+                                  classify_exception(exc))
+            return None
+
+    # ---- 1.3.3 分层采集：HOT（并行 /metrics + /slots）/ WARM（落库） ----
+
+    def _is_usable_counter_values(self, parsed: dict) -> bool:
+        """sample_invalid 判定（1.3.2 语义不变）：没有任何可用 Counter -> 无效。"""
+        counter_values = [get_metric_value(parsed, name) for name in TRACKED_COUNTERS]
+        per_pos = get_metric_by_label(parsed, _SPEC_PER_POS_METRIC, "position") or {}
+        counter_values.extend(per_pos.values())
+        return any(self._is_usable_number(v) for v in counter_values)
+
+    async def hot_round(self) -> dict:
+        """
+        1.3.3 HOT PATH（~1s，由 _hot_loop 的 deadline 调度驱动）：
+
+        **并行**抓取 /metrics + /slots（asyncio.gather；各自独立 1.5s 超时与
+        独立端点健康记录——慢 /slots 绝不阻塞 /metrics，反之亦然，§28/§29），
+        然后**立即**更新内存态：快照 / capabilities / slots / activity /
+        实时 TPS / sample_timestamp / sequence。不写数据库（WARM 轮负责）。
+
+        activity 判定（§6，绝不单一指标、绝不用
+        predicted/prompt_tokens_seconds==0 判忙闲）：
+        - metrics requests_processing > 0 -> active；
+        - 任一 /slots[].is_processing == true -> active；
+        - 仅当 requests_processing == 0 且全部 slot 为 false 才 idle；
+        - requests_deferred > 0 = 排队中；
+        - 故障隔离：metrics processing=1 但 /slots 失败 -> 仍 active；
+          metrics=0 但某 slot is_processing=true -> active。
+        metrics 失败轮保留上一轮 activity（标注 stale，不翻 idle，§15/§29）。
+
+        实时 TPS（§7）：/slots 每 slot 计数器 delta / monotonic 间隔
+        （decode=Δn_decoded/Δt，prompt=Δn_prompt_tokens_processed/Δt）；
+        slot id 或 id_task 变化 -> 重设基线（不跨任务混算）；
+        服务端重启（连续 >=5 轮离线）清零基线。
+
+        失败语义（1.3.1 容忍不变）：连续 <5 次失败保留上一快照与 activity
+        （不翻 idle、不记离线事件）；>=5 次才切离线表现。
+        """
+        now_wall = self.clock.now()
+        now_mono = self.clock.monotonic()
+
+        # 1) 并行抓取 /metrics + /slots（独立错误处理，互不阻塞）
+        # §18：/metrics 能力型错误（unsupported/auth/rate_limited）期间
+        # 恢复探测按 15s 节流——不每秒重复请求已知 501 的端点
+        if self.endpoints.get("metrics").should_poll(now_mono):
+            parsed, slots_raw = await asyncio.gather(
+                self._fetch_parsed(), self._fetch_slots())
+        else:
+            parsed = None
+            slots_raw = await self._fetch_slots()
+        slots_ok = slots_raw is not None
+        if slots_ok:
+            self.slots = slots_raw
+            self.last_slots_update = now_wall
 
         if parsed is None:
             self._offline_streak += 1
@@ -416,15 +585,22 @@ class MetricsCollector:
                 (self._last_valid[0], self._last_valid[1]) if self._last_valid else (now_wall, now_mono)
             )
             self._maybe_open_gap(start_wall, start_mono, "server_offline")
+            self._pending_sample = None  # 失败轮不重放旧样本（会误关缺口/重复落库）
             if self._offline_streak < OFFLINE_TOLERANCE:
                 # 1.3.1 容忍：连续 <5 次抓取失败保留最近一次有效快照——
-                # 数据与 online 标志不变（/api/status 继续显示上次值），
-                # 不翻转状态、不记 server_offline 事件；连续 >=5 次才切离线。
+                # 数据与 online 标志不变（不翻转状态、不记 server_offline 事件）；
+                # 连续 >=5 次才切离线。
                 snapshot = (self.last_snapshot
                             if self.last_snapshot is not None
                             else offline_snapshot())
             else:
                 snapshot = offline_snapshot()
+                # 服务端离线（**越限时刻一次性**清零实时 TPS 基线，恢复后重建，
+                # 不跨重启混算）。只在 streak 恰好越过阈值的那一轮清——离线持续
+                # 期间（如 /metrics 501 被 15s 节流的构建）每轮都清会让
+                # /slots 计数器 delta 永远没有存活两轮的机会（TPS 恒 None）。
+                if self._offline_streak == OFFLINE_TOLERANCE:
+                    self._slot_tps_state = {}
         else:
             # 成功一次即清零连续失败计数（离线容忍 + 无效容忍）
             self._offline_streak = 0
@@ -433,11 +609,7 @@ class MetricsCollector:
             # sample_invalid 判定：HTTP 200 但**没有任何可用 Counter**（metrics 为空 /
             # 全是不可解析值）。个别 Counter 缺失（含核心 prompt/output）不算 invalid——
             # 按"缺失保持旧 baseline"的 per-metric 规则处理。
-            counter_values = [get_metric_value(parsed, name) for name in TRACKED_COUNTERS]
-            per_pos = get_metric_by_label(parsed, _SPEC_PER_POS_METRIC, "position") or {}
-            counter_values.extend(per_pos.values())
-            valid = any(self._is_usable_number(v) for v in counter_values)
-            if not valid:
+            if not self._is_usable_counter_values(parsed):
                 self._invalid_streak += 1
                 # 不更新 state、不产生 delta（保持最后有效 baseline）
                 start_wall, start_mono = (
@@ -445,6 +617,7 @@ class MetricsCollector:
                     if self._last_valid else (now_wall, now_mono)
                 )
                 self._maybe_open_gap(start_wall, start_mono, "invalid_metrics")
+                self._pending_sample = None
                 if self._invalid_streak < OFFLINE_TOLERANCE:
                     # 1.3.1 容忍：连续 <5 次无效 metrics 保留最近一次快照——
                     # 字段不置空、online 保持（前端不清空），不记 invalid_metrics 事件；
@@ -454,9 +627,26 @@ class MetricsCollector:
                                 else snapshot)
             else:
                 self._invalid_streak = 0
-                snapshot = self._handle_valid_sample(parsed, snapshot, now_wall, now_mono)
+                # 预校验通过：快照即刻发布；DB 写入在 WARM 轮
+                # （_persist_round 消费 pending——绝不拿旧样本重算 delta）
+                snapshot["_valid"] = True
+                self._pending_sample = (parsed, snapshot, now_wall, now_mono)
 
-        # 在线/离线 + 有效/无效 状态转换才写日志与事件（正常每轮采集不打日志）
+        # 2) 实时 TPS（/slots delta；失败轮不动旧值，恢复后自然更新）
+        if slots_ok:
+            self._update_slot_tps(self.slots, now_mono)
+
+        # 3) activity（成功轮按最新数据重算；失败轮保留上一轮并标注 stale）
+        self._compute_activity(parsed, slots_ok)
+
+        # 4) 新鲜度（仅 HOT 成功时推进——/metrics 与 /slots 任一成功即已取得
+        #    实时数据；COLD 任务不推进它，§14）
+        if parsed is not None or slots_ok:
+            self.sample_timestamp = now_wall
+            self.live_last_update = now_wall
+            self.sequence += 1
+
+        # 5) 在线/离线 + 有效/无效 状态转换才写日志与事件（正常每轮不打日志）
         online = snapshot["online"]
         sample_valid = bool(parsed is not None and snapshot.get("_valid", False))
         if self._last_online is not None and online != self._last_online:
@@ -489,6 +679,370 @@ class MetricsCollector:
         self.last_snapshot = snapshot
         self.last_update = self.clock.now()
         return snapshot
+
+    def _compute_activity(self, parsed: dict | None, slots_ok: bool) -> None:
+        """
+        activity 判定（1.3.3 §6；多源联合、绝不单一指标）：
+        1) metrics requests_processing > 0 -> active；
+        2) 任一 /slots[].is_processing == true -> active；
+        3) 仅当 requests_processing == 0 且全部 slot 为 false 才 idle；
+        4) requests_deferred > 0 = queued（排队中）；
+        5) 两源都失败的轮：保留上一轮 activity（stale，不翻 idle）。
+        请求/槽位计数存 self.requests_state（/api/realtime 的 requests/slots 块）。
+        """
+        rp = rd = None
+        if parsed is not None:
+            rp = get_metric_value(parsed, "llamacpp:requests_processing")
+            rd = get_metric_value(parsed, "llamacpp:requests_deferred")
+            if not self._is_usable_number(rp):
+                rp = None
+            if not self._is_usable_number(rd):
+                rd = None
+            rp = float(rp) if rp is not None else None
+            rd = float(rd) if rd is not None else None
+        slots_processing = (
+            any(bool(s.get("is_processing")) for s in self.slots) if slots_ok else False
+        )
+
+        if parsed is not None or slots_ok:
+            active = (rp is not None and rp > 0) or slots_processing
+            if parsed is not None and slots_ok:
+                source, confidence = "llama.metrics+slots", "authoritative"
+            elif parsed is not None:
+                source, confidence = "llama.metrics", "secondary"  # slots 失败
+            else:
+                source, confidence = "llama.slots", "secondary"    # metrics 失败
+            # phase（由 /slots 派生）：
+            # 首选 n_decoded——>0 = decode 已开始，==0 = Prompt 处理中（§5）。
+            # 不能用 n_prompt_tokens_processed < n_prompt_tokens 判据：
+            # 1.3.3 实测新构建该字段受 prompt cache 影响（cached 部分不计数，
+            # 永不满），且 decode 期间 n_prompt_tokens 持续增长——会把整个
+            # decode 误判成 prompt。
+            phase = None
+            if slots_ok:
+                for s in self.slots:
+                    if not s.get("is_processing"):
+                        continue
+                    n_dec = s.get("n_decoded")
+                    if not self._is_usable_number(n_dec):
+                        nt = s.get("next_token")
+                        if isinstance(nt, dict):
+                            n_dec = nt.get("n_decoded")
+                    if self._is_usable_number(n_dec):
+                        phase = "decode" if float(n_dec) > 0 else "prompt"
+                        break
+                    # n_decoded 不可读（旧构建）：回退旧判据
+                    n_pt = s.get("n_prompt_tokens")
+                    n_pp = s.get("n_prompt_tokens_processed")
+                    if (self._is_usable_number(n_pt)
+                            and self._is_usable_number(n_pp)
+                            and float(n_pp) < float(n_pt)):
+                        phase = "prompt"
+                        break
+                    if phase is None:
+                        phase = "decode"
+            state = ("prompt" if phase == "prompt" else "decode") if active else "idle"
+            act = {
+                "active": active, "state": state, "phase": phase,
+                "source": source, "confidence": confidence,
+            }
+        else:
+            # 两源都失败：保留上一轮 activity（不翻 idle；§15/§29）。
+            # stale: 前缀只加一层（上一轮已是 stale 时不重复累积）
+            if self._last_activity is not None:
+                act = dict(self._last_activity)
+                _src = str(act.get("source") or "none")
+                if _src.startswith("stale:"):
+                    _src = _src[len("stale:"):]
+                act["source"] = "stale:" + _src
+                act["confidence"] = "stale"
+            else:
+                act = {
+                    "active": False, "state": "unknown", "phase": None,
+                    "source": "none", "confidence": "unknown",
+                }
+        self._last_activity = act
+        self.activity_state = act
+        # requests / slots 摘要（§12；严格 0-vs-null：拿不到 = None，绝不假 0）
+        active_slots = sum(1 for s in self.slots if s.get("is_processing")) \
+            if slots_ok else None
+        total_slots = len(self.slots) if slots_ok else None
+        self.requests_state = {
+            "processing": int(rp) if rp is not None else (active_slots if active_slots is not None else None),
+            "waiting": None,
+            "queued": int(rd) if rd is not None else None,
+            "slots_active": active_slots,
+            "slots_total": total_slots if total_slots else None,
+        }
+
+    def _update_slot_tps(self, slots: list, now_mono: float) -> None:
+        """
+        实时 TPS（1.3.3 §7）：/slots 每 slot 计数器 delta / monotonic 间隔。
+
+        - decode = Δn_decoded / Δt；prompt = Δn_prompt_tokens_processed / Δt；
+        - key = (slot id, id_task)：slot id 或 id_task 变化 -> 重设基线
+          （不跨任务混算）；服务端重启（连续 >=5 轮离线）清零基线；
+        - Δt <= TPS_MIN_DT：本轮不计算（防除零；保持旧基线不丢区间）；
+        - 计数器倒退（Δ<0）：异常 -> 只重设基线（绝不产出负 TPS）；
+        - 无新鲜 delta（首轮 / 任务刚开始）：None（UI 显示 --，绝不假 0）。
+        多 slot 同时活动时按 slot 求和（总吞吐口径）。
+        """
+        new_state: dict[tuple, dict] = {}
+        dec_sum = 0.0
+        prp_sum = 0.0
+        any_fresh = False
+        for s in slots:
+            key = (s.get("id"), s.get("id_task"))
+            # n_decoded：部分构建不在 slot 顶层，而在 next_token 归一化对象内
+            # （1.3.3 实测 llama.cpp 新构建 /slots 顶层无 n_decoded）
+            dec = s.get("n_decoded")
+            if not self._is_usable_number(dec):
+                nt = s.get("next_token")
+                if isinstance(nt, dict):
+                    dec = nt.get("n_decoded")
+            prp = s.get("n_prompt_tokens_processed")
+            if not self._is_usable_number(dec) and not self._is_usable_number(prp):
+                continue  # 该 slot 无可读计数器（空闲占位）：不建基线
+            cur = {
+                "dec": float(dec) if self._is_usable_number(dec) else None,
+                "prp": float(prp) if self._is_usable_number(prp) else None,
+                "mono": now_mono,
+            }
+            prev = self._slot_tps_state.get(key)
+            if prev is None:
+                new_state[key] = cur  # 首次见到该任务：只建基线
+                continue
+            dt = now_mono - prev["mono"]
+            if dt <= TPS_MIN_DT:
+                new_state[key] = prev  # 间隔过短：保持旧基线（防除零）
+                continue
+            if prev["dec"] is not None and cur["dec"] is not None:
+                d = cur["dec"] - prev["dec"]
+                if d > 0:
+                    dec_sum += d / dt
+                    any_fresh = True
+                # d < 0：倒退 -> 异常，只重设基线（不产负值）
+            if prev["prp"] is not None and cur["prp"] is not None:
+                p = cur["prp"] - prev["prp"]
+                if p > 0:
+                    prp_sum += p / dt
+                    any_fresh = True
+            new_state[key] = cur
+        self._slot_tps_state = new_state
+        if any_fresh:
+            # 有新鲜 delta：0.0 是合法测量值（如 Prompt 处理中 decode 速度 = 0）
+            self.realtime_decode_tps = round(dec_sum, 2) if dec_sum > 0 else 0.0
+            self.realtime_prompt_tps = round(prp_sum, 2) if prp_sum > 0 else 0.0
+        else:
+            self.realtime_decode_tps = None
+            self.realtime_prompt_tps = None
+
+    def _persist_round(self) -> None:
+        """
+        1.3.3 WARM：消费 HOT 轮预校验通过的 pending 样本 -> 落库（2s 节奏）。
+
+        HOT 轮只更新内存；历史库写入保持既有 2s 节奏（1s 实时刷新不会
+        加倍 SQLite 写入，spec §24）。无 pending（离线/无效/已消费）时不写库
+        ——绝不重放旧样本（会误关缺口、重复计数 delta）。落库时间戳用样本
+        自身的采集时刻（HOT 轮 now），缺口判定以采样间隔为准。
+        """
+        pending = self._pending_sample
+        if pending is None:
+            return
+        self._pending_sample = None
+        parsed, snapshot, now_wall, now_mono = pending
+        self._handle_valid_sample(parsed, snapshot, now_wall, now_mono)
+
+    async def collect_once(self) -> dict:
+        """一轮完整采集（1.3.3 兼容入口：测试 / 独立模式 / lifespan 首轮）。
+
+        = HOT 轮（并行 /metrics+/slots + 内存态 + activity + 实时 TPS）
+        + WARM 落库。1.3.3 生产路径改用 start() 多任务分层（HOT 1s / WARM 2s）。
+        """
+        snapshot = await self.hot_round()
+        try:
+            self._persist_round()
+        except Exception as exc:
+            logger.exception("llama WARM 落库轮错误（不影响 HOT）: %r", exc)
+        return snapshot
+
+    def realtime_payload(self) -> dict:
+        """
+        1.3.3 /api/realtime 数据源（spec §12/§31）：HOT PATH 最新态聚合。
+
+        - activity：_compute_activity（§6 多源联合：metrics + slots）；
+        - throughput：current = 实时 TPS（/slots 计数器 delta，§7；
+          尚无新鲜 delta = None，绝不假 0）；average 由 server 层从
+          live_samples 窗口计算（5 分钟加权平均，与 /api/throughput 同口径）；
+        - requests / slots：_compute_activity 维护的 requests_state（0-vs-null）；
+        - tokens：当前活动 slot 的 prompt/generated（无活动 slot = None）；
+          max_tokens = slot 参数 max_tokens 或 n_tokens_max；
+        - freshness：sample_timestamp = 最近 HOT 成功（/metrics 或 /slots）；
+        - diagnostics：HOT 循环诊断 + 各端点健康（§16/§31）。
+        严格 0-vs-null：缺失/不支持字段 = None。
+        """
+        now = self.clock.now()
+        act = self.activity_state or {}
+        req = self.requests_state or {}
+        snap = self.last_snapshot or {}
+        # 当前活动 slot 的 token 进度（无活动 slot = None，绝不假 0）
+        prompt_now = generated_now = max_tokens_now = None
+        for s in self.slots:
+            if not s.get("is_processing"):
+                continue
+            n_pt = s.get("n_prompt_tokens")
+            # n_decoded：部分构建在 next_token 归一化对象内（非 slot 顶层）
+            n_dec = s.get("n_decoded")
+            if not self._is_usable_number(n_dec):
+                nt = s.get("next_token")
+                if isinstance(nt, dict):
+                    n_dec = nt.get("n_decoded")
+            if self._is_usable_number(n_pt):
+                prompt_now = float(n_pt)
+            if self._is_usable_number(n_dec):
+                generated_now = float(n_dec)
+            mt = s.get("params", {}).get("max_tokens") \
+                if isinstance(s.get("params"), dict) else None
+            if not self._is_usable_number(mt):
+                mt = None
+            if self._is_usable_number(mt):
+                max_tokens_now = float(mt)
+            break
+        if max_tokens_now is None and self._is_usable_number(
+                (snap or {}).get("n_tokens_max")):
+            max_tokens_now = float(snap["n_tokens_max"])
+        age_ms = (
+            int(max(0.0, (now - self.sample_timestamp) * 1000))
+            if self.sample_timestamp is not None else None
+        )
+        # errors：仅不可用端点（可用端点不占 payload）
+        _errors = {}
+        for _name in self.endpoints.names():
+            _st = self.endpoints.get(_name)
+            if not _st.available:
+                _errors[_name] = _st.to_dict(now)
+        return {
+            "provider": "llamacpp",
+            "server_online": bool(snap.get("online")),
+            "activity": {
+                "active": act.get("active"),
+                "state": act.get("state"),
+                "phase": act.get("phase"),
+                "source": act.get("source"),
+                "confidence": act.get("confidence"),
+            },
+            "throughput": {
+                "current_decode_tps": self.realtime_decode_tps,
+                "current_prompt_tps": self.realtime_prompt_tps,
+                "average_decode_tps": None,   # server 层填（DB 窗口平均）
+                "average_prompt_tps": None,
+            },
+            "requests": {
+                "processing": req.get("processing"),
+                "waiting": req.get("waiting"),
+                "queued": req.get("queued"),
+            },
+            "slots": {
+                "active": req.get("slots_active"),
+                "total": req.get("slots_total"),
+            },
+            "tokens": {
+                "prompt": prompt_now,
+                "generated": generated_now,
+                "max_tokens": max_tokens_now,
+            },
+            "freshness": {
+                "sample_timestamp": self.sample_timestamp,
+                "age_ms": age_ms,
+                "source": "llama.metrics+slots",
+            },
+            "errors": _errors,
+            "diagnostics": {
+                "hot_loop_interval_ms": int(round(self.hot_interval * 1000)),
+                "last_hot_duration_ms": int(round(self.last_hot_duration_s * 1000)),
+                "hot_overrun": self.hot_overrun,
+                "hot_overrun_count": self.hot_overrun_count,
+                "source": {
+                    name: self.endpoints.get(name).to_dict(now)
+                    for name in ("metrics", "slots", "status")
+                },
+            },
+        }
+
+    # ---- 1.3.3 任务编排（start / 循环 / 取消） ----
+
+    def start(self) -> None:
+        """
+        启动 1.3.3 分层采集任务（幂等；lifespan 在首轮 collect_once 后调用）。
+
+        - HOT 任务（1s deadline）：hot_round（并行 /metrics+/slots + 内存更新）；
+        - WARM 任务（poll_interval，默认 2s）：_persist_round（Token 落库）。
+        低频频点（/health /props /v1/models /lora /router /SSE）由
+        LlamaRuntimeCollector 的独立任务负责（single-flight 见 1.3.3 改造）。
+        """
+        if self._started:
+            return
+        self._started = True
+        loop = asyncio.get_running_loop()
+        self._hot_task = loop.create_task(self._hot_loop(), name="llama-hot")
+        self._warm_task = loop.create_task(self._warm_loop(), name="llama-warm")
+
+    async def _hot_loop(self) -> None:
+        """HOT 循环：monotonic deadline 调度（不漂移/不重叠/不追赶）。
+
+        GAP-006 语义：hot_round 抛异常（理论上已内部捕获一切）只记日志，
+        本轮仍用最近快照输出（每轮都有输出，循环不空转）。
+        """
+        sched = DeadlineScheduler(self.hot_interval, self.clock, name="llama-hot")
+
+        async def _work() -> None:
+            try:
+                snap = await self.hot_round()
+            except Exception:
+                logger.exception("llama HOT 轮异常（已记录，继续下一轮）")
+                snap = self.last_snapshot
+            # 诊断镜像（/api/realtime diagnostics）
+            self.last_hot_duration_s = sched.last_duration_s
+            self.hot_overrun = sched.last_overrun
+            self.hot_overrun_count = sched.overrun_count
+            cb = self.on_hot_round
+            if cb is not None and snap is not None:
+                try:
+                    cb(snap)
+                except Exception:
+                    logger.exception("llama on_hot_round 回调异常（不影响采集）")
+
+        await sched.run(_work)
+
+    async def _warm_loop(self) -> None:
+        """WARM 循环：DB 落库（2s deadline）。"""
+        sched = DeadlineScheduler(self.interval, self.clock, name="llama-warm")
+
+        async def _work() -> None:
+            try:
+                self._persist_round()
+            except Exception as exc:
+                logger.exception("llama WARM 落库轮错误: %r", exc)
+
+        await sched.run(_work)
+
+    async def stop_tasks(self) -> None:
+        """取消全部后台采集任务（shutdown；幂等；CancelledError 不外泄）。"""
+        tasks = [t for t in (self._hot_task, self._warm_task, *self._cold_tasks)
+                 if t is not None]
+        for t in tasks:
+            if not t.done():
+                t.cancel()
+        for t in tasks:
+            try:
+                await t
+            except (asyncio.CancelledError, Exception):
+                pass
+        self._hot_task = None
+        self._warm_task = None
+        self._cold_tasks = []
+        self._cold_inflight.clear()
+        self._started = False
 
     def _is_usable_number(self, value) -> bool:
         """Counter 值是否可用：非 None、非 NaN/Inf、非负（负值视为不可解析）。"""
@@ -755,39 +1309,45 @@ class MetricsCollector:
         }
 
     async def run(self, out=None) -> None:
-        """常驻采集循环：每个间隔打印一条 JSON 快照，自身永不退出。
+        """常驻采集（1.3.3：start() 分层多任务；独立进程模式）。
 
         注意：默认参数不能写成 `out=sys.stdout.write`——默认值在**类定义（import）
         时求值**，而 PyInstaller --windowed 下 sys.stdout 是 None，会把整个 EXE
         启动直接崩掉（'NoneType' object has no attribute 'write'）。
+        out 每 HOT 轮（1s）收到一份 JSON 快照文本（独立模式调试输出）。
+
+        AUDIT-1.1.1 GAP-006 语义（1.3.3 版）：任何单轮异常（collect/HOT 轮、
+        输出）都记日志后继续下一轮，仅 task 被 cancel（停机）才退出；
+        run 被 cancel 时同步停止后台任务（不泄漏）。
         """
         if out is None:
             out = sys.stdout.write if sys.stdout is not None else (lambda *_a, **_k: None)
-        while True:
-            # AUDIT-1.1.1 GAP-006：try 覆盖整轮（采集 + 输出 + sleep 的 await）。
-            # 原实现 try 只包 collect_once()——out() 抛异常（stdout 关闭）或
-            # sleep 被非 cancel 异常打断都会**杀掉整个采集循环**（采集永久停摆、
-            # 任务消失）。现在任何单轮异常都记日志并继续下一轮；仅 task 被
-            # cancel（停机）才退出循环。
+
+        def _emit(snapshot: dict) -> None:
+            # _valid 是内部标记（Phase 11 样本有效性），不进 JSON 输出
+            out_json = {k: v for k, v in snapshot.items() if not k.startswith("_")}
+            out(json.dumps(out_json, ensure_ascii=False, indent=2) + "\n")
+
+        # 首轮完整采集（与 1.3.3 前一致：并行 /metrics+/slots + 落库）
+        try:
+            snapshot = await self.collect_once()
+        except Exception as exc:  # 双保险，理论上 collect_once 已捕获一切
+            snapshot = offline_snapshot()
+            snapshot["error"] = repr(exc)
+        try:
+            _emit(snapshot)
+        except Exception as exc:
+            logger.exception("采集首轮输出异常（已记录，后续 HOT 轮继续）: %r", exc)
+        self.on_hot_round = _emit
+        self.start()
+        if self._hot_task is not None:
             try:
-                try:
-                    snapshot = await self.collect_once()
-                except Exception as exc:  # 双保险，理论上 collect_once 已捕获一切
-                    snapshot = offline_snapshot()
-                    snapshot["error"] = repr(exc)
-                # _valid 是内部标记（Phase 11 样本有效性），不进 JSON 输出
-                out_json = {k: v for k, v in snapshot.items() if not k.startswith("_")}
-                out(json.dumps(out_json, ensure_ascii=False, indent=2) + "\n")
+                await self._hot_task
             except asyncio.CancelledError:
-                raise  # 停机 cancel：正常退出
-            except Exception as exc:
-                logger.exception("采集循环单轮异常（已恢复，继续下一轮）: %r", exc)
-            try:
-                await asyncio.sleep(self.interval)
-            except asyncio.CancelledError:
+                # run 被 cancel（停机/Ctrl+C）：同步停止后台任务，不泄漏
+                if self._started:
+                    await self.stop_tasks()
                 raise
-            except Exception as exc:
-                logger.exception("采集循环 sleep 异常（已恢复，继续下一轮）: %r", exc)
 
 
 def main() -> None:

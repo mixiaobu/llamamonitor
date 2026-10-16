@@ -51,7 +51,12 @@ class ApiTests(unittest.TestCase):
         async def _fetch_parsed():
             return parsed
 
+        # 1.3.3：/slots 不碰真实网络（黑孔 1.3.3 每轮 1.5s 拖慢套件）
+        async def _fetch_slots():
+            return None
+
         collector._fetch_parsed = _fetch_parsed
+        collector._fetch_slots = _fetch_slots
         app = build_app(db, collector)
         client = TestClient(app)
         client.__enter__()

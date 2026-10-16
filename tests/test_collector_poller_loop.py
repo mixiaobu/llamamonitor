@@ -1,16 +1,15 @@
 """
-AUDIT-1.1.1 GAP-006：Collector 常驻采集循环的健壮性回归。
+AUDIT-1.1.1 GAP-006：Collector 常驻采集循环的健壮性回归（1.3.3 架构版）。
 
-原实现 run() 的 try 只包 collect_once()——out() 抛异常（stdout 关闭）或 sleep
-被非 cancel 异常打断都会**杀掉整个采集循环**（采集永久停摆、任务消失）。
-1.1.1 放宽 try 范围覆盖整轮：任何单轮异常记日志后继续下一轮，仅 task 被 cancel
-（停机）才退出循环。
+1.3.3 起 run() = 首轮 collect_once + start()（HOT 1s deadline 循环 + WARM
+落库循环）。GAP-006 语义不变：**任何单轮异常（HOT 轮 / 输出）记日志后继续
+下一轮，仅 task 被 cancel（停机）才退出循环**；run 被 cancel 时同步停止
+后台任务（不泄漏）。
 
 本测试直接驱动 collector.run()（不拉起真实网络/DB），验证：
-1. collect_once 抛异常 -> 循环存活（offline_snapshot + 继续）；
-2. out() 抛异常 -> 循环存活（下一轮仍输出）；
-3. sleep 被非 cancel 异常打断 -> 循环存活；
-4. cancel -> 干净退出（CancelledError 传播，循环停止）。
+1. hot_round 抛异常 -> 循环存活（每轮仍用最近快照输出 + 继续）；
+2. out() 抛异常 -> 循环存活（下一轮仍调用 HOT 轮）；
+3. cancel -> 干净退出（CancelledError 传播，后台任务停止）。
 
 运行：python -X utf8 -m unittest discover -s tests
 """
@@ -29,21 +28,38 @@ def _mk_collector():
 
 
 class CollectorPollerLoopTests(unittest.TestCase):
-    def test_collect_once_exception_does_not_kill_loop(self):
-        """collect_once 抛异常 -> 用 offline_snapshot 兜底并继续下一轮。"""
-        collector = _mk_collector()
+    def _mk_fast_collector(self):
+        """HOT 间隔压到 0.01s（测试时间尺度；生产 HOT_INTERVAL=1.0）。
+
+        用真实 monotonic 时钟：1.3.3 DeadlineScheduler 的 deadline 锚定依赖
+        monotonic 随时间推进；FakeClock 的 monotonic 不随真实时间走，
+        不适合这类"真实时间跑若干轮"的循环测试。
+        """
+        collector = MetricsCollector(make_config(poll_interval=0.01))
+        collector.hot_interval = 0.01
+        return collector
+
+    def test_hot_round_exception_does_not_kill_loop(self):
+        """hot_round 抛异常 -> 循环存活（每轮仍用最近快照输出 + 继续）。"""
+        collector = self._mk_fast_collector()
         calls = {"n": 0}
 
-        async def _collect_once_boom():
-            calls["n"] += 1
-            raise RuntimeError("collect boom")
+        async def _ok_collect():
+            s = offline_snapshot()
+            collector.last_snapshot = s
+            return s
 
-        collector.collect_once = _collect_once_boom  # type: ignore
+        async def _hot_boom():
+            calls["n"] += 1
+            raise RuntimeError("hot boom")
+
+        collector.collect_once = _ok_collect  # type: ignore
+        collector.hot_round = _hot_boom  # type: ignore
         outputs = []
 
         async def _drive():
             task = asyncio.create_task(collector.run(out=outputs.append))
-            # 给循环跑 ~5 轮（interval=0.01s）
+            # 给 HOT 循环跑 ~5 轮（hot_interval=0.01s）
             await asyncio.sleep(0.06)
             task.cancel()
             try:
@@ -54,19 +70,25 @@ class CollectorPollerLoopTests(unittest.TestCase):
         asyncio.run(_drive())
         # 多轮都执行了（循环没在第一轮异常后停摆）
         self.assertGreaterEqual(calls["n"], 3)
-        # 每轮都有输出（offline_snapshot 兜底）
+        # 每轮都有输出（最近快照兜底）
         self.assertGreaterEqual(len(outputs), 3)
 
     def test_out_exception_does_not_kill_loop(self):
-        """out() 抛异常（如 stdout 关闭）-> 循环存活，下一轮仍调用 collect。"""
-        collector = _mk_collector()
-        collect_calls = {"n": 0}
+        """out() 抛异常（如 stdout 关闭）-> 循环存活，下一轮仍调用 HOT 轮。"""
+        collector = self._mk_fast_collector()
+        hot_calls = {"n": 0}
 
         async def _ok_collect():
-            collect_calls["n"] += 1
+            s = offline_snapshot()
+            collector.last_snapshot = s
+            return s
+
+        async def _ok_hot():
+            hot_calls["n"] += 1
             return offline_snapshot()
 
         collector.collect_once = _ok_collect  # type: ignore
+        collector.hot_round = _ok_hot  # type: ignore
         out_calls = {"n": 0}
 
         def _boom_out(text):
@@ -84,8 +106,8 @@ class CollectorPollerLoopTests(unittest.TestCase):
                 pass
 
         asyncio.run(_drive())
-        # out 第一轮抛异常后，循环没死：后续轮仍调用 collect（>=3 轮）
-        self.assertGreaterEqual(collect_calls["n"], 3)
+        # out 第一轮抛异常后，循环没死：后续轮仍调用 HOT 轮（>=3 轮）
+        self.assertGreaterEqual(hot_calls["n"], 3)
         self.assertGreaterEqual(out_calls["n"], 3)
 
     def test_cancel_cleans_up_loop(self):

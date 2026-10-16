@@ -610,8 +610,15 @@
   width: 7px; height: 7px; border-radius: 50%;
   background: var(--color-success, #4cc38a);
 }
-.freshness-badge.stale { color: var(--color-warning, #f7b955); }
-.freshness-badge.stale .fb-dot { background: var(--color-warning, #f7b955); }
+/* 1.3.3 §15 新鲜度四态：实时（默认绿）/ 轻微延迟（黄）/ 数据延迟（橙红）/
+   状态未知（灰）。后端实时 API 不可达超过阈值或尚无数据 -> 状态未知，
+   绝不把"数据缺失"显示成"空闲"。 */
+.freshness-badge.slow { color: var(--color-warning, #f7b955); }
+.freshness-badge.slow .fb-dot { background: var(--color-warning, #f7b955); }
+.freshness-badge.stale { color: #ff9955; }
+.freshness-badge.stale .fb-dot { background: #ff9955; }
+.freshness-badge.unknown { color: var(--text-secondary); opacity: 0.75; }
+.freshness-badge.unknown .fb-dot { background: var(--text-secondary); }
 .freshness-badge.offline { color: var(--color-danger, #ff99a4); }
 .freshness-badge.offline .fb-dot { background: var(--color-danger, #ff99a4); }
 

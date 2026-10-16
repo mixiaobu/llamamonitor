@@ -11,19 +11,40 @@ strata_collector.py — Strata 推理后端采集器（1.3.0）
   全部**内存态**，经 /api/strata/live 实时服务，不落库（§51：不永久保存
   请求记录；§90：不把整个 metrics JSON 每轮写库）。
 
-采样策略（§89；interval 默认 2s）：
-- /metrics   每轮（Token 累计 + live + requests + conversation_cache +
-             engine + hardware，JSON ~12KB，单次抓取 + 单次解析）；
-- /status    每轮（当前请求进度/phase/queued；小 JSON）；
-- /slots     每 2 轮（~4s；Strata Slot 语义与 llama.cpp 不同，低频即可）；
-- /health    每 5 轮（~10s；loaded/模型/context/模态）；
-- /props + /v1/models  首轮 + 每 300 轮（~10 分钟，节流；模型元数据）。
+采集链路分层（1.3.3 重构；对齐官方 Strata Monitor ~1s 刷新 /metrics 的节奏）：
+
+A. HOT PATH（1s，deadline 调度，不漂移/不重叠/不追赶）：
+   - GET /metrics（独立 1.5s 超时）——实时数据第一来源（live state /
+     engine / requests / conversation_cache / hardware 全在 /metrics JSON）；
+   - 解析后立即更新内存态（live / engine_info / conversation_cache /
+     recent_requests / backend_hardware / server_state / 快照 /
+     sample_timestamp / sequence）——**HOT 轮不写数据库**；
+   - activity 判定：metrics.live 第一优先（state=reading/generating、
+     running>0、outside_slots>0），/status.busy 第二优先，明确 idle 才 idle；
+     **绝不使用 /slots[].is_processing**（它只负责 Slot 信息/数量/辅助诊断）；
+   - 本轮 /metrics 失败：保留上一轮数据与 activity（不翻 idle），
+     连续 OFFLINE_TOLERANCE(5) 次才切离线表现（1.3.1 容忍语义不变）。
+
+B. WARM PATH（2s=既有历史采样策略，独立任务；DB 写入 + 辅助端点）：
+   - Token 样本落库（live_samples / daily_usage，与 1.3.2 同节奏——
+     1s 实时刷新不会加倍历史写入）；
+   - /status 5s 节流、/slots 10s、/health 10s（metrics 失败时立即重探
+     health 以区分 unreachable / monitoring_error）；
+   - 每个辅助端点独立 3s 超时 + EndpointState（故障局部化）。
+
+C. COLD PATH（single-flight 后台任务，绝不阻塞 HOT）：
+   - 延迟 histogram + 主机硬件落库（15s，?format=prometheus）；
+   - /v1/status uptime/并发（300s）；
+   - /props + /v1/models 模型元数据（600s + 重连）；
+   - 每类任务最多一个 in-flight；上一轮未完成则跳过本轮；
+     exception 捕获；CancelledError 传播；shutdown 正确取消。
 
 只读：全部 GET；绝不调用控制接口、绝不发送推理请求（§84）。
 
 故障隔离：
-- /metrics 失败 -> offline（与 llama.cpp 同语义：server_offline 缺口）；
-- /status 失败 -> 本轮 live 状态保持上一次（"暂不可用"），不影响 Token 落库；
+- 任一辅助端点 timeout / 5xx / 4xx / 坏 JSON 只局部化（EndpointState），
+  /metrics 继续 1s 刷新，实时监控不中断；
+- 能力型错误（404/501/401）按 15s 恢复间隔节流，不每秒狂刷；
 - 单轮任何异常只记日志，循环不退出。
 """
 
@@ -39,7 +60,13 @@ import httpx
 from clock import Clock, default_clock
 from config import AppConfig, trust_env_for
 from db import Database, local_date
+from endpoint_state import (
+    EndpointRegistry,
+    classify_exception,
+    classify_http_status,
+)
 from gap_tracker import OFFLINE_TOLERANCE, GapTracker
+from scheduling import DeadlineScheduler
 from stats import mtp_accept_rate, tps
 from strata_parser import (
     STRATA_COUNTERS,
@@ -62,15 +89,22 @@ logger = logging.getLogger("llamamonitor.strata")
 MAX_METRICS_BYTES = 16 * 1024 * 1024
 MAX_SMALL_BYTES = 1 * 1024 * 1024
 
-# 轮次调度（以轮为单位；interval 默认 2s）
-SLOTS_EVERY = 2      # /slots 每 2 轮
-HEALTH_EVERY = 5     # /health 每 5 轮
-PROPS_EVERY = 300    # /props + /v1/models 每 300 轮（~10 分钟）
-# 1.3.2 低频遥测（monotonic 节流，不占主采集路径）
+# ---- 1.3.3 分层调度（秒）----
+HOT_INTERVAL = 1.0        # HOT PATH：/metrics（官方 Monitor ~1s 节奏）
+STATUS_INTERVAL = 5.0     # WARM：/status（辅助；activity 权威在 /metrics.live）
+SLOTS_INTERVAL = 10.0     # WARM：/slots（Slot 信息/数量/辅助诊断，不参与 activity）
+HEALTH_INTERVAL = 10.0    # WARM：/health（loaded/模型/context/模态）
+METADATA_INTERVAL = 600.0 # COLD：/props + /v1/models（模型元数据，~10 分钟）
+# 1.3.2 低频遥测（COLD 独立任务；monotonic 节流，绝不占 HOT PATH）
 HISTOGRAM_INTERVAL = 15.0    # /metrics?format=prometheus 延迟 Histogram 采样
                              # + Strata 主机硬件落库（spec 建议 10~15s）
 V1_STATUS_INTERVAL = 300.0   # /v1/status（uptime/concurrency；低频 5 分钟）
 REQUESTS_ALL_TTL = 30.0      # 按需"查看更多"请求的内存缓存 TTL
+REQUESTS_ALL_MAX = 200       # 按需拉取的最大请求数
+# ---- 1.3.3 分端点超时（§19：HOT 短、WARM/COLD 略长；绝不无限）----
+HOT_TIMEOUT = 1.5
+WARM_TIMEOUT = 3.0
+COLD_TIMEOUT = 5.0
 REQUESTS_ALL_MAX = 200       # 按需拉取的最大请求数
 
 # 核心 Counter（namespaced）：缺口 possible_token_loss 判定用
@@ -161,6 +195,39 @@ class StrataCollector:
         self._histo_capable: bool | None = None  # prometheus 端点可达性探测
         self._uptime_info: dict | None = None    # /v1/status 摘要（内存态）
         self._requests_all_cache: tuple | None = None  # (mono, [entries])
+        # ---- 1.3.3：分层采集状态（HOT/WARM/COLD + 端点健康 + 新鲜度）----
+        self.hot_interval = HOT_INTERVAL
+        # 默认（未指定 per-endpoint timeout 时的）请求超时
+        self._client_timeout: float = WARM_TIMEOUT
+        # 端点健康状态（§16 故障隔离：每端点独立 available/age/连续失败/错误分类）
+        self.endpoints = EndpointRegistry()
+        # 新鲜度（§14：live_last_update = 最近一次 HOT PATH 成功取得实时数据
+        # 的时刻——**不是**所有后台任务完成时刻；/v1/status 卡 3s 不影响它）
+        self.sample_timestamp: float | None = None   # 最近成功 HOT /metrics（wall）
+        self.live_last_update: float | None = None   # 语义同上（API 明确字段）
+        self.sequence: int = 0                       # 单调样本序号（竞态防护）
+        # activity（§4 判定规则；每 HOT 轮重算，失败轮保留上一轮）
+        self.activity_state: dict | None = None
+        self._last_activity: dict | None = None
+        # HOT 循环诊断（§31：/api/realtime diagnostics）
+        self.last_hot_duration_s: float = 0.0
+        self.hot_overrun: bool = False
+        self.hot_overrun_count: int = 0
+        # 分端点节流（monotonic；WARM/COLD 内部节奏）
+        self._last_status_mono: float = 0.0
+        self._last_slots_mono: float = 0.0
+        self._last_health_mono: float = 0.0
+        # 后台任务句柄（single-flight：每类任务最多一个 in-flight）
+        self._started = False
+        self._hot_task: asyncio.Task | None = None
+        self._warm_task: asyncio.Task | None = None
+        self._cold_tasks: list[asyncio.Task] = []
+        self._cold_inflight: set[str] = set()
+        # 每 HOT 轮完成后的回调（server 层刷新 app_state / runtime 同步）
+        self.on_hot_round = None
+        # HOT 预校验通过的待落库样本 (normalized, metrics, now_wall, now_mono)；
+        # WARM 轮消费。失败/无效轮置 None——绝不拿旧样本重算 delta（会误关缺口）
+        self._pending_sample: tuple | None = None
 
     # ---- 缺口 API（与 MetricsCollector 同名，server 层统一调用） ----
 
@@ -205,32 +272,88 @@ class StrataCollector:
         return self._http
 
     async def _fetch_text(self, path: str, limit: int,
-                          headers: dict | None = None) -> tuple:
-        """GET base+path -> (text, ok)。任何失败 (None, False)。"""
+                          headers: dict | None = None,
+                          timeout: float | None = None,
+                          endpoint: str | None = None) -> tuple:
+        """
+        GET base+path -> (text, ok, error)。
+
+        1.3.3：timeout 分端点（HOT 1.5s / WARM 3s / COLD 5s）；
+        endpoint 非 None 时同步记录 EndpointState（错误分类 §17）：
+        404/501=unsupported、401=authentication_error、429=rate_limited、
+        500/502/503=temporarily_unavailable、timeout、unreachable、
+        invalid_response（坏 JSON 由 _fetch_json 记录）。
+        """
+        now_wall = self.clock.now()
+        now_mono = self.clock.monotonic()
         try:
             client = self._get_client()
-            response = await client.get(self.base_url + path, headers=headers or None)
-            if response.status_code != 200:
-                return None, False
-            if len(response.content) > limit:
-                logger.warning("Strata %s 响应超过 %.0fMB 上限，按不可用处理",
-                               path, limit / 1048576)
-                return None, False
-            return response.content.decode("utf-8", "replace"), True
-        except Exception:
-            return None, False
+            response = await client.get(
+                self.base_url + path, headers=headers or None,
+                timeout=timeout if timeout is not None else self._client_timeout,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            if endpoint is not None:
+                err = classify_exception(exc)
+                self._record_endpoint(endpoint, now_wall, now_mono, err)
+            return None, False, classify_exception(exc)
+        status = response.status_code
+        if status != 200:
+            err = classify_http_status(status)
+            if endpoint is not None:
+                self._record_endpoint(endpoint, now_wall, now_mono, err)
+            return None, False, err
+        if len(response.content) > limit:
+            logger.warning("Strata %s 响应超过 %.0fMB 上限，按不可用处理",
+                           path, limit / 1048576)
+            err = "response_too_large"
+            if endpoint is not None:
+                self._record_endpoint(endpoint, now_wall, now_mono, err)
+            return None, False, err
+        text = response.content.decode("utf-8", "replace")
+        if endpoint is not None:
+            self._record_endpoint(endpoint, now_wall, now_mono, None)
+        return text, True, None
 
-    async def _fetch_json(self, path: str, limit: int) -> tuple:
-        """GET + JSON 解析 -> (payload, ok)。"""
-        text, ok = await self._fetch_text(path, limit)
+    def _record_endpoint(self, name: str, now_wall: float, now_mono: float,
+                         error: str | None) -> None:
+        """记录端点尝试结果（状态转换才记日志，不逐轮刷屏 §32）。"""
+        st = self.endpoints.get(name)
+        prev_error = st.last_error
+        if error is None:
+            was_available = st.available
+            st.record_success(now_wall, now_mono)
+            if not was_available:
+                logger.info("Strata 端点 %s 恢复可用", name)
+        else:
+            st.record_failure(now_wall, now_mono, error)
+            if not st.available and (prev_error != error
+                                     or st.consecutive_failures in (1, 5, 10, 30)):
+                logger.warning("Strata 端点 %s 不可用（%s，连续 %d 次）",
+                               name, error, st.consecutive_failures)
+
+    async def _fetch_json(self, path: str, limit: int,
+                          timeout: float | None = None,
+                          endpoint: str | None = None) -> tuple:
+        """GET + JSON 解析 -> (payload, ok, error)。"""
+        text, ok, err = await self._fetch_text(path, limit, timeout=timeout,
+                                               endpoint=endpoint)
         if not ok or text is None:
-            return None, False
+            return None, False, err
         try:
-            return json.loads(text), True
+            return json.loads(text), True, None
         except Exception:
-            return None, False
+            if endpoint is not None:
+                self._record_endpoint(endpoint, self.clock.now(),
+                                      self.clock.monotonic(), "invalid_response")
+            return None, False, "invalid_response"
 
     async def aclose(self) -> None:
+        # 1.3.3：先取消全部后台采集任务（HOT/WARM/COLD），再关 HTTP client
+        if self._started:
+            await self.stop_tasks()
         if self._http is not None:
             try:
                 await self._http.aclose()
@@ -252,82 +375,55 @@ class StrataCollector:
         except Exception as exc:
             logger.warning("写入 monitor_stop 事件失败: %r", exc)
 
-    # ---- 采集轮 ----
+    # ---- 1.3.3 分层采集：HOT / WARM / COLD ----
 
-    async def collect_once(self) -> dict:
+    async def _hot_round(self) -> dict:
         """
-        一轮采集（调度：metrics+status 每轮；slots 每 2 轮；health 每 5 轮；
-        props+models 首轮+每 300 轮）。返回快照（含 offline 轮）。
+        1.3.3 HOT PATH（~1s，由 _hot_loop 的 deadline 调度驱动）：
+
+        只做一件事——GET /metrics（独立 1.5s 超时）-> 解析 -> **立即**更新内存态
+        （live / engine_info / conversation_cache / recent_requests /
+        backend_hardware / server_state / 快照 / sample_timestamp / sequence）。
+        不写数据库、不请求其它端点（WARM/COLD 任务负责）。
+
+        activity 判定（spec §4，绝不使用 /slots[].is_processing）：
+        - 第一优先 /metrics.live：state=reading/generating、running>0、
+          outside_slots>0 任一 -> active；
+        - 第二优先 /status.busy == true -> active；
+        - 明确 live.state=="idle" 且 running==0 且 status.busy!=true 才 idle；
+        - generated==0 的 "reading the prompt" 是 Prompt Processing（active），
+          绝不因为 tok_s==0 判 idle。
+
+        失败语义（1.3.1 容忍不变）：连续 <5 次保留上一轮数据与 activity
+        （不翻 idle、状态机不翻转）；>=5 次才切离线表现。
         """
-        self._round += 1
         now_wall = self.clock.now()
         now_mono = self.clock.monotonic()
 
-        # 1) /metrics（Token 主数据源）
-        metrics_text, metrics_ok = await self._fetch_text("/metrics", MAX_METRICS_BYTES)
+        # 1) /metrics（实时数据第一来源）
+        # §18：/metrics 能力型错误（unsupported/auth/rate_limited）期间
+        # 恢复探测按 15s 节流——不每秒重复请求已知 501 的端点
+        if self.endpoints.get("metrics").should_poll(now_mono):
+            metrics_text, metrics_ok, _ = await self._fetch_text(
+                "/metrics", MAX_METRICS_BYTES, timeout=HOT_TIMEOUT, endpoint="metrics")
+        else:
+            metrics_text, metrics_ok = None, False
         metrics = parse_metrics_json(metrics_text) if metrics_ok else None
         self.endpoint_ok["metrics"] = metrics is not None
-
-        # 2) /status（当前请求；失败不影响 Token 落库）
-        status_raw, status_ok = await self._fetch_json("/status", MAX_SMALL_BYTES)
-        if status_ok and isinstance(status_raw, dict):
-            # 隐私边界：tail / tool 剥离（tail 是正在生成的实际文本）
-            self._status = {
-                k: v for k, v in status_raw.items() if k not in ("tail", "tool")
-            }
-        else:
-            self._status = None
-        self.endpoint_ok["status"] = self._status is not None
-
-        # 3) 调度轮：slots / health / props+models
-        #    health 在 metrics 失败的同一轮**立即**再探测一次——区分
-        #    "服务整体不可达"（health 也挂 -> unreachable）与
-        #    "监测异常"（health 正常但 metrics 坏了 -> monitoring_error）；
-        #    平时 10s 节流（HEALTH_EVERY 轮）。
-        poll_health = (
-            self._reconnect_pending
-            or self._round % HEALTH_EVERY == 1
-            or metrics is None
-            or not isinstance((metrics or {}).get("totals"), dict)
-        )
-        if self._reconnect_pending or self._round % SLOTS_EVERY == 1:
-            slots_raw, slots_ok = await self._fetch_json("/slots", MAX_SMALL_BYTES)
-            self.endpoint_ok["slots"] = slots_ok and isinstance(slots_raw, list)
-            if slots_ok and isinstance(slots_raw, list):
-                self._slots = slots_raw
-        health_polled = False
-        if poll_health:
-            health_raw, health_ok = await self._fetch_json("/health", MAX_SMALL_BYTES)
-            health_polled = True
-            self.endpoint_ok["health"] = health_ok and isinstance(health_raw, dict)
-            if health_ok and isinstance(health_raw, dict):
-                self._health = build_health_info(health_raw)
-                self._note_model_loaded()
-            else:
-                # 本轮探测失败：旧 health 不可再当权威（否则"整体不可达"
-                # 会被误判为"监测异常"）
-                self._health = None
-        if self._reconnect_pending or self._round % PROPS_EVERY == 1:
-            props_raw, props_ok = await self._fetch_json("/props", MAX_SMALL_BYTES)
-            models_raw, models_ok = await self._fetch_json("/v1/models", MAX_SMALL_BYTES)
-            self.endpoint_ok["props"] = props_ok and isinstance(props_raw, dict)
-            self.endpoint_ok["models"] = models_ok and isinstance(models_raw, dict)
-            if props_ok and isinstance(props_raw, dict):
-                self._props = props_raw
-            if models_ok and isinstance(models_raw, dict):
-                self._models = models_raw
-            self._refresh_static()
-            self._reconnect_pending = False
-
-        # 4) 内存态规范化 + 5) Token 落库路径
-        # 1.3.1 容忍：连续 <OFFLINE_TOLERANCE(5) 次 /metrics 抓取失败保留上一轮
-        # 全部内存态（live/引擎/会话缓存/最近请求/硬件/server_state 不变），
-        # 快照按保留数据构建（online 保持 True）；连续 >=5 次才切离线表现。
         has_totals = metrics is not None and isinstance(metrics.get("totals"), dict)
+        # health 新鲜度（替代旧"本轮是否刚探测 health"布尔：WARM 10s 节奏，
+        # metrics 失败时 WARM 立即重探——30s 窗口内视为可用权威）
+        h = self.endpoints.get("health")
+        health_fresh = (
+            h.available and h.last_attempt_mono is not None
+            and (now_mono - h.last_attempt_mono) <= HEALTH_INTERVAL * 3
+        )
+
         if metrics is None:
             self._offline_streak += 1
             # 离线轮：开启 server_offline 缺口（GapTracker 幂等，起点=最后有效样本）
             self._gaps.on_offline(now_wall, now_mono)
+            self._pending_sample = None  # 失败轮不重放旧样本（会误关缺口/重复落库）
             if self._offline_streak < OFFLINE_TOLERANCE:
                 if self.last_snapshot is not None and self.last_snapshot.get("online"):
                     # 保留最近一次有效数据与状态（状态机不翻转、不记事件）
@@ -342,7 +438,7 @@ class StrataCollector:
                 self.recent_requests = build_recent_requests(metrics, limit=20)
                 self._metrics = metrics
                 self._update_capabilities()
-                self._update_server_state(metrics, health_polled)
+                self._update_server_state(metrics, health_fresh)
                 snapshot = self._offline_snapshot()
         else:
             self._offline_streak = 0
@@ -353,17 +449,36 @@ class StrataCollector:
             self._metrics = metrics
             self.backend_hardware = self._sanitize_hardware(metrics)
             self._update_capabilities()
-            self._update_server_state(metrics, health_polled)
-            if not has_totals:
-                # /metrics 可读但无 totals（结构不符）：在线但样本无效
+            self._update_server_state(metrics, health_fresh)
+            # 预校验（HOT 与 WARM 落库同一口径 normalize_totals_sample）：
+            # 避免"快照说 valid、WARM 说 invalid"的不一致
+            normalized = normalize_totals_sample(
+                metrics.get("totals"), self._namespaced_state())
+            if normalized is None:
+                # 无 totals / 约束违反 / 核心字段缺失：在线但样本无效
+                # （保持旧 baseline + invalid_metrics 缺口）
                 snapshot = self._online_snapshot(metrics)
                 snapshot["_valid"] = False
                 self._invalid_streak += 1
                 self._gaps.on_invalid(now_wall, now_mono)
+                self._pending_sample = None
             else:
-                snapshot = self._handle_metrics_sample(metrics, now_wall, now_mono)
+                # 有效样本：快照即刻发布；DB 写入在 WARM 轮（_persist_round）
+                snapshot = self._online_snapshot(metrics)
+                snapshot["_valid"] = True
+                self._pending_sample = (normalized, metrics, now_wall, now_mono)
 
-        # 6) 状态转换日志/事件（online/offline）
+        # 2) activity（成功轮按最新数据重算；失败轮保留上一轮并标注 stale）
+        self._compute_activity()
+
+        # 3) 新鲜度（仅 HOT 成功时推进——live_last_update 绝不代表
+        #    "所有后台任务完成时刻"，/v1/status 卡 3s 不影响它，spec §14）
+        if metrics is not None:
+            self.sample_timestamp = now_wall
+            self.live_last_update = now_wall
+            self.sequence += 1
+
+        # 4) 状态转换日志/事件（online/offline）
         online = bool(snapshot.get("online"))
         if self._last_online is not None and online != self._last_online:
             if online:
@@ -371,30 +486,433 @@ class StrataCollector:
                 self._record_event("strata_online", "success",
                                    {"provider": "strata", "url": self.metrics_url}, now_wall)
             else:
-                logger.warning("Strata 离线（/metrics 抓取失败），采集循环继续")
+                logger.warning("Strata 离线（/metrics 连续 %d 次抓取失败）",
+                               self._offline_streak)
                 self._record_event("strata_offline", "warning",
                                    {"provider": "strata", "url": self.metrics_url}, now_wall)
         self._last_online = online
 
-        # 7) 1.3.2：低频遥测——延迟 Histogram + 后端硬件（15s 节流）；
-        #    /v1/status uptime/concurrency（5 分钟 + 重连）。失败不影响主流程。
-        if now_mono - self._last_histo_mono >= HISTOGRAM_INTERVAL:
-            self._last_histo_mono = now_mono
-            try:
-                await self._poll_histogram_and_hardware()
-            except Exception as exc:
-                logger.debug("Strata 遥测轮错误（延迟/硬件）: %r", exc)
-        if (not self._v1status_done) or \
-                (now_mono - self._last_v1status_mono >= V1_STATUS_INTERVAL):
-            self._last_v1status_mono = now_mono
-            try:
-                await self._poll_v1_status()
-            except Exception as exc:
-                logger.debug("Strata /v1/status 轮错误: %r", exc)
-
         self.last_snapshot = snapshot
         self.last_update = self.clock.now()
         return snapshot
+
+    def _compute_activity(self) -> None:
+        """
+        activity 判定（1.3.3 §4 优先级）：
+        1) /metrics.live 权威：state=reading/generating 或 running>0 或 outside>0；
+        2) /status.busy == true；
+        3) 明确 idle：live.state=="idle" 且 running==0 且 status.busy != true。
+        /slots[].is_processing 绝不参与（它只负责 Slot 信息/数量/辅助诊断）。
+        metrics 失败轮：保留上一轮 activity（source 加 stale: 前缀），
+        不能直接变 idle（§15/§30）。
+        """
+        m = self.endpoints.get("metrics")
+        live = self.live or {}
+        live_state = live.get("state")
+        running = int(live.get("running") or 0)
+        outside = int(live.get("outside_slots") or 0)
+        status = self._status or {}
+        status_ok = self.endpoints.get("status").available
+        status_busy = bool(status.get("busy")) if status_ok else False
+        phase = live.get("phase")
+
+        if m.available:
+            live_active = (live_state in ("reading", "generating")
+                           or running > 0 or outside > 0)
+            if live_active:
+                act = {
+                    "active": True,
+                    "state": live_state if live_state in ("reading", "generating") else "unknown",
+                    "phase": phase,
+                    "source": "strata.metrics.live",
+                    "confidence": "authoritative",
+                }
+            elif status_ok and status_busy:
+                act = {
+                    "active": True, "state": "unknown",
+                    "phase": status.get("phase"),
+                    "source": "strata.status", "confidence": "secondary",
+                }
+            elif live_state == "idle" and running == 0 and not (status_ok and status_busy):
+                act = {
+                    "active": False, "state": "idle", "phase": phase,
+                    "source": "strata.metrics.live", "confidence": "authoritative",
+                }
+            else:
+                act = {
+                    "active": False, "state": "unknown", "phase": phase,
+                    "source": "strata.metrics.live", "confidence": "degraded",
+                }
+        else:
+            # metrics 失败轮：保留上一轮 activity（不翻 idle；§15/§30）。
+            # stale: 前缀只加一层（上一轮已是 stale 时不重复累积）
+            if self._last_activity is not None:
+                act = dict(self._last_activity)
+                _src = str(act.get("source") or "none")
+                if _src.startswith("stale:"):
+                    _src = _src[len("stale:"):]
+                act["source"] = "stale:" + _src
+                act["confidence"] = "stale"
+            elif status_ok and status_busy:
+                act = {
+                    "active": True, "state": "unknown",
+                    "phase": status.get("phase"),
+                    "source": "strata.status", "confidence": "secondary",
+                }
+            else:
+                act = {
+                    "active": False, "state": "unknown", "phase": None,
+                    "source": "none", "confidence": "unknown",
+                }
+        self._last_activity = act
+        self.activity_state = act
+
+    def _persist_round(self) -> None:
+        """
+        1.3.3 WARM：Token 样本落库（消费 HOT 轮预校验通过的 pending 样本）。
+
+        HOT 轮只更新内存；历史库写入保持既有 2s 节奏（1s 实时刷新不会
+        加倍 SQLite 写入，spec §24）。无 pending（离线/无效/上一轮已消费）
+        时不写库——绝不重放旧样本（会误关缺口、重复计数 delta）。
+        落库时间戳用样本自身的采集时刻（HOT 轮 now），缺口判定以采样
+        间隔为准。
+        """
+        pending = self._pending_sample
+        if pending is None:
+            return
+        self._pending_sample = None
+        normalized, metrics, now_wall, now_mono = pending
+        self._persist_valid_sample(normalized, metrics, now_wall, now_mono)
+
+    async def _poll_status(self) -> None:
+        """WARM：/status（5s 节流；辅助源，失败保留上一轮值——故障隔离）。"""
+        if not self.endpoints.get("status").should_poll(self.clock.monotonic()):
+            return
+        raw, ok, _ = await self._fetch_json(
+            "/status", MAX_SMALL_BYTES, timeout=WARM_TIMEOUT, endpoint="status")
+        if ok and isinstance(raw, dict):
+            # 隐私边界：tail / tool 剥离（tail 是正在生成的实际文本）
+            self._status = {k: v for k, v in raw.items() if k not in ("tail", "tool")}
+            self.endpoint_ok["status"] = True
+        else:
+            # 保留上一轮值（stale）；端点健康由 EndpointState 表达
+            self.endpoint_ok["status"] = False
+
+    async def _poll_slots(self) -> None:
+        """WARM：/slots（10s；Slot 信息/数量/辅助诊断——不参与 activity）。"""
+        if not self.endpoints.get("slots").should_poll(self.clock.monotonic()):
+            return
+        raw, ok, _ = await self._fetch_json(
+            "/slots", MAX_SMALL_BYTES, timeout=WARM_TIMEOUT, endpoint="slots")
+        if ok and isinstance(raw, list):
+            self._slots = raw
+            self.endpoint_ok["slots"] = True
+        else:
+            self.endpoint_ok["slots"] = False
+
+    async def _poll_health(self) -> None:
+        """WARM：/health（10s；metrics 失败时立即重探——区分 unreachable/monitoring_error）。"""
+        if not self.endpoints.get("health").should_poll(self.clock.monotonic()):
+            return
+        raw, ok, _ = await self._fetch_json(
+            "/health", MAX_SMALL_BYTES, timeout=WARM_TIMEOUT, endpoint="health")
+        if ok and isinstance(raw, dict):
+            self._health = build_health_info(raw)
+            self._note_model_loaded()
+            self.endpoint_ok["health"] = True
+        else:
+            # 探测失败：旧 health 不可再当权威（否则"整体不可达"误判为"监测异常"）
+            self._health = None
+            self.endpoint_ok["health"] = False
+
+    async def _poll_metadata(self) -> None:
+        """COLD：/props + /v1/models（模型元数据；600s + 重连）。"""
+        if not self.endpoints.get("props").should_poll(self.clock.monotonic()):
+            return
+        props_raw, props_ok, _ = await self._fetch_json(
+            "/props", MAX_SMALL_BYTES, timeout=COLD_TIMEOUT, endpoint="props")
+        models_raw, models_ok, _ = await self._fetch_json(
+            "/v1/models", MAX_SMALL_BYTES, timeout=COLD_TIMEOUT, endpoint="models")
+        self.endpoint_ok["props"] = props_ok and isinstance(props_raw, dict)
+        self.endpoint_ok["models"] = models_ok and isinstance(models_raw, dict)
+        if props_ok and isinstance(props_raw, dict):
+            self._props = props_raw
+        if models_ok and isinstance(models_raw, dict):
+            self._models = models_raw
+        self._refresh_static()
+        self._reconnect_pending = False
+
+    async def collect_once(self) -> dict:
+        """
+        一轮完整采集（1.3.3 兼容入口：测试 / 独立模式 / lifespan 首轮）。
+
+        顺序与 1.3.2 一致（辅助端点先行，live 状态用最新 status 构建）：
+        /status 每轮；/slots 每 2 轮、/health 每 5 轮（metrics 失败立即重探）、
+        /props+/v1/models 首轮/重连/每 300 轮 -> HOT /metrics 轮 -> WARM 落库。
+        1.3.3 生产路径改用 start() 多任务分层（HOT 1s / WARM 2s / COLD）。
+        """
+        self._round += 1
+        await self._poll_status()
+        poll_health = (
+            self._reconnect_pending
+            or self._round % 5 == 1
+            or self.endpoints.get("metrics").consecutive_failures > 0
+        )
+        if self._reconnect_pending or self._round % 2 == 1:
+            await self._poll_slots()
+        if poll_health:
+            await self._poll_health()
+        if self._reconnect_pending or self._round % 300 == 1:
+            await self._poll_metadata()
+        snapshot = await self._hot_round()
+        try:
+            self._persist_round()
+        except Exception as exc:
+            logger.exception("Strata WARM 落库轮错误（不影响 HOT）: %r", exc)
+        # 1.3.2 低频遥测兼容：未走 start() 的 COLD 任务时（测试 / 独立模式 /
+        # lifespan 首轮），保留 15s histogram + 300s /v1/status 轮次调度
+        if not self._started:
+            now_mono = self.clock.monotonic()
+            if now_mono - self._last_histo_mono >= HISTOGRAM_INTERVAL:
+                self._last_histo_mono = now_mono
+                try:
+                    await self._poll_histogram_and_hardware()
+                except Exception as exc:
+                    logger.debug("Strata 遥测轮错误（延迟/硬件）: %r", exc)
+            if (not self._v1status_done) or \
+                    (now_mono - self._last_v1status_mono >= V1_STATUS_INTERVAL):
+                self._last_v1status_mono = now_mono
+                try:
+                    await self._poll_v1_status()
+                except Exception as exc:
+                    logger.debug("Strata /v1/status 轮错误: %r", exc)
+        return snapshot
+
+    def realtime_payload(self) -> dict:
+        """
+        1.3.3 /api/realtime 数据源（spec §12/§31）：HOT PATH 最新态聚合。
+
+        - activity：_compute_activity（§4 优先级；metrics.live 权威）；
+        - throughput：current=live.tok_s（服务端实时口径）；
+          average=tok_s_mean（会话平均）；current_prompt_tps 无实时口径 = None
+          （prefill_tok_s_mean 是平均 Prefill，归 average 侧）；
+        - requests：processing=running；waiting=waiting_total（官方 vLLM 口径
+          queued+waiting）；queued=queued 原始值；
+        - slots：active=outside_slots；total=/slots 快照长度（WARM 10s 节奏）；
+        - tokens：当前请求 prompt/generated/max_tokens（未生成时 None，绝不 0）；
+        - freshness：sample_timestamp = 最近 HOT 成功（§14）；
+        - diagnostics：HOT 循环诊断 + 各端点健康（§16/§31）。
+        严格 0-vs-null：缺失/不支持字段 = None。
+        """
+        now = self.clock.now()
+        act = self.activity_state or {}
+        live = self.live or {}
+        snap = self.last_snapshot or {}
+        total_slots = len(self._slots) if self._slots else None
+        age_ms = (
+            int(max(0.0, (now - self.sample_timestamp) * 1000))
+            if self.sample_timestamp is not None else None
+        )
+        # errors：仅不可用端点（可用端点不占 payload）
+        _errors = {}
+        for _name in self.endpoints.names():
+            _st = self.endpoints.get(_name)
+            if not _st.available:
+                _errors[_name] = _st.to_dict(now)
+        return {
+            "provider": "strata",
+            "server_online": bool(snap.get("online")),
+            "activity": {
+                "active": act.get("active"),
+                "state": act.get("state"),
+                "phase": act.get("phase"),
+                "source": act.get("source"),
+                "confidence": act.get("confidence"),
+            },
+            "throughput": {
+                "current_decode_tps": live.get("tok_s"),
+                "current_prompt_tps": None,
+                "average_decode_tps": live.get("tok_s_mean"),
+                "average_prompt_tps": live.get("prefill_tok_s_mean"),
+            },
+            "requests": {
+                "processing": live.get("running"),
+                "waiting": live.get("waiting_total"),
+                "queued": live.get("queued"),
+            },
+            "slots": {
+                "active": live.get("outside_slots"),
+                "total": total_slots,
+            },
+            "tokens": {
+                "prompt": live.get("prompt_tokens"),
+                "generated": live.get("generated"),
+                "max_tokens": live.get("max_tokens"),
+            },
+            "freshness": {
+                "sample_timestamp": self.sample_timestamp,
+                "age_ms": age_ms,
+                "source": "strata.metrics",
+            },
+            "errors": _errors,
+            "diagnostics": {
+                "hot_loop_interval_ms": int(round(self.hot_interval * 1000)),
+                "last_hot_duration_ms": int(round(self.last_hot_duration_s * 1000)),
+                "hot_overrun": self.hot_overrun,
+                "hot_overrun_count": self.hot_overrun_count,
+                "source": {
+                    name: self.endpoints.get(name).to_dict(now)
+                    for name in ("metrics", "slots", "status")
+                },
+            },
+        }
+
+    # ---- 1.3.3 任务编排（start / 循环 / 取消） ----
+
+    def start(self) -> None:
+        """
+        启动 1.3.3 分层采集任务（幂等；lifespan 在首轮 collect_once 后调用）。
+
+        - HOT 任务（1s deadline）：_hot_round（只 /metrics + 内存更新）；
+        - WARM 任务（poll_interval，默认 2s）：_warm_round（DB 落库 +
+          /status 5s + /slots 10s + /health 10s，各端点独立故障隔离）；
+        - COLD 任务（single-flight 后台任务）：histogram 15s /
+          /v1/status 300s / props+models 600s——上一轮未完成则跳过本轮，
+          绝不阻塞 HOT PATH；exception 捕获、CancelledError 传播。
+        """
+        if self._started:
+            return
+        self._started = True
+        loop = asyncio.get_running_loop()
+        self._hot_task = loop.create_task(self._hot_loop(), name="strata-hot")
+        self._warm_task = loop.create_task(self._warm_loop(), name="strata-warm")
+        self._cold_tasks = [
+            loop.create_task(
+                self._cold_loop(self._histo_work, HISTOGRAM_INTERVAL, "histo"),
+                name="strata-histo"),
+            loop.create_task(
+                self._cold_loop(self._v1status_work, V1_STATUS_INTERVAL, "v1status"),
+                name="strata-v1status"),
+            loop.create_task(
+                self._cold_loop(self._metadata_work, METADATA_INTERVAL, "metadata"),
+                name="strata-metadata"),
+        ]
+
+    async def _hot_loop(self) -> None:
+        """HOT 循环：monotonic deadline 调度（不漂移/不重叠/不追赶）。
+
+        GAP-006 语义：_hot_round 抛异常（理论上已内部捕获一切）只记日志，
+        本轮仍用最近快照输出（每轮都有输出，循环不空转）。
+        """
+        sched = DeadlineScheduler(self.hot_interval, self.clock, name="strata-hot")
+
+        async def _work() -> None:
+            try:
+                snap = await self._hot_round()
+            except Exception:
+                logger.exception("Strata HOT 轮异常（已记录，继续下一轮）")
+                snap = self.last_snapshot
+            # 诊断镜像（/api/realtime diagnostics）
+            self.last_hot_duration_s = sched.last_duration_s
+            self.hot_overrun = sched.last_overrun
+            self.hot_overrun_count = sched.overrun_count
+            cb = self.on_hot_round
+            if cb is not None and snap is not None:
+                try:
+                    cb(snap)
+                except Exception:
+                    logger.exception("Strata on_hot_round 回调异常（不影响采集）")
+
+        await sched.run(_work)
+
+    async def _warm_loop(self) -> None:
+        """WARM 循环：DB 落库 + 辅助端点（各自节流、故障隔离）。"""
+        sched = DeadlineScheduler(self.interval, self.clock, name="strata-warm")
+
+        async def _work() -> None:
+            try:
+                self._persist_round()
+            except Exception as exc:
+                logger.exception("Strata WARM 落库轮错误: %r", exc)
+            now_mono = self.clock.monotonic()
+            metrics_dead = self.endpoints.get("metrics").consecutive_failures > 0
+            if now_mono - self._last_status_mono >= STATUS_INTERVAL:
+                self._last_status_mono = now_mono
+                await self._poll_status()
+            if now_mono - self._last_slots_mono >= SLOTS_INTERVAL:
+                self._last_slots_mono = now_mono
+                await self._poll_slots()
+            # metrics 失败时立即重探 health（区分 unreachable / monitoring_error）
+            if metrics_dead or now_mono - self._last_health_mono >= HEALTH_INTERVAL:
+                self._last_health_mono = now_mono
+                await self._poll_health()
+
+        await sched.run(_work)
+
+    async def _cold_loop(self, work, interval: float, name: str) -> None:
+        """
+        COLD single-flight 循环（§10）：每类低频任务最多一个 in-flight；
+        上一轮未完成（慢 endpoint 拖延）则跳过本轮——绝不堆积、
+        绝不影响 HOT PATH。
+        """
+        sched = DeadlineScheduler(interval, self.clock, name=f"strata-{name}")
+
+        async def _guarded() -> None:
+            if name in self._cold_inflight:
+                logger.debug("Strata COLD %s 上一轮未完成，跳过本轮（single-flight）", name)
+                return
+            self._cold_inflight.add(name)
+            try:
+                await work()
+            finally:
+                self._cold_inflight.discard(name)
+
+        await sched.run(_guarded)
+
+    async def _histo_work(self) -> None:
+        """COLD：延迟 Histogram + 后端硬件落库（15s；?format=prometheus）。"""
+        if not self.endpoints.get("prometheus").should_poll(self.clock.monotonic()):
+            return
+        try:
+            await self._poll_histogram_and_hardware()
+        except Exception as exc:
+            logger.debug("Strata 遥测轮错误（延迟/硬件，不影响 HOT）: %r", exc)
+            self.endpoints.get("prometheus").record_failure(
+                self.clock.now(), self.clock.monotonic(), "temporarily_unavailable")
+
+    async def _v1status_work(self) -> None:
+        """COLD：/v1/status uptime/并发（300s；重启归零）。"""
+        if not self.endpoints.get("v1status").should_poll(self.clock.monotonic()):
+            return
+        try:
+            await self._poll_v1_status()
+        except Exception as exc:
+            logger.debug("Strata /v1/status 轮错误（不影响 HOT）: %r", exc)
+            self.endpoints.get("v1status").record_failure(
+                self.clock.now(), self.clock.monotonic(), "temporarily_unavailable")
+
+    async def _metadata_work(self) -> None:
+        """COLD：/props + /v1/models 模型元数据（600s + 重连）。"""
+        await self._poll_metadata()
+
+    async def stop_tasks(self) -> None:
+        """取消全部后台采集任务（shutdown；幂等；CancelledError 不外泄）。"""
+        tasks = [t for t in (self._hot_task, self._warm_task, *self._cold_tasks)
+                 if t is not None]
+        for t in tasks:
+            if not t.done():
+                t.cancel()
+        for t in tasks:
+            try:
+                await t
+            except (asyncio.CancelledError, Exception):
+                pass
+        self._hot_task = None
+        self._warm_task = None
+        self._cold_tasks = []
+        self._cold_inflight.clear()
+        self._started = False
+
 
     @staticmethod
     def _sanitize_hardware(metrics: dict) -> dict | None:
@@ -425,10 +943,15 @@ class StrataCollector:
         if self.db is None:
             return
         # 1) 延迟 Histogram（content negotiation：?format=prometheus + Accept text/plain）
+        # 1.3.3：COLD 独立任务（_histo_work 驱动），绝不进 HOT PATH；
+        # 本方法阻塞多久都不影响 /metrics 的 1s 节奏（single-flight 保护）。
         try:
-            text, ok = await self._fetch_text(
+            text, ok, _ = await self._fetch_text(
                 "/metrics?format=prometheus", MAX_METRICS_BYTES,
-                headers={"Accept": "text/plain"})
+                headers={"Accept": "text/plain"},
+                timeout=COLD_TIMEOUT, endpoint="prometheus")
+        except asyncio.CancelledError:
+            raise
         except Exception:
             ok, text = False, None
         if ok and text is not None:
@@ -521,8 +1044,11 @@ class StrataCollector:
         """
         /v1/status 低频轮询（5 分钟 + 重连）：uptime / concurrency /
         last_request_at（内存态；服务重启后 uptime 归零——不跨重启累加）。
+        1.3.3：COLD 独立任务（_v1status_work 驱动）——卡住/失败绝不影响
+        实时 activity（它只负责 uptime/并发）。
         """
-        payload, ok = await self._fetch_json("/v1/status", MAX_SMALL_BYTES)
+        payload, ok, _ = await self._fetch_json(
+            "/v1/status", MAX_SMALL_BYTES, timeout=COLD_TIMEOUT, endpoint="v1status")
         if not ok or not isinstance(payload, dict):
             if self._v1status_done:
                 self.endpoint_ok["v1status"] = False
@@ -556,7 +1082,8 @@ class StrataCollector:
         cached = self._requests_all_cache
         if cached is not None and (mono - cached[0]) < REQUESTS_ALL_TTL:
             return cached[1], True
-        payload, ok = await self._fetch_json("/metrics?requests=all", MAX_METRICS_BYTES)
+        payload, ok, _ = await self._fetch_json(
+            "/metrics?requests=all", MAX_METRICS_BYTES, timeout=WARM_TIMEOUT)
         entries: list = []
         if ok and isinstance(payload, dict):
             entries = build_recent_requests(payload, limit=REQUESTS_ALL_MAX)
@@ -654,6 +1181,11 @@ class StrataCollector:
         }
 
     def _handle_metrics_sample(self, metrics: dict, now_wall: float, now_mono: float) -> dict:
+        """完整处理一个 /metrics 样本（1.3.2 兼容入口：校验+落库一次完成）。
+
+        1.3.3 分层路径：HOT 轮预校验（_hot_round）+ WARM 轮
+        _persist_valid_sample 落库；本方法保留供独立/测试路径。
+        """
         totals = metrics.get("totals")
         normalized = normalize_totals_sample(totals, self._namespaced_state())
         if normalized is None:
@@ -664,6 +1196,14 @@ class StrataCollector:
             snap["_valid"] = False
             return snap
 
+        return self._persist_valid_sample(normalized, metrics, now_wall, now_mono)
+
+    def _persist_valid_sample(
+        self, normalized: dict, metrics: dict,
+        now_wall: float, now_mono: float,
+    ) -> dict:
+        """1.3.3 WARM：预校验通过的样本落库（单事务）+ 缺口关闭 + 事件。"""
+        totals = metrics.get("totals")
         self._invalid_streak = 0
         core_reset = any(
             c in normalized["reset_metrics"] for c in _CORE_COUNTERS
@@ -868,29 +1408,37 @@ class StrataCollector:
             logger.warning("写入事件 %s 失败: %r", event_type, exc)
 
     async def run(self, out=None) -> None:
-        """常驻采集循环（独立进程模式；与 MetricsCollector.run 同契约）。
+        """常驻采集（1.3.3：start() 分层多任务；独立进程模式，与 MetricsCollector.run 同契约）。
 
         默认参数不能写成 `out=sys.stdout.write`——默认值在类定义（import）时求值，
         而 PyInstaller --windowed 下 sys.stdout 是 None（与 collector.py 同注意）。
+        out 每 HOT 轮（1s）收到一份 JSON 快照文本（独立模式调试输出）。
         """
         if out is None:
             out = sys.stdout.write if sys.stdout is not None else (lambda *_a, **_k: None)
-        while True:
+
+        def _emit(snap: dict) -> None:
+            out(json.dumps(
+                {k: v for k, v in snap.items() if not k.startswith("_")},
+                ensure_ascii=False, indent=2) + "\n")
+
+        # 首轮完整采集（与 1.3.3 前一致：辅助端点 + metrics + 落库）
+        try:
+            snapshot = await self.collect_once()
+        except Exception as exc:
+            snapshot = self._offline_snapshot()
+            snapshot["error"] = repr(exc)
+        try:
+            _emit(snapshot)
+        except Exception as exc:
+            logger.exception("Strata 采集首轮输出异常（已记录，后续 HOT 轮继续）: %r", exc)
+        self.on_hot_round = _emit
+        self.start()
+        if self._hot_task is not None:
             try:
-                try:
-                    snapshot = await self.collect_once()
-                except Exception as exc:
-                    snapshot = self._offline_snapshot()
-                    snapshot["error"] = repr(exc)
-                out_json = {k: v for k, v in snapshot.items() if not k.startswith("_")}
-                out(json.dumps(out_json, ensure_ascii=False, indent=2) + "\n")
+                await self._hot_task
             except asyncio.CancelledError:
+                # run 被 cancel（停机/Ctrl+C）：同步停止后台任务，不泄漏
+                if self._started:
+                    await self.stop_tasks()
                 raise
-            except Exception as exc:
-                logger.exception("Strata 采集循环单轮异常（已恢复，继续下一轮）: %r", exc)
-            try:
-                await asyncio.sleep(self.interval)
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:
-                logger.exception("Strata 采集循环 sleep 异常（已恢复）: %r", exc)

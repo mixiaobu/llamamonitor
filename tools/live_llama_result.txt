@@ -1,0 +1,18 @@
+﻿prompt chars=52625 (~13156 tokens)
+t=   0.1 STATE -> active=False state=idle phase=None src=llama.slots conf=secondary
+t=   0.6 STATE -> active=True state=prompt phase=prompt src=llama.slots conf=secondary
+
+=== 推理结果 ===
+{"ok": true, "elapsed": 2.7, "usage": {"completion_tokens": 42, "prompt_tokens": 9674, "total_tokens": 9716, "prompt_tokens_details": {"cached_tokens": 0}}}
+
+=== Prompt 阶段（state=prompt）：5 条 ===
+  t=0.6s generated=None prompt_tps=None
+  t=1.2s generated=None prompt_tps=None
+  t=1.7s generated=None prompt_tps=None
+  t=2.2s generated=None prompt_tps=None
+  ... 末条: (2.7, None, None)
+
+=== Decode 阶段（state=decode）：0 条 ===
+
+=== HOT 负载下 last_duration_ms：min=3 p50=6 max=23 avg=11.0（n=6）===
+hot_overrun_count=0

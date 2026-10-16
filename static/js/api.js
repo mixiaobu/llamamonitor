@@ -25,11 +25,20 @@
     return e;
   }
 
+  /* 1.3.3 实时轮询默认超时（spec §21）：1s 节奏的 /api/realtime 用 ~2s 超时，
+   绝不继承 30s 默认——慢响应拖住 1s 轮询节奏会让"实时"区块停更。 */
+  var REALTIME_TIMEOUT_MS = 2000;
+
   async function request(method, url, body, timeoutMs) {
     var ctrl = new AbortController();
     var timer = setTimeout(function () { ctrl.abort(); }, timeoutMs || DEFAULT_TIMEOUT_MS);
     try {
       var opts = { signal: ctrl.signal };
+      if (method === "GET") {
+        /* 1.3.3 §20：前端 GET 一律 no-store——实时数据（/api/realtime 1s 轮询
+         等）绝不允许被浏览器/中间代理缓存，否则"实时"区块会停更。 */
+        opts.cache = "no-store";
+      }
       if (method !== "GET") {
         opts.method = method;
         opts.headers = { "Content-Type": "application/json" };
@@ -77,7 +86,13 @@
   LM.api = {
     ApiError: ApiError,
     isLocal: isLocal,
+    REALTIME_TIMEOUT_MS: REALTIME_TIMEOUT_MS,
     get: function (url, timeoutMs) { return request("GET", url, undefined, timeoutMs); },
+    /* 1.3.3：实时轮询专用（§21）——默认 2s 超时（不继承 30s），no-store；
+     性能页等 1s 节奏区块必须走这里。 */
+    realtime: function (url, timeoutMs) {
+      return request("GET", url, undefined, timeoutMs || REALTIME_TIMEOUT_MS);
+    },
     post: function (url, body, timeoutMs) { return request("POST", url, body, timeoutMs); },
     put: function (url, body, timeoutMs) { return request("PUT", url, body, timeoutMs); },
   };

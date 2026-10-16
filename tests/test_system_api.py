@@ -43,6 +43,15 @@ class SystemApiTests(unittest.TestCase):
         # 系统周期采集拉长：测试期间 _system_periodic 不触发，不覆盖预填的 latest
         cfg.system.poll_interval_seconds = 3600.0
         self._collector = MetricsCollector(cfg, self._db)
+
+        # 1.3.3：HOT 任务/lifespan 首轮不碰真实网络（黑孔每轮 1.5s 拖慢套件）
+        async def _slots_mock():
+            return None
+
+        async def _parsed_mock():
+            return None
+        self._collector._fetch_slots = _slots_mock
+        self._collector._fetch_parsed = _parsed_mock
         self._system = SystemCollector(cfg, db=self._db, clock=self._clock)
         self._sensors = HardwareSensorProvider(cfg, db=self._db, clock=self._clock)
         # 本测试直接 _ingest 注入数据：禁用真实 Bridge 子进程（lifespan 的 start() 不起）

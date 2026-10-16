@@ -50,7 +50,12 @@ class _Base(unittest.TestCase):
         async def _fetch():
             return parsed
 
+        # 1.3.3：/slots 不碰真实网络（黑孔每轮 1.5s ConnectTimeout 拖慢套件）
+        async def _slots_mock():
+            return None
+
         self.collector._fetch_parsed = _fetch
+        self.collector._fetch_slots = _slots_mock
         self._clients: list[TestClient] = []
 
     def tearDown(self):

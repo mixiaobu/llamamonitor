@@ -73,8 +73,19 @@ class _Base(unittest.TestCase):
             backups_dir=self.backups, **kw)
 
     def _client(self, host: str = "127.0.0.1", update_service=None):
+        collector = MetricsCollector(make_config(), self.db)
+
+        # 1.3.3：HOT 任务/lifespan 首轮不碰真实网络（黑孔每轮 1.5s 拖慢套件）
+        async def _slots_mock():
+            return None
+
+        async def _parsed_mock():
+            return None
+        collector._fetch_slots = _slots_mock
+        collector._fetch_parsed = _parsed_mock
+
         app = build_app(
-            self.db, MetricsCollector(make_config(), self.db),
+            self.db, collector,
             loaded=make_loaded(make_config(), self.tmp),
             update_service=update_service,
         )

@@ -73,15 +73,26 @@ class Driver:
         self.collector = MetricsCollector(self.cfg, self.db, clock=self.clock)
         self._text: str | None = None
 
-    def round(self, text: str | None) -> dict:
-        """执行一轮 collect_once：text=None 模拟抓取失败（离线）。"""
+    def round(self, text: str | None, slots: list | None = None) -> dict:
+        """执行一轮 collect_once：text=None 模拟抓取失败（离线）。
+
+        1.3.3：hot_round 并行抓 /metrics + /slots——本驱动器注入
+        _fetch_parsed 的同时必须注入 _fetch_slots（不触碰真实网络，
+        否则每轮 1.5s ConnectTimeout 拖慢整个套件）。
+        """
 
         def make_fetch(txt):
             async def fetch():
                 return parse_metrics(txt) if txt is not None else None
             return fetch
 
+        def make_slots(slots_payload):
+            async def fetch_slots():
+                return slots_payload
+            return fetch_slots
+
         self.collector._fetch_parsed = make_fetch(text)
+        self.collector._fetch_slots = make_slots(slots)
         return asyncio.run(self.collector.collect_once())
 
     def advance(self, seconds: float) -> None:

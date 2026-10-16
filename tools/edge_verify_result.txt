@@ -1,0 +1,24 @@
+页面: http://127.0.0.1:8790/  当前页: performance  isAppVisible: True
+
+===== T1：/api/realtime 轮询节奏 + no-store（采样 12s）=====
+请求数: 12（12s）  间隔(ms): [1006, 1019, 1007, 1027, 1010, 1018, 1008, 1009, 1009, 1020, 1006]
+间隔中位数: 1009 ms  最大: 1027 ms  最小: 1006 ms
+响应数: 12  Cache-Control 含 no-store: True  fromDiskCache 全 false: True
+示例 Cache-Control: no-store
+T1 结论: PASS
+
+===== T2：竞态防护（§23 迟到旧响应不覆盖新数据）=====
+基线 #rtSlots: '0 / 4'
+A 注入 ts=+10 seq=1 slots=1/2 -> #rtSlots='1 / 2'
+B 注入 ts=now  seq=0 slots=5/9（更旧）-> #rtSlots='1 / 2'
+C 注入 ts=+60 seq=2 slots=3/7（更新）-> #rtSlots='3 / 7'
+T2 结论: PASS（旧值被拒、新值被收）
+
+===== T3：hidden tab 跳过 1s 轮询（visibleOnly）=====
+已置 visibilityState=hidden，采样 4s……
+hidden 期间 /api/realtime 请求数: 0
+T3 结论: PASS（hidden 不轮询）
+
+===== 汇总 =====
+T1(节奏+no-store)=PASS  T2(竞态)=PASS  T3(hidden)=PASS
+全部通过: 是

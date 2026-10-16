@@ -235,14 +235,17 @@ class StrataHistogramTests(_StrataBase):
         client = TestClient(loopback_app(app), raise_server_exceptions=False)
         client.__enter__()
         try:
-            # baseline 轮 + 单样本落 (1, 2.5] 桶（OFFICIAL_LE 索引 12 = "2.5"）
-            self.clock.advance(2.0)
-            client.portal.call(self.collector.collect_once)
+            # 单样本落 (1, 2.5] 桶（OFFICIAL_LE 索引 12 = "2.5"）。
+            # 1.3.3：lifespan 首轮 collect_once 已建 histogram 基线（全 0）并
+            # start() 后台 COLD 任务——此后 collect_once 不再做 histogram
+            # （转由后台 15s COLD 轮驱动）。这里显式调 _poll_histogram_and_hardware
+            # 记录 delta（确定性，不依赖后台任务时序；_histo_prev 单线程原子，
+            # 与后台轮并发也不会重复落库）。
             self.srv.state.advance_histogram(
                 "vllm:e2e_request_latency_seconds",
                 [0] * 12 + [1] + [0] * 9)
             self.clock.advance(20)
-            client.portal.call(self.collector.collect_once)
+            client.portal.call(self.collector._poll_histogram_and_hardware)
             # 落库形态：只有非零桶（下界桶 le="1" 不在表里）
             rows = client.portal.call(
                 self.db.get_latency_histogram, "e2e", 0, 1e12)

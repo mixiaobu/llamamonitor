@@ -27,6 +27,12 @@ Strata」（默认自动，按服务特征识别；手动选择可在测试连�
 
 - 实时状态：处理中/延迟请求数、平均忙碌 Slot 数、KV Cache 使用率、上下文高水位（llama-server
   运行时指标，服务器提供时显示）、Prompt/Decode TPS、MTP 接受率（含 per-position）
+- 实时链路（1.3.3）：HOT 1s / WARM 2s / COLD 低频分层采集 + 单点接口故障隔离
+  （per-endpoint 超时与健康状态，一个端点慢/挂不拖慢实时）；`GET /api/realtime`
+  统一实时入口（缺失字段 null 不假 0 + no-store + 竞态防护）；Strata/llama.cpp
+  活动判定修复（Prompt 处理=活动、stale 不翻 idle）；llama 实时 TPS（/slots
+  计数器 delta，任务切换重设基线）；性能页新鲜度四态 badge
+  （实时/轻微延迟/数据延迟/状态未知）
 - Strata 实时推理：推理阶段（Prompt 处理 / 思考 / 生成）、当前与平均生成速度、
   Prompt 处理速度、当前请求进度（生成/预算 + 耗时）、思考恢复、会话缓存状态与
   复用 Token、Draft 接受率、最近请求列表（内存态，不落库）、后端主机硬件

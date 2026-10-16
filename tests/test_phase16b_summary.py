@@ -56,9 +56,14 @@ class Phase16BSummaryTests(unittest.TestCase):
         clock = FakeClock(start_wall=wall)
         collector = MetricsCollector(cfg, db, clock)
 
+        # 1.3.3：/slots 不碰真实网络（黑孔每轮 1.5s ConnectTimeout 拖慢套件）
+        async def _slots_mock():
+            return None
+
         async def _fetch_offline():
             return None
 
+        collector._fetch_slots = _slots_mock
         collector._fetch_parsed = _fetch_offline
         app = build_app(db, collector)
         client = TestClient(loopback_app(app))

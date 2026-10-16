@@ -88,6 +88,17 @@ class ConfigApiTests(unittest.TestCase):
         db = Database(self.tmp / "settings_test.db")
         self._dbs.append(db)
         collector = MetricsCollector(cfg, db)
+
+        # 1.3.3：HOT 任务/lifespan 首轮不碰真实网络（黑孔 127.0.0.1:9 每轮
+        # 1.5s ConnectTimeout 拖慢套件）；mock 返回 None = 离线轮（语义不变）
+        async def _slots_mock():
+            return None
+
+        async def _parsed_mock():
+            return None
+        collector._fetch_slots = _slots_mock
+        collector._fetch_parsed = _parsed_mock
+
         loaded = LoadedConfig(
             config=cfg,
             path=self.cfg_file,

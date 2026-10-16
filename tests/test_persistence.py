@@ -85,6 +85,12 @@ class PersistenceFlowTests(unittest.TestCase):
         self._dbs.append(db)
         collector = MetricsCollector(make_config(), db)
 
+        # 1.3.3：hot_round 并行抓 /slots——mock 掉（不碰真实网络）
+        async def _slots():
+            return None
+
+        collector._fetch_slots = _slots
+
         def set_text(t):
             parsed = parse_metrics(t)
 

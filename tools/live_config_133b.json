@@ -1,0 +1,55 @@
+{
+  "llama_server": {
+    "url": "http://127.0.0.1:9092",
+    "metrics_path": "/metrics",
+    "timeout_seconds": 3,
+    "provider": "strata",
+    "api_key": ""
+  },
+  "collector": {
+    "poll_interval_seconds": 2,
+    "live_retention_hours": 48
+  },
+  "gpu": {
+    "enabled": true,
+    "poll_interval_seconds": 2,
+    "history_retention_hours": 48,
+    "device_uuids": []
+  },
+  "web": {
+    "host": "127.0.0.1",
+    "port": 8791
+  },
+  "database": {
+    "path": "",
+    "wal": true
+  },
+  "ui": {
+    "refresh_interval_seconds": 2,
+    "daily_default_days": 7,
+    "theme": "system"
+  },
+  "logging": {
+    "level": "INFO",
+    "max_size_mb": 10,
+    "backup_count": 5
+  },
+  "backup": {
+    "automatic": true,
+    "interval_hours": 24,
+    "keep_count": 14
+  },
+  "updates": {
+    "check_enabled": false,
+    "check_interval_hours": 24,
+    "auto_download": false
+  },
+  "system": {
+    "enabled": true,
+    "poll_interval_seconds": 2,
+    "history_interval_seconds": 2,
+    "history_retention_hours": 48,
+    "advanced_sensors": true,
+    "advanced_sensor_interval_seconds": 2
+  }
+}

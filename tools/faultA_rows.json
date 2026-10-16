@@ -1,0 +1,2399 @@
+[
+ {
+  "t": 0.1,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179829.004424,
+   "age_ms": null,
+   "consecutive_failures": 3,
+   "last_error": "unsupported"
+  },
+  "age": 438
+ },
+ {
+  "t": 0.6,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179829.004424,
+   "age_ms": null,
+   "consecutive_failures": 3,
+   "last_error": "unsupported"
+  },
+  "age": 960
+ },
+ {
+  "t": 1.1,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179829.004424,
+   "age_ms": null,
+   "consecutive_failures": 3,
+   "last_error": "unsupported"
+  },
+  "age": 485
+ },
+ {
+  "t": 1.6,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179829.004424,
+   "age_ms": null,
+   "consecutive_failures": 3,
+   "last_error": "unsupported"
+  },
+  "age": 16
+ },
+ {
+  "t": 2.1,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179829.004424,
+   "age_ms": null,
+   "consecutive_failures": 3,
+   "last_error": "unsupported"
+  },
+  "age": 531
+ },
+ {
+  "t": 2.7,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179829.004424,
+   "age_ms": null,
+   "consecutive_failures": 3,
+   "last_error": "unsupported"
+  },
+  "age": 63
+ },
+ {
+  "t": 3.2,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179829.004424,
+   "age_ms": null,
+   "consecutive_failures": 3,
+   "last_error": "unsupported"
+  },
+  "age": 578
+ },
+ {
+  "t": 3.7,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179829.004424,
+   "age_ms": null,
+   "consecutive_failures": 3,
+   "last_error": "unsupported"
+  },
+  "age": 1093
+ },
+ {
+  "t": 4.2,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179829.004424,
+   "age_ms": null,
+   "consecutive_failures": 3,
+   "last_error": "unsupported"
+  },
+  "age": 1606
+ },
+ {
+  "t": 4.7,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179829.004424,
+   "age_ms": null,
+   "consecutive_failures": 3,
+   "last_error": "unsupported"
+  },
+  "age": 2119
+ },
+ {
+  "t": 5.2,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "stale:llama.slots",
+  "conf": "stale",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179829.004424,
+   "age_ms": null,
+   "consecutive_failures": 3,
+   "last_error": "unsupported"
+  },
+  "age": 2622
+ },
+ {
+  "t": 5.8,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "stale:llama.slots",
+  "conf": "stale",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179829.004424,
+   "age_ms": null,
+   "consecutive_failures": 3,
+   "last_error": "unsupported"
+  },
+  "age": 3154
+ },
+ {
+  "t": 6.3,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "stale:llama.slots",
+  "conf": "stale",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179829.004424,
+   "age_ms": null,
+   "consecutive_failures": 3,
+   "last_error": "unsupported"
+  },
+  "age": 3680
+ },
+ {
+  "t": 6.8,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "stale:llama.slots",
+  "conf": "stale",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179844.535784,
+   "age_ms": null,
+   "consecutive_failures": 4,
+   "last_error": "timeout"
+  },
+  "age": 4201
+ },
+ {
+  "t": 7.3,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "stale:llama.slots",
+  "conf": "stale",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179844.535784,
+   "age_ms": null,
+   "consecutive_failures": 4,
+   "last_error": "timeout"
+  },
+  "age": 4704
+ },
+ {
+  "t": 7.8,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "stale:llama.slots",
+  "conf": "stale",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179844.535784,
+   "age_ms": null,
+   "consecutive_failures": 4,
+   "last_error": "timeout"
+  },
+  "age": 5233
+ },
+ {
+  "t": 8.4,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "stale:llama.slots",
+  "conf": "stale",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179846.0558023,
+   "age_ms": null,
+   "consecutive_failures": 5,
+   "last_error": "timeout"
+  },
+  "age": 5762
+ },
+ {
+  "t": 8.9,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "stale:llama.slots",
+  "conf": "stale",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179846.0558023,
+   "age_ms": null,
+   "consecutive_failures": 5,
+   "last_error": "timeout"
+  },
+  "age": 6291
+ },
+ {
+  "t": 9.4,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "stale:llama.slots",
+  "conf": "stale",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179846.0558023,
+   "age_ms": null,
+   "consecutive_failures": 5,
+   "last_error": "timeout"
+  },
+  "age": 6806
+ },
+ {
+  "t": 9.9,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "stale:llama.slots",
+  "conf": "stale",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179847.5744271,
+   "age_ms": null,
+   "consecutive_failures": 6,
+   "last_error": "timeout"
+  },
+  "age": 7310
+ },
+ {
+  "t": 10.4,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "stale:llama.slots",
+  "conf": "stale",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179847.5744271,
+   "age_ms": null,
+   "consecutive_failures": 6,
+   "last_error": "timeout"
+  },
+  "age": 7825
+ },
+ {
+  "t": 10.9,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "stale:llama.slots",
+  "conf": "stale",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179847.5744271,
+   "age_ms": null,
+   "consecutive_failures": 6,
+   "last_error": "timeout"
+  },
+  "age": 8329
+ },
+ {
+  "t": 11.5,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "stale:llama.slots",
+  "conf": "stale",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179849.087581,
+   "age_ms": null,
+   "consecutive_failures": 7,
+   "last_error": "timeout"
+  },
+  "age": 8858
+ },
+ {
+  "t": 12.0,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "stale:llama.slots",
+  "conf": "stale",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179849.087581,
+   "age_ms": null,
+   "consecutive_failures": 7,
+   "last_error": "timeout"
+  },
+  "age": 9375
+ },
+ {
+  "t": 12.5,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "stale:llama.slots",
+  "conf": "stale",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179849.087581,
+   "age_ms": null,
+   "consecutive_failures": 7,
+   "last_error": "timeout"
+  },
+  "age": 9891
+ },
+ {
+  "t": 13.0,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "stale:llama.slots",
+  "conf": "stale",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179850.6087308,
+   "age_ms": null,
+   "consecutive_failures": 8,
+   "last_error": "timeout"
+  },
+  "age": 10408
+ },
+ {
+  "t": 13.5,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "stale:llama.slots",
+  "conf": "stale",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179850.6087308,
+   "age_ms": null,
+   "consecutive_failures": 8,
+   "last_error": "timeout"
+  },
+  "age": 10942
+ },
+ {
+  "t": 14.1,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "stale:llama.slots",
+  "conf": "stale",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179850.6087308,
+   "age_ms": null,
+   "consecutive_failures": 8,
+   "last_error": "timeout"
+  },
+  "age": 11445
+ },
+ {
+  "t": 14.6,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "stale:llama.slots",
+  "conf": "stale",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179852.125634,
+   "age_ms": null,
+   "consecutive_failures": 9,
+   "last_error": "timeout"
+  },
+  "age": 11974
+ },
+ {
+  "t": 15.1,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "stale:llama.slots",
+  "conf": "stale",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179852.125634,
+   "age_ms": null,
+   "consecutive_failures": 9,
+   "last_error": "timeout"
+  },
+  "age": 12503
+ },
+ {
+  "t": 15.7,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "stale:llama.slots",
+  "conf": "stale",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179852.125634,
+   "age_ms": null,
+   "consecutive_failures": 9,
+   "last_error": "timeout"
+  },
+  "age": 13056
+ },
+ {
+  "t": 16.2,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "stale:llama.slots",
+  "conf": "stale",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179855.1585293,
+   "age_ms": null,
+   "consecutive_failures": 11,
+   "last_error": "temporarily_unavailable"
+  },
+  "age": 13578
+ },
+ {
+  "t": 16.7,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "stale:llama.slots",
+  "conf": "stale",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179855.1585293,
+   "age_ms": null,
+   "consecutive_failures": 11,
+   "last_error": "temporarily_unavailable"
+  },
+  "age": 14092
+ },
+ {
+  "t": 17.2,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "stale:llama.slots",
+  "conf": "stale",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179856.1672611,
+   "age_ms": null,
+   "consecutive_failures": 12,
+   "last_error": "temporarily_unavailable"
+  },
+  "age": 14610
+ },
+ {
+  "t": 17.8,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "stale:llama.slots",
+  "conf": "stale",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179856.1672611,
+   "age_ms": null,
+   "consecutive_failures": 12,
+   "last_error": "temporarily_unavailable"
+  },
+  "age": 15153
+ },
+ {
+  "t": 18.3,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179857.1687832,
+   "age_ms": null,
+   "consecutive_failures": 13,
+   "last_error": "unsupported"
+  },
+  "age": 500
+ },
+ {
+  "t": 18.8,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179857.1687832,
+   "age_ms": null,
+   "consecutive_failures": 13,
+   "last_error": "unsupported"
+  },
+  "age": 31
+ },
+ {
+  "t": 19.3,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179857.1687832,
+   "age_ms": null,
+   "consecutive_failures": 13,
+   "last_error": "unsupported"
+  },
+  "age": 559
+ },
+ {
+  "t": 19.9,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179857.1687832,
+   "age_ms": null,
+   "consecutive_failures": 13,
+   "last_error": "unsupported"
+  },
+  "age": 92
+ },
+ {
+  "t": 20.4,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179857.1687832,
+   "age_ms": null,
+   "consecutive_failures": 13,
+   "last_error": "unsupported"
+  },
+  "age": 597
+ },
+ {
+  "t": 20.9,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179857.1687832,
+   "age_ms": null,
+   "consecutive_failures": 13,
+   "last_error": "unsupported"
+  },
+  "age": 112
+ },
+ {
+  "t": 21.4,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179857.1687832,
+   "age_ms": null,
+   "consecutive_failures": 13,
+   "last_error": "unsupported"
+  },
+  "age": 629
+ },
+ {
+  "t": 22.0,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179857.1687832,
+   "age_ms": null,
+   "consecutive_failures": 13,
+   "last_error": "unsupported"
+  },
+  "age": 184
+ },
+ {
+  "t": 22.5,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179857.1687832,
+   "age_ms": null,
+   "consecutive_failures": 13,
+   "last_error": "unsupported"
+  },
+  "age": 710
+ },
+ {
+  "t": 23.0,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179857.1687832,
+   "age_ms": null,
+   "consecutive_failures": 13,
+   "last_error": "unsupported"
+  },
+  "age": 233
+ },
+ {
+  "t": 23.5,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179857.1687832,
+   "age_ms": null,
+   "consecutive_failures": 13,
+   "last_error": "unsupported"
+  },
+  "age": 737
+ },
+ {
+  "t": 24.1,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179857.1687832,
+   "age_ms": null,
+   "consecutive_failures": 13,
+   "last_error": "unsupported"
+  },
+  "age": 290
+ },
+ {
+  "t": 24.6,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179857.1687832,
+   "age_ms": null,
+   "consecutive_failures": 13,
+   "last_error": "unsupported"
+  },
+  "age": 812
+ },
+ {
+  "t": 25.1,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179857.1687832,
+   "age_ms": null,
+   "consecutive_failures": 13,
+   "last_error": "unsupported"
+  },
+  "age": 314
+ },
+ {
+  "t": 25.6,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179857.1687832,
+   "age_ms": null,
+   "consecutive_failures": 13,
+   "last_error": "unsupported"
+  },
+  "age": 830
+ },
+ {
+  "t": 26.1,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179857.1687832,
+   "age_ms": null,
+   "consecutive_failures": 13,
+   "last_error": "unsupported"
+  },
+  "age": 374
+ },
+ {
+  "t": 26.7,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179857.1687832,
+   "age_ms": null,
+   "consecutive_failures": 13,
+   "last_error": "unsupported"
+  },
+  "age": 888
+ },
+ {
+  "t": 27.2,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179857.1687832,
+   "age_ms": null,
+   "consecutive_failures": 13,
+   "last_error": "unsupported"
+  },
+  "age": 392
+ },
+ {
+  "t": 27.7,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179857.1687832,
+   "age_ms": null,
+   "consecutive_failures": 13,
+   "last_error": "unsupported"
+  },
+  "age": 908
+ },
+ {
+  "t": 28.3,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179857.1687832,
+   "age_ms": null,
+   "consecutive_failures": 13,
+   "last_error": "unsupported"
+  },
+  "age": 484
+ },
+ {
+  "t": 28.8,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179857.1687832,
+   "age_ms": null,
+   "consecutive_failures": 13,
+   "last_error": "unsupported"
+  },
+  "age": 15
+ },
+ {
+  "t": 29.3,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179857.1687832,
+   "age_ms": null,
+   "consecutive_failures": 13,
+   "last_error": "unsupported"
+  },
+  "age": 542
+ },
+ {
+  "t": 29.8,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179857.1687832,
+   "age_ms": null,
+   "consecutive_failures": 13,
+   "last_error": "unsupported"
+  },
+  "age": 62
+ },
+ {
+  "t": 30.4,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179857.1687832,
+   "age_ms": null,
+   "consecutive_failures": 13,
+   "last_error": "unsupported"
+  },
+  "age": 591
+ },
+ {
+  "t": 30.9,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179857.1687832,
+   "age_ms": null,
+   "consecutive_failures": 13,
+   "last_error": "unsupported"
+  },
+  "age": 110
+ },
+ {
+  "t": 31.4,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179857.1687832,
+   "age_ms": null,
+   "consecutive_failures": 13,
+   "last_error": "unsupported"
+  },
+  "age": 625
+ },
+ {
+  "t": 31.9,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179857.1687832,
+   "age_ms": null,
+   "consecutive_failures": 13,
+   "last_error": "unsupported"
+  },
+  "age": 141
+ },
+ {
+  "t": 34.0,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179857.1687832,
+   "age_ms": null,
+   "consecutive_failures": 13,
+   "last_error": "unsupported"
+  },
+  "age": 2186
+ },
+ {
+  "t": 34.5,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179873.3543127,
+   "age_ms": null,
+   "consecutive_failures": 14,
+   "last_error": "unsupported"
+  },
+  "age": 496
+ },
+ {
+  "t": 35.0,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179873.3543127,
+   "age_ms": null,
+   "consecutive_failures": 14,
+   "last_error": "unsupported"
+  },
+  "age": 221
+ },
+ {
+  "t": 35.5,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179873.3543127,
+   "age_ms": null,
+   "consecutive_failures": 14,
+   "last_error": "unsupported"
+  },
+  "age": 750
+ },
+ {
+  "t": 36.0,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179873.3543127,
+   "age_ms": null,
+   "consecutive_failures": 14,
+   "last_error": "unsupported"
+  },
+  "age": 266
+ },
+ {
+  "t": 36.5,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179873.3543127,
+   "age_ms": null,
+   "consecutive_failures": 14,
+   "last_error": "unsupported"
+  },
+  "age": 770
+ },
+ {
+  "t": 37.1,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179873.3543127,
+   "age_ms": null,
+   "consecutive_failures": 14,
+   "last_error": "unsupported"
+  },
+  "age": 271
+ },
+ {
+  "t": 37.6,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179873.3543127,
+   "age_ms": null,
+   "consecutive_failures": 14,
+   "last_error": "unsupported"
+  },
+  "age": 793
+ },
+ {
+  "t": 38.1,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179873.3543127,
+   "age_ms": null,
+   "consecutive_failures": 14,
+   "last_error": "unsupported"
+  },
+  "age": 341
+ },
+ {
+  "t": 38.6,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179873.3543127,
+   "age_ms": null,
+   "consecutive_failures": 14,
+   "last_error": "unsupported"
+  },
+  "age": 856
+ },
+ {
+  "t": 39.2,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179873.3543127,
+   "age_ms": null,
+   "consecutive_failures": 14,
+   "last_error": "unsupported"
+  },
+  "age": 375
+ },
+ {
+  "t": 39.7,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179873.3543127,
+   "age_ms": null,
+   "consecutive_failures": 14,
+   "last_error": "unsupported"
+  },
+  "age": 890
+ },
+ {
+  "t": 40.2,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179873.3543127,
+   "age_ms": null,
+   "consecutive_failures": 14,
+   "last_error": "unsupported"
+  },
+  "age": 455
+ },
+ {
+  "t": 40.8,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179873.3543127,
+   "age_ms": null,
+   "consecutive_failures": 14,
+   "last_error": "unsupported"
+  },
+  "age": 982
+ },
+ {
+  "t": 41.3,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179873.3543127,
+   "age_ms": null,
+   "consecutive_failures": 14,
+   "last_error": "unsupported"
+  },
+  "age": 500
+ },
+ {
+  "t": 41.8,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179873.3543127,
+   "age_ms": null,
+   "consecutive_failures": 14,
+   "last_error": "unsupported"
+  },
+  "age": 16
+ },
+ {
+  "t": 42.3,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179873.3543127,
+   "age_ms": null,
+   "consecutive_failures": 14,
+   "last_error": "unsupported"
+  },
+  "age": 545
+ },
+ {
+  "t": 42.8,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179873.3543127,
+   "age_ms": null,
+   "consecutive_failures": 14,
+   "last_error": "unsupported"
+  },
+  "age": 48
+ },
+ {
+  "t": 43.3,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179873.3543127,
+   "age_ms": null,
+   "consecutive_failures": 14,
+   "last_error": "unsupported"
+  },
+  "age": 563
+ },
+ {
+  "t": 43.9,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179873.3543127,
+   "age_ms": null,
+   "consecutive_failures": 14,
+   "last_error": "unsupported"
+  },
+  "age": 96
+ },
+ {
+  "t": 44.4,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179873.3543127,
+   "age_ms": null,
+   "consecutive_failures": 14,
+   "last_error": "unsupported"
+  },
+  "age": 619
+ },
+ {
+  "t": 44.9,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179873.3543127,
+   "age_ms": null,
+   "consecutive_failures": 14,
+   "last_error": "unsupported"
+  },
+  "age": 156
+ },
+ {
+  "t": 45.5,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179873.3543127,
+   "age_ms": null,
+   "consecutive_failures": 14,
+   "last_error": "unsupported"
+  },
+  "age": 685
+ },
+ {
+  "t": 46.0,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179873.3543127,
+   "age_ms": null,
+   "consecutive_failures": 14,
+   "last_error": "unsupported"
+  },
+  "age": 203
+ },
+ {
+  "t": 46.5,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179873.3543127,
+   "age_ms": null,
+   "consecutive_failures": 14,
+   "last_error": "unsupported"
+  },
+  "age": 726
+ },
+ {
+  "t": 47.0,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179873.3543127,
+   "age_ms": null,
+   "consecutive_failures": 14,
+   "last_error": "unsupported"
+  },
+  "age": 250
+ },
+ {
+  "t": 47.5,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179873.3543127,
+   "age_ms": null,
+   "consecutive_failures": 14,
+   "last_error": "unsupported"
+  },
+  "age": 764
+ },
+ {
+  "t": 48.1,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179873.3543127,
+   "age_ms": null,
+   "consecutive_failures": 14,
+   "last_error": "unsupported"
+  },
+  "age": 282
+ },
+ {
+  "t": 48.6,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179873.3543127,
+   "age_ms": null,
+   "consecutive_failures": 14,
+   "last_error": "unsupported"
+  },
+  "age": 848
+ },
+ {
+  "t": 49.2,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179873.3543127,
+   "age_ms": null,
+   "consecutive_failures": 14,
+   "last_error": "unsupported"
+  },
+  "age": 377
+ },
+ {
+  "t": 49.7,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179873.3543127,
+   "age_ms": null,
+   "consecutive_failures": 14,
+   "last_error": "unsupported"
+  },
+  "age": 891
+ },
+ {
+  "t": 50.2,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179889.1656902,
+   "age_ms": null,
+   "consecutive_failures": 15,
+   "last_error": "unsupported"
+  },
+  "age": 409
+ },
+ {
+  "t": 50.7,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179889.1656902,
+   "age_ms": null,
+   "consecutive_failures": 15,
+   "last_error": "unsupported"
+  },
+  "age": 941
+ },
+ {
+  "t": 51.2,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179889.1656902,
+   "age_ms": null,
+   "consecutive_failures": 15,
+   "last_error": "unsupported"
+  },
+  "age": 454
+ },
+ {
+  "t": 51.7,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179889.1656902,
+   "age_ms": null,
+   "consecutive_failures": 15,
+   "last_error": "unsupported"
+  },
+  "age": 969
+ },
+ {
+  "t": 52.3,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179889.1656902,
+   "age_ms": null,
+   "consecutive_failures": 15,
+   "last_error": "unsupported"
+  },
+  "age": 472
+ },
+ {
+  "t": 52.8,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179889.1656902,
+   "age_ms": null,
+   "consecutive_failures": 15,
+   "last_error": "unsupported"
+  },
+  "age": 1036
+ },
+ {
+  "t": 53.3,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179889.1656902,
+   "age_ms": null,
+   "consecutive_failures": 15,
+   "last_error": "unsupported"
+  },
+  "age": 535
+ },
+ {
+  "t": 53.9,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179889.1656902,
+   "age_ms": null,
+   "consecutive_failures": 15,
+   "last_error": "unsupported"
+  },
+  "age": 94
+ },
+ {
+  "t": 54.4,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179889.1656902,
+   "age_ms": null,
+   "consecutive_failures": 15,
+   "last_error": "unsupported"
+  },
+  "age": 614
+ },
+ {
+  "t": 54.9,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179889.1656902,
+   "age_ms": null,
+   "consecutive_failures": 15,
+   "last_error": "unsupported"
+  },
+  "age": 132
+ },
+ {
+  "t": 55.4,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179889.1656902,
+   "age_ms": null,
+   "consecutive_failures": 15,
+   "last_error": "unsupported"
+  },
+  "age": 655
+ },
+ {
+  "t": 55.9,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179889.1656902,
+   "age_ms": null,
+   "consecutive_failures": 15,
+   "last_error": "unsupported"
+  },
+  "age": 171
+ },
+ {
+  "t": 56.5,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179889.1656902,
+   "age_ms": null,
+   "consecutive_failures": 15,
+   "last_error": "unsupported"
+  },
+  "age": 686
+ },
+ {
+  "t": 57.0,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179889.1656902,
+   "age_ms": null,
+   "consecutive_failures": 15,
+   "last_error": "unsupported"
+  },
+  "age": 219
+ },
+ {
+  "t": 57.5,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179889.1656902,
+   "age_ms": null,
+   "consecutive_failures": 15,
+   "last_error": "unsupported"
+  },
+  "age": 736
+ },
+ {
+  "t": 58.0,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179889.1656902,
+   "age_ms": null,
+   "consecutive_failures": 15,
+   "last_error": "unsupported"
+  },
+  "age": 265
+ },
+ {
+  "t": 58.6,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179889.1656902,
+   "age_ms": null,
+   "consecutive_failures": 15,
+   "last_error": "unsupported"
+  },
+  "age": 792
+ },
+ {
+  "t": 59.1,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179889.1656902,
+   "age_ms": null,
+   "consecutive_failures": 15,
+   "last_error": "unsupported"
+  },
+  "age": 310
+ },
+ {
+  "t": 59.6,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179889.1656902,
+   "age_ms": null,
+   "consecutive_failures": 15,
+   "last_error": "unsupported"
+  },
+  "age": 824
+ },
+ {
+  "t": 60.1,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179889.1656902,
+   "age_ms": null,
+   "consecutive_failures": 15,
+   "last_error": "unsupported"
+  },
+  "age": 342
+ },
+ {
+  "t": 60.6,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179889.1656902,
+   "age_ms": null,
+   "consecutive_failures": 15,
+   "last_error": "unsupported"
+  },
+  "age": 863
+ },
+ {
+  "t": 61.2,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179889.1656902,
+   "age_ms": null,
+   "consecutive_failures": 15,
+   "last_error": "unsupported"
+  },
+  "age": 416
+ },
+ {
+  "t": 61.7,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179889.1656902,
+   "age_ms": null,
+   "consecutive_failures": 15,
+   "last_error": "unsupported"
+  },
+  "age": 920
+ },
+ {
+  "t": 62.2,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179889.1656902,
+   "age_ms": null,
+   "consecutive_failures": 15,
+   "last_error": "unsupported"
+  },
+  "age": 427
+ },
+ {
+  "t": 62.7,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179889.1656902,
+   "age_ms": null,
+   "consecutive_failures": 15,
+   "last_error": "unsupported"
+  },
+  "age": 951
+ },
+ {
+  "t": 63.3,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179889.1656902,
+   "age_ms": null,
+   "consecutive_failures": 15,
+   "last_error": "unsupported"
+  },
+  "age": 539
+ },
+ {
+  "t": 63.8,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179889.1656902,
+   "age_ms": null,
+   "consecutive_failures": 15,
+   "last_error": "unsupported"
+  },
+  "age": 63
+ },
+ {
+  "t": 64.4,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179889.1656902,
+   "age_ms": null,
+   "consecutive_failures": 15,
+   "last_error": "unsupported"
+  },
+  "age": 578
+ },
+ {
+  "t": 64.9,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179889.1656902,
+   "age_ms": null,
+   "consecutive_failures": 15,
+   "last_error": "unsupported"
+  },
+  "age": 97
+ },
+ {
+  "t": 65.4,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179889.1656902,
+   "age_ms": null,
+   "consecutive_failures": 15,
+   "last_error": "unsupported"
+  },
+  "age": 648
+ },
+ {
+  "t": 65.9,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179905.1747634,
+   "age_ms": null,
+   "consecutive_failures": 16,
+   "last_error": "unsupported"
+  },
+  "age": 156
+ },
+ {
+  "t": 66.5,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179905.1747634,
+   "age_ms": null,
+   "consecutive_failures": 16,
+   "last_error": "unsupported"
+  },
+  "age": 670
+ },
+ {
+  "t": 67.0,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179905.1747634,
+   "age_ms": null,
+   "consecutive_failures": 16,
+   "last_error": "unsupported"
+  },
+  "age": 186
+ },
+ {
+  "t": 67.5,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179905.1747634,
+   "age_ms": null,
+   "consecutive_failures": 16,
+   "last_error": "unsupported"
+  },
+  "age": 723
+ },
+ {
+  "t": 68.0,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179905.1747634,
+   "age_ms": null,
+   "consecutive_failures": 16,
+   "last_error": "unsupported"
+  },
+  "age": 249
+ },
+ {
+  "t": 68.5,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179905.1747634,
+   "age_ms": null,
+   "consecutive_failures": 16,
+   "last_error": "unsupported"
+  },
+  "age": 763
+ },
+ {
+  "t": 69.1,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179905.1747634,
+   "age_ms": null,
+   "consecutive_failures": 16,
+   "last_error": "unsupported"
+  },
+  "age": 280
+ },
+ {
+  "t": 69.6,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179905.1747634,
+   "age_ms": null,
+   "consecutive_failures": 16,
+   "last_error": "unsupported"
+  },
+  "age": 820
+ },
+ {
+  "t": 70.1,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179905.1747634,
+   "age_ms": null,
+   "consecutive_failures": 16,
+   "last_error": "unsupported"
+  },
+  "age": 344
+ },
+ {
+  "t": 70.6,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179905.1747634,
+   "age_ms": null,
+   "consecutive_failures": 16,
+   "last_error": "unsupported"
+  },
+  "age": 861
+ },
+ {
+  "t": 71.2,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179905.1747634,
+   "age_ms": null,
+   "consecutive_failures": 16,
+   "last_error": "unsupported"
+  },
+  "age": 375
+ },
+ {
+  "t": 71.7,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179905.1747634,
+   "age_ms": null,
+   "consecutive_failures": 16,
+   "last_error": "unsupported"
+  },
+  "age": 900
+ },
+ {
+  "t": 72.2,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179905.1747634,
+   "age_ms": null,
+   "consecutive_failures": 16,
+   "last_error": "unsupported"
+  },
+  "age": 407
+ },
+ {
+  "t": 72.7,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179905.1747634,
+   "age_ms": null,
+   "consecutive_failures": 16,
+   "last_error": "unsupported"
+  },
+  "age": 921
+ },
+ {
+  "t": 73.2,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179905.1747634,
+   "age_ms": null,
+   "consecutive_failures": 16,
+   "last_error": "unsupported"
+  },
+  "age": 439
+ },
+ {
+  "t": 73.8,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179905.1747634,
+   "age_ms": null,
+   "consecutive_failures": 16,
+   "last_error": "unsupported"
+  },
+  "age": 1019
+ },
+ {
+  "t": 74.3,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179905.1747634,
+   "age_ms": null,
+   "consecutive_failures": 16,
+   "last_error": "unsupported"
+  },
+  "age": 525
+ },
+ {
+  "t": 74.8,
+  "online": false,
+  "active": false,
+  "state": "idle",
+  "source": "llama.slots",
+  "conf": "secondary",
+  "metrics": {
+   "available": false,
+   "last_success": null,
+   "last_attempt": 1792179905.1747634,
+   "age_ms": null,
+   "consecutive_failures": 16,
+   "last_error": "unsupported"
+  },
+  "age": 62
+ }
+]

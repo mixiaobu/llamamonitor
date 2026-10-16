@@ -198,6 +198,10 @@ class DesktopTests(unittest.TestCase):
     def _make_app(self, name="t.db", text=TEXT_A):
         db = Database(self.tmp / name)
         collector = MetricsCollector(make_config(), db)
+        # 1.3.3：/slots 不碰真实网络（黑孔每轮 1.5s ConnectTimeout 拖慢套件）
+        async def _slots_mock():
+            return None
+        collector._fetch_slots = _slots_mock
         parsed = parse_metrics(text)
 
         async def _fetch_parsed():

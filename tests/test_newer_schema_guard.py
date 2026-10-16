@@ -112,7 +112,18 @@ class NewerSchemaGuardTests(unittest.TestCase):
         loaded = LoadedConfig(cfg, self.tmp / "config.json", True, False, False)
         from collector import MetricsCollector
 
-        app = build_app(db, MetricsCollector(cfg, db), loaded, None)
+        collector = MetricsCollector(cfg, db)
+
+        # 1.3.3：HOT 任务/lifespan 首轮不碰真实网络（黑孔每轮 1.5s 拖慢套件）
+        async def _slots_mock():
+            return None
+
+        async def _parsed_mock():
+            return None
+        collector._fetch_slots = _slots_mock
+        collector._fetch_parsed = _parsed_mock
+
+        app = build_app(db, collector, loaded, None)
         from configutil import loopback_app  # 修改类端点要求 loopback 来源
 
         with TestClient(loopback_app(app)) as client:

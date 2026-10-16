@@ -19,7 +19,8 @@
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/` | Dashboard（static/index.html） |
-| GET | `/api/status` | 服务器在线状态 + 最近样本 + gauge 快照 |
+| GET | `/api/status` | 服务器在线状态 + 最近样本 + gauge 快照（1.3.3 起 `Cache-Control: no-store`） |
+| GET | `/api/realtime` | 1.3.3 前端实时主入口：activity / throughput（实时 vs 平均）/ requests / slots / tokens / freshness / errors / diagnostics + `sequence`（竞态防护）。缺失字段一律 `null`（绝不假 0）；`Cache-Control: no-store`。前端 1s 前台轮询、2s 超时 |
 | GET | `/api/version` | 应用版本 / schema 版本 / 平台信息 |
 | GET | `/api/health` | application / database 健康 + journal_mode + 最近有效样本间隔 |
 | GET | `/api/summary` | Today & Total token 汇总（含 MTP 派生字段） |

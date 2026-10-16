@@ -77,20 +77,35 @@ class StrataCollectorTestBase(unittest.TestCase):
         self._endpoints[path] = (lambda t=text, o=ok: (t, o))
 
     def _install_mocks(self):
-        async def fetch_text(path, limit):
+        # 1.3.3：_fetch_text/_fetch_json 新签名（timeout/endpoint 分端点超时 +
+        # 错误分类），返回 (text, ok, error) 三元组；同步更新 EndpointState
+        #（health_fresh / should_poll 等依赖它，与真实 _fetch_* 行为一致）
+        def _record(endpoint, ok, err):
+            if endpoint:
+                self.collector._record_endpoint(
+                    endpoint, self.clock.now(), self.clock.monotonic(),
+                    None if ok else err)
+
+        async def fetch_text(path, limit, headers=None, timeout=None, endpoint=None):
             fn = self._endpoints.get(path)
             if fn is None:
-                return None, False
-            return fn()
+                _record(endpoint, False, "unreachable")
+                return None, False, "unreachable"
+            text, ok = fn()
+            _record(endpoint, ok, "temporarily_unavailable" if not ok else None)
+            return text, ok, None
 
-        async def fetch_json(path, limit):
-            text, ok = await fetch_text(path, limit)
+        async def fetch_json(path, limit, timeout=None, endpoint=None):
+            text, ok, err = await fetch_text(path, limit, timeout=timeout,
+                                             endpoint=endpoint)
             if not ok or text is None:
-                return None, False
+                return None, False, err
             try:
-                return json.loads(text), True
+                payload = json.loads(text)
+                return payload, True, None
             except Exception:
-                return None, False
+                _record(endpoint, False, "invalid_response")
+                return None, False, "invalid_response"
 
         self.collector._fetch_text = fetch_text
         self.collector._fetch_json = fetch_json

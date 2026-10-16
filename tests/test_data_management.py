@@ -107,6 +107,12 @@ class DataManagementTests(unittest.TestCase):
         self._dbs.append(db)
         collector = MetricsCollector(cfg, db)
 
+        # 1.3.3：/slots 不碰真实网络（黑孔每轮 1.5s ConnectTimeout 拖慢套件）
+        async def _slots_mock():
+            return None
+
+        collector._fetch_slots = _slots_mock
+
         if offline:
             async def _fetch_offline():
                 return None
@@ -481,6 +487,12 @@ class RemotePathLeakTests(unittest.TestCase):
         loaded = make_loaded(cfg, self.tmp)  # path = <tmp>/config.json
         self.db = Database(self.tmp / "leak.db")
         self.collector = MetricsCollector(cfg, self.db)
+
+        # 1.3.3：/slots 不碰真实网络（黑孔每轮 1.5s ConnectTimeout 拖慢套件）
+        async def _slots_mock():
+            return None
+        self.collector._fetch_slots = _slots_mock
+
         self.app = build_app(self.db, self.collector, loaded=loaded)
 
     def tearDown(self):

@@ -367,6 +367,12 @@ class ApiConfigTests(unittest.TestCase):
         db = Database(self.tmp / "api_cfg.db")
         self._dbs.append(db)
         collector = MetricsCollector(cfg, db)
+
+        # 1.3.3：/slots 不碰真实网络（黑孔每轮 1.5s ConnectTimeout 拖慢套件）
+        async def _slots_mock():
+            return None
+        collector._fetch_slots = _slots_mock
+
         app = build_app(db, collector, loaded)
         # AUDIT-SEC-001：GET /api/config 现在 loopback-only，模拟本机请求
         client = TestClient(loopback_app(app))
@@ -386,6 +392,12 @@ class ApiConfigTests(unittest.TestCase):
         db = Database(self.tmp / "api_cfg_noloopback.db")
         self._dbs.append(db)
         collector = MetricsCollector(cfg, db)
+
+        # 1.3.3：/slots 不碰真实网络（黑孔每轮 1.5s ConnectTimeout 拖慢套件）
+        async def _slots_mock():
+            return None
+        collector._fetch_slots = _slots_mock
+
         app = build_app(db, collector, loaded)
         client = TestClient(app)  # 裸 testclient = 非 loopback 地址
         client.__enter__()

@@ -60,18 +60,33 @@ class StrataApiTestBase(unittest.TestCase):
                 }
             eps = {p: (lambda n=n: (_strata_doc(n), True)) for p, n in provider_payloads.items()}
 
-            async def ft(p, l):
-                f = eps.get(p)
-                return f() if f else (None, False)
+            # 1.3.3：_fetch_text/_fetch_json 新签名（timeout/endpoint 分端点超时），
+            # 返回 (value, ok, error) 三元组；同步更新 EndpointState（health_fresh
+            # 等依赖它，与真实 _fetch_* 行为一致）
+            def _rec(name, ok, err):
+                if name:
+                    collector._record_endpoint(
+                        name, collector.clock.now(), collector.clock.monotonic(),
+                        None if ok else err)
 
-            async def fj(p, l):
-                t, ok = await ft(p, l)
+            async def ft(p, l, headers=None, timeout=None, endpoint=None):
+                f = eps.get(p)
+                if f is None:
+                    _rec(endpoint, False, "unreachable")
+                    return None, False, "unreachable"
+                t, ok = f()
+                _rec(endpoint, ok, "temporarily_unavailable" if not ok else None)
+                return t, ok, None
+
+            async def fj(p, l, timeout=None, endpoint=None):
+                t, ok, err = await ft(p, l, timeout=timeout, endpoint=endpoint)
                 if not ok or t is None:
-                    return None, False
+                    return None, False, err
                 try:
-                    return json.loads(t), True
+                    return json.loads(t), True, None
                 except Exception:
-                    return None, False
+                    _rec(endpoint, False, "invalid_response")
+                    return None, False, "invalid_response"
 
             collector._fetch_text = ft
             collector._fetch_json = fj
@@ -79,6 +94,14 @@ class StrataApiTestBase(unittest.TestCase):
             # DB 连接在 TestClient 线程创建，避免跨线程 SQLite 错误）
         else:
             collector = MetricsCollector(cfg, db)
+            # 1.3.3：llama 分支 /metrics+/slots 不碰真实网络（黑孔 1.5s 拖慢）
+            async def _parsed_mock():
+                return None
+
+            async def _slots_mock():
+                return None
+            collector._fetch_parsed = _parsed_mock
+            collector._fetch_slots = _slots_mock
         loaded = LoadedConfig(config=cfg, path=self.cfg_file, loaded=True,
                               using_defaults=False, has_errors=False)
         app = build_app(db, collector, loaded, runtime=None)

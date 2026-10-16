@@ -38,6 +38,10 @@ class DashboardApiTests(unittest.TestCase):
     def _start(self, text):
         db = Database(self.tmp / "dash_test.db")
         collector = MetricsCollector(make_config(), db)
+        # 1.3.3：/slots 不碰真实网络（黑孔每轮 1.5s ConnectTimeout 拖慢套件）
+        async def _slots_mock():
+            return None
+        collector._fetch_slots = _slots_mock
         parsed = parse_metrics(text)
 
         async def _fetch_parsed():
@@ -67,6 +71,10 @@ class DashboardApiTests(unittest.TestCase):
         from db import local_date
         db = Database(self.tmp / "t_month.db")
         collector = MetricsCollector(make_config(), db)
+        # 1.3.3：/slots 不碰真实网络（黑孔每轮 1.5s ConnectTimeout 拖慢套件）
+        async def _slots_mock():
+            return None
+        collector._fetch_slots = _slots_mock
         app = build_app(db, collector)
         client = TestClient(app)
         client.__enter__()
@@ -106,6 +114,10 @@ class DashboardApiTests(unittest.TestCase):
     def test_daily_includes_mtp_accept_rate(self):
         db = Database(self.tmp / "t.db")
         collector = MetricsCollector(make_config(), db)
+        # 1.3.3：/slots 不碰真实网络（黑孔每轮 1.5s ConnectTimeout 拖慢套件）
+        async def _slots_mock():
+            return None
+        collector._fetch_slots = _slots_mock
         app = build_app(db, collector)
         client = TestClient(app)
         client.__enter__()
@@ -169,6 +181,10 @@ class DashboardApiTests(unittest.TestCase):
         # 独立可控流程：两轮采集后检查 /api/mtp/daily
         db = Database(self.tmp / "t2.db")
         collector = MetricsCollector(make_config(), db)
+        # 1.3.3：/slots 不碰真实网络（黑孔每轮 1.5s ConnectTimeout 拖慢套件）
+        async def _slots_mock():
+            return None
+        collector._fetch_slots = _slots_mock
         app = build_app(db, collector)
 
         parsed = parse_metrics(TEXT_A_POS)
@@ -220,6 +236,10 @@ class UsageSummaryApiTests(unittest.TestCase):
     def _app(self):
         db = Database(self.tmp / "us.db")
         collector = MetricsCollector(make_config(), db)
+        # 1.3.3：/slots 不碰真实网络（黑孔每轮 1.5s ConnectTimeout 拖慢套件）
+        async def _slots_mock():
+            return None
+        collector._fetch_slots = _slots_mock
         app = build_app(db, collector)
         client = TestClient(app)
         client.__enter__()

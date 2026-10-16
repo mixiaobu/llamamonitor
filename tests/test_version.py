@@ -74,7 +74,18 @@ class ApiVersionTests(unittest.TestCase):
         loaded = LoadedConfig(cfg, tmp / "config.json", True, False, False)
         from collector import MetricsCollector
 
-        self.app = build_app(self.db, MetricsCollector(cfg, self.db), loaded, None)
+        collector = MetricsCollector(cfg, self.db)
+
+        # 1.3.3：HOT 任务/lifespan 首轮不碰真实网络（黑孔每轮 1.5s 拖慢套件）
+        async def _slots_mock():
+            return None
+
+        async def _parsed_mock():
+            return None
+        collector._fetch_slots = _slots_mock
+        collector._fetch_parsed = _parsed_mock
+
+        self.app = build_app(self.db, collector, loaded, None)
 
     def tearDown(self):
         self.db.close()

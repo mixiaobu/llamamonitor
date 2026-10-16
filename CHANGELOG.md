@@ -7,6 +7,82 @@
 > 互相视为"不同系列"：安装器降级保护按数值比较（1.0.0 > 0.13.x），从 1.0.0 安装
 > 0.13.x 会被识别为降级并拒绝（实测行为，非缺陷）。
 
+## [1.3.3] - 2026-10-17
+
+**实时监控链路重构 + Strata/llama.cpp 采集准确性修复 + 单点接口异常故障隔离**。
+
+### 新增
+- **`GET /api/realtime` 前端实时主入口**：一次调用返回驱动性能页"当前状态"
+  区块所需的全部高频数据——activity（active/state/phase/source/confidence）、
+  throughput（实时 vs 平均 decode/prompt TPS）、requests（processing/waiting/
+  queued）、slots（active/total）、tokens（prompt/generated/max_tokens）、
+  freshness（sample_timestamp/age_ms/source）、errors（不可用端点）、
+  diagnostics（HOT 循环间隔/耗时/超期 + 各端点健康）。
+  **严格 0-vs-null**：不支持/缺失字段一律 `null`，绝不假 0。
+  `Cache-Control: no-store`（前端 GET 亦带 `cache: "no-store"`）。
+- **分层采集（HOT 1s / WARM 2s / COLD 低频）**：
+  - HOT 1s（`DeadlineScheduler` monotonic deadline 锚定：不漂移、不重叠、
+    卡住不无限追赶、单轮超期检测）：strata = `/metrics`；
+    llama.cpp = `/metrics` 与 `/slots` **并行**抓取（各自独立 1.5s 超时与
+    端点健康记录，慢 `/slots` 绝不阻塞 `/metrics`，反之亦然）；
+  - WARM 2s：DB 落库（HOT 预校验通过的 pending 样本，**绝不重放旧样本**）
+    + strata `/status`(5s) `/slots`(10s) `/health`(10s) 节流轮询；
+  - COLD：strata histogram(15s) / v1status(300s) / metadata(600s) 独立
+    single-flight 后台任务；llama.cpp 的 /health /props /models /lora /
+    router /SSE 由 runtime collector 独立子任务承担（/slots 提升为 1s 镜像
+    主采集器数据，避免重复后端请求）。
+- **实时 TPS（llama.cpp，/slots 计数器 delta）**：decode = Δn_decoded/Δt、
+  prompt = Δn_prompt_tokens_processed/Δt（monotonic 间隔）；slot id 或
+  id_task 变化 -> 重设基线（不跨任务混算）；计数器倒退只重设基线（绝不产
+  负 TPS）；首轮/任务刚开始 = `null`（UI 显示 `--`，绝不假 0）；多 slot
+  同时活动按 slot 求和。服务端重启（连续 >=5 轮离线）清零基线。
+- **每端点健康状态**（`EndpointState`/`EndpointRegistry`）：每端点独立
+  `{available, last_success, last_attempt, age_ms, consecutive_failures,
+  last_error}`；一个端点失败绝不影响其它端点与实时链路。
+  错误分类：404/501→unsupported、401→authentication_error、
+  429→rate_limited、5xx→temporarily_unavailable、timeout、unreachable、
+  invalid_response。能力型错误（unsupported/auth/rate_limited）按 15s
+  恢复探测节流（不 1s 狂刷已知 404 的端点）；瞬时故障保持正常节奏快速恢复。
+- **新鲜度四态 badge**（性能页 Page Header）：实时（<=2s）/ 轻微延迟
+  （2~10s）/ 数据延迟（10~30s）/ 状态未知（>30s 或尚无数据）——数据缺失
+  绝不显示成"空闲"。`live_last_update` 只随 HOT PATH 成功推进
+  （COLD 任务卡住不影响它）。
+- **竞态防护**：`sequence`（单调样本序号）+ `freshness.sample_timestamp`；
+  前端迟到旧响应（时间戳更旧或同时间戳序号更小）不覆盖新数据。
+
+### 修复
+- **Strata 活动判定（§4/§5）**：活动权威来源改为 `/metrics.live`
+  （state=reading/generating 或 running>0 或 outside_slots>0）->
+  `/status.busy` 次级 -> 明确 idle 才 idle；**`/slots[].is_processing`
+  绝不参与活动判定**（它只负责 Slot 信息/数量/辅助诊断）。
+  `generated==0`（phase "reading the prompt"）= **Prompt 处理中（活动）**，
+  不再误判为空闲。
+- **llama.cpp 活动判定（§6）**：`requests_processing>0` 或
+  任一 slot `is_processing==true` -> 活动；仅当两者皆 0 才 idle；
+  `requests_deferred>0` = 排队中。**绝不用 predicted/prompt_tokens_seconds
+  == 0 判忙闲**。
+- **stale 不翻 idle**：任一数据源失败轮保留上一轮 activity（标注
+  `stale:` 前缀 + confidence=stale）——metrics 超时不会把"生成中"显示成
+  "空闲"（§15/§29/§30）。
+- **单点接口异常不再拖慢/中断整个采集**：per-endpoint 超时
+  （HOT 1.5s / WARM 3s / COLD 5s）+ 故障隔离 + single-flight COLD 任务——
+  prometheus 慢 3s 不影响 1s 实时链路；任何端点 404/5xx/timeout 只局部化
+  （记日志于状态变化时，不逐轮刷屏）。
+- **采集循环健壮性（GAP-006 语义保持）**：HOT/WARM/COLD 单轮异常只记日志
+  继续下一轮；每轮仍有输出（最近快照兜底）；run 被 cancel 时同步停止后台
+  任务（不泄漏）。
+- **`/api/status` `/api/runtime` `/api/llama/slots` `/api/strata/live`
+  `/api/realtime` 统一 `Cache-Control: no-store`**（1s 轮询数据绝不允许被
+  浏览器缓存导致"实时"停更）。
+
+### 变更
+- 性能页"当前状态"区块改由**单一 1s 实时任务**驱动（`/api/realtime`，
+  前台 1s / 2s 超时）：Strata G 段当前值（阶段/实时速度/平均速度/Prompt
+  速度/处理中/等待/进度）与 llama.cpp 运行时状态「活跃/总 Slot」。
+  会话缓存/最近请求/硬件/运行时长等低频段仍由原任务驱动（无重复 DOM 写入）。
+- Strata `/slots` 从每轮 2s 降为 10s 节奏（Slot 数量/明细不是 1s 实时数据；
+  活动判定不依赖它）。
+
 ## [1.3.2] - 2026-10-17
 
 **Strata 延迟直方图 + PCIe 实时/趋势 + 引擎详情；llama.cpp Router 多实例只读监控 + SSE 事件流 + LoRA；数据准确性与隐私加固**。

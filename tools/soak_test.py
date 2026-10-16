@@ -145,6 +145,13 @@ class SoakSimulation:
     def _new_collector(self, db: Database, clock: FakeClock) -> MetricsCollector:
         c = MetricsCollector(_make_config(self.poll), db, clock=clock)
         c._fetch_parsed = self._make_fetch()
+        # 1.3.3：hot_round 并行抓 /slots——mock 掉（不碰真实网络）。
+        # 否则每轮 _fetch_slots 对黑孔 127.0.0.1:9 各 1.5s ConnectTimeout，
+        # 1440 轮 = ~36 分钟/次，拖爆整个测试套件。返回 None = 无 slot 源
+        # （与 1.3.2 无 /slots 的语义一致；本模拟只校验 counter 恒等式）。
+        async def _slots_none():
+            return None
+        c._fetch_slots = _slots_none
         return c
 
     # ---------- 主循环 ----------

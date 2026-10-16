@@ -612,6 +612,10 @@ def build_app(
             ),
         )
 
+    # 1.3.3 /api/realtime：llama.cpp 平均吞吐窗口结果的 2s 节流缓存
+    #（1s 轮询不重复查库；strata 用官方会话平均，不经过这里）
+    _realtime_avg_cache: dict = {"at": 0.0, "decode": None, "prompt": None}
+
     def _refresh_app_state() -> None:
         """
         每轮采集后在事件循环线程刷新 app_state.runtime（托盘 / /api/status 复用，
@@ -678,6 +682,33 @@ def build_app(
         #    corrupt/unavailable 时仍采集（供 UI 展示状态）但不落盘（见 collect_once 的
         #    db.health 检查）；保证应用就绪时 /api/status 已有数据
         await collector.collect_once()
+        # 1.3.3：首轮完整采集后启动分层多任务（旧 _periodic 单循环退役）：
+        # - HOT 1s：strata=/metrics；llama=/metrics+/slots 并行（独立超时/故障隔离）；
+        # - WARM 2s：DB 落库（llama）/ DB 落库 + status/slots/health 节流（strata）；
+        # - COLD：低频端点独立 single-flight 后台任务（strata histo/v1status/metadata；
+        #   llama /health /props /models /lora /router /SSE 由 runtime 子任务承担）。
+        collector.start()
+
+        # on_hot_round：每 HOT 轮完成后同步 online 状态给 runtime + 刷新 app_state
+        #（app_state 含一次轻量 DB 读，节流到 2s——1s HOT 循环不逐秒查库 §33）
+        _app_state_throttle = {"mono": 0.0}
+
+        def _on_hot_round(_snap: dict) -> None:
+            if runtime is not None:
+                try:
+                    runtime.set_metrics_online(
+                        bool((collector.last_snapshot or {}).get("online")))
+                except Exception:
+                    pass
+            now_mono = default_clock.monotonic()
+            if now_mono - _app_state_throttle["mono"] >= 2.0:
+                _app_state_throttle["mono"] = now_mono
+                _refresh_app_state()
+
+        try:
+            collector.on_hot_round = _on_hot_round
+        except Exception:
+            pass
         if gpu is not None and gpu.config.gpu.enabled:
             await gpu.poll_once()
         # 1.1：启动 system / sensors / runtime（故障隔离：任何失败不影响 Token 采集）
@@ -690,27 +721,15 @@ def build_app(
             sensors.start()
         _refresh_app_state()
 
-        async def _periodic() -> None:
-            # 定期采集：先睡后采，每 interval 一轮；
-            # 异常双保险（collect_once 内部已捕获一切），任务自身不会死
-            while True:
-                await asyncio.sleep(collector.interval)
-                try:
-                    await collector.collect_once()
-                except Exception:
-                    # AUDIT-ASYNC-002：不再静默 pass——collect_once 内部若漏捕
-                    # （如 DB 层非 sqlite3 异常），每轮至少留一条 debug 日志，
-                    # 避免"数据悄悄不更新"却零日志
-                    logger.debug("周期采集异常（内部应已处理，双保险）", exc_info=True)
-                # 1.1：metrics 在线状态同步给 runtime（metrics 失败时允许立即 health 检查）
-                if runtime is not None:
-                    try:
-                        runtime.set_metrics_online(bool((collector.last_snapshot or {}).get("online")))
-                    except Exception:
-                        pass
-                _refresh_app_state()
+        # 1.3.3：主采集任务句柄（shutdown 兼容路径）。采集循环本身由 collector
+        # 内部分层多任务驱动（start() 已调用）；本 supervisor 任务在 HOT 任务
+        # 结束时结束，仅作为既有 `app.state.collector_task` 取消路径的锚点。
+        async def _collector_supervisor() -> None:
+            t = getattr(collector, "_hot_task", None)
+            if t is not None:
+                await t
 
-        app.state.collector_task = asyncio.create_task(_periodic())
+        app.state.collector_task = asyncio.create_task(_collector_supervisor())
 
         # 1.1：System 采集任务（独立循环，每 poll_interval_seconds 一轮；故障隔离）
         system_task = None
@@ -740,10 +759,17 @@ def build_app(
 
             system_task = asyncio.create_task(_system_periodic())
 
-        # 1.1：llama Runtime 采集任务（/health /slots /props /v1/models 分频调度）
+        # 1.1：llama Runtime 采集任务（1.3.3：/health /props /v1/models /lora /router
+        # /SSE 独立子任务；/slots 由主采集器 HOT PATH 1s 提供，runtime 镜像）
         runtime_task = None
         if runtime is not None:
             runtime.set_metrics_online(bool((collector.last_snapshot or {}).get("online")))
+            # 1.3.3：/slots 提升到主采集器 HOT PATH（1s 并行 /metrics）——
+            # 注入主采集器引用，runtime 优先镜像其新鲜 slots（避免重复后端请求）
+            try:
+                runtime.metrics_collector = collector
+            except Exception:
+                pass
             # 1.3.2：Router 模型变化 -> 主采集器 /metrics 查询参数
             # （model=<id>&autoload=false；只读，绝不自动加载）
             try:
@@ -840,6 +866,12 @@ def build_app(
                 await backup_task
             except asyncio.CancelledError:
                 pass
+        # 1.3.3：停止分层采集任务（HOT/WARM/COLD 全部取消；幂等——
+        # collector.aclose 会再次调用，双保险）
+        try:
+            await collector.stop_tasks()
+        except Exception:
+            pass
         app.state.collector_task.cancel()
         try:
             await app.state.collector_task
@@ -895,12 +927,22 @@ def build_app(
     # FastAPI StaticFiles 不带 Cache-Control，浏览器会启发式缓存旧 JS/CSS ——
     # 原地升级便携版后新 app.js 配旧 formatters.js 会报 "F.formatClock is not a function"。
     # no-cache 不增加流量（ETag 304），只保证导航后必向服务端校验。
+    # 1.3.3：实时 API 强制 no-store（spec §20）——1s 轮询数据绝不允许被浏览器
+    # 缓存（缓存了 /api/realtime 就等于"实时"数据停更）；no-store 连中间代理
+    # 缓存也禁止。
+    _NO_STORE_PATHS = (
+        "/api/realtime", "/api/status", "/api/runtime",
+        "/api/llama/slots", "/api/strata/live",
+    )
+
     @app.middleware("http")
     async def _static_no_cache(request, call_next):
         response = await call_next(request)
         if (request.url.path == "/" or request.url.path.startswith("/static/")) and \
                 "cache-control" not in response.headers:
             response.headers["Cache-Control"] = "no-cache"
+        elif request.url.path in _NO_STORE_PATHS:
+            response.headers["Cache-Control"] = "no-store"
         return response
 
     @app.get("/", include_in_schema=False)
@@ -912,6 +954,50 @@ def build_app(
 
             raise HTTPException(status_code=404, detail="static/index.html 不存在")
         return FileResponse(index_file, media_type="text/html")
+
+    @app.get("/api/realtime")
+    async def api_realtime() -> dict:
+        """
+        1.3.3 前端实时主入口（spec §12/§21/§22）：一次调用拿到驱动性能页
+        "当前状态"区块所需的全部高频数据——activity / 吞吐（实时 vs 平均）/
+        请求与槽位 / token 进度 / 新鲜度 / 端点健康诊断。
+
+        - 由采集器 HOT PATH（~1s）内存态直接组装，**不查历史库、不做聚合**
+          （§24/§33：1s 轮询不打 SQLite）；唯一例外：llama.cpp 的平均吞吐
+          用最近 5 分钟 live_samples 窗口加权平均（§7：实时 vs 平均必须区分），
+          窗口极小（~150 行）且 2s 节流缓存；
+        - 严格 0-vs-null：不支持/缺失字段 = null，绝不假 0；
+        - sequence + freshness.sample_timestamp 供前端竞态防护（§23：
+          旧响应不得覆盖新响应）；
+        - Cache-Control: no-store（§20 中间件）。
+        """
+        payload = collector.realtime_payload()
+        payload["sequence"] = getattr(collector, "sequence", 0)
+        # 平均吞吐（llama：DB 5 分钟窗口加权平均，与 /api/throughput 同口径，
+        # 2s 节流缓存避免 1s 轮询重复查库；
+        # strata：collector 已给官方会话平均 tok_s_mean，不覆盖）
+        avg = payload.get("throughput") or {}
+        if avg.get("average_decode_tps") is None:
+            try:
+                now = default_clock.now()
+                if now - _realtime_avg_cache["at"] < 2.0:
+                    avg["average_decode_tps"] = _realtime_avg_cache["decode"]
+                    avg["average_prompt_tps"] = _realtime_avg_cache["prompt"]
+                else:
+                    samples = db.get_live_samples(hours=5 / 60.0)
+                    window = [s for s in samples if now - s["timestamp"] <= 300]
+                    wavg = _throughput_window_avg(window) if window else None
+                    _realtime_avg_cache["at"] = now
+                    _realtime_avg_cache["decode"] = \
+                        (wavg.get("decode_tps_avg") if wavg else None)
+                    _realtime_avg_cache["prompt"] = \
+                        (wavg.get("prompt_tps_avg") if wavg else None)
+                    avg["average_decode_tps"] = _realtime_avg_cache["decode"]
+                    avg["average_prompt_tps"] = _realtime_avg_cache["prompt"]
+            except Exception:
+                logger.debug("/api/realtime 平均吞吐窗口计算失败（保持 null）",
+                             exc_info=True)
+        return payload
 
     @app.get("/api/status")
     async def api_status(request: Request) -> dict:

@@ -217,3 +217,72 @@ predicted_seconds / n_decode / draft_tokens / accepted_tokens / draft_sequences`
   HTTP 层响应（4xx/5xx）计入服务异常，不累计"不可达"计数。
 - **训练 vs 运行时上下文**：`n_ctx_train`（训练上下文）与 `n_ctx`
   （运行时上下文）并列展示（`/v1/models` meta）。
+
+## 10. 1.3.3 实时口径（activity / 实时 TPS / 新鲜度 / 故障隔离）
+
+1.3.3 起采集链路重构为 HOT 1s / WARM 2s / COLD 低频分层，`/api/realtime`
+成为前端实时主入口。口径如下。
+
+### 10.1 活动判定（activity）
+
+- **Strata**（优先级，权威在前）：
+  1. `/metrics.live`：`state ∈ {reading, generating}` 或 `running > 0` 或
+     `outside_slots > 0` -> active（source `strata.metrics.live`，authoritative）；
+  2. `/status.busy == true` -> active（source `strata.status`，secondary）；
+  3. 明确 `live.state == "idle"` 且 `running == 0` 且 status 非 busy -> idle。
+  **`/slots[].is_processing` 绝不参与活动判定**（只负责 Slot 数量/明细/辅助诊断）。
+- **llama.cpp**（多源联合）：`llamacpp:requests_processing > 0` **或**
+  任一 `/slots[].is_processing == true` -> active；**仅当两者皆 0 才 idle**；
+  `requests_deferred > 0` = 排队中（`requests.queued`，独立于 active）。
+  **绝不用** `predicted_*` / `prompt_tokens_seconds == 0` 判忙闲。
+- **Prompt 处理是活动**：Strata `state="reading"`（generated==0，
+  phase "reading the prompt"）与 llama `n_prompt_tokens_processed <
+  n_prompt_tokens`（phase=prompt）都判 active——长 Prompt 处理期间
+  UI 不再显示"空闲"。
+- **stale 不翻 idle**：数据源失败轮保留上一轮 activity（source 加 `stale:`
+  前缀、confidence=stale）；连续 <5 轮失败保留快照（1.3.1 容忍不变），
+  >=5 轮才切离线表现。
+
+### 10.2 实时 TPS（llama.cpp，/slots 计数器 delta）
+
+- decode = Δ`n_decoded`/Δt；prompt = Δ`n_prompt_tokens_processed`/Δt
+  （Δt 为 **monotonic** 间隔）；`Δt <= 0.05s` 本轮不计算（防除零）。
+- **基线键 = (slot id, id_task)**：slot id 或 id_task 变化 -> 重设基线
+  （不跨任务混算）；服务端重启（连续 >=5 轮离线）清零基线。
+- 计数器倒退（Δ<0）-> 只重设基线，**绝不产出负 TPS**。
+- 无新鲜 delta（首轮/任务刚开始）-> `null`（UI 显示 `--`，绝不假 0）；
+  有新鲜 delta 时 `0.0` 是合法测量值（如 Prompt 处理期 decode=0）。
+- 多 slot 同时活动按 slot 求和（总吞吐口径）。
+- **实时 vs 平均**：`current_*_tps` = 上述实时值；`average_*_tps` =
+  Strata 官方会话平均（`tok_s_mean`/`prefill_tok_s_mean`）或 llama 最近
+  5 分钟 live_samples 窗口加权平均（与 `/api/throughput` 同口径）。
+
+### 10.3 新鲜度（freshness）与四态
+
+- `sample_timestamp` / `live_last_update` = **最近一次 HOT PATH 成功**
+  取得实时数据的时刻（Strata=/metrics 成功；llama=/metrics 或 /slots
+  任一成功）；COLD 任务（histogram/v1status/metadata）不推进它——
+  低频端点卡住不影响"实时"新鲜度。
+- 前端新鲜度四态（按 sample 的 age）：**实时**（<=2s）/ **轻微延迟**
+  （2~10s）/ **数据延迟**（10~30s）/ **状态未知**（>30s 或尚无数据）。
+  数据缺失绝不渲染成"空闲"。
+- 竞态防护：`sequence`（单调样本序号）+ `sample_timestamp`；前端迟到旧
+  响应（时间戳更旧，或同时间戳但 sequence 更小）不覆盖新数据。
+
+### 10.4 端点健康与故障隔离
+
+- 每端点独立 `{available, last_success, last_attempt, age_ms,
+  consecutive_failures, last_error}`（`endpoint_state.py`）；
+  一个端点失败绝不影响其它端点与实时链路（§29：单源失败后 active 保持
+  active+stale，不翻 idle）。
+- 错误分类：404/501→`unsupported`、401→`authentication_error`、
+  429→`rate_limited`、5xx→`temporarily_unavailable`、超时→`timeout`、
+  连接拒绝→`unreachable`、坏 JSON→`invalid_response`。
+- 能力型错误（unsupported/auth/rate_limited）= **明确结果**：恢复探测按
+  15s 节流（不 1s 狂刷已知 404 的端点）；瞬时故障（timeout/5xx/
+  unreachable）保持正常节奏快速恢复。
+- per-endpoint 超时：HOT 1.5s / WARM 3s / COLD 5s；HOT 内 /metrics 与
+  /slots **并行**（asyncio.gather，独立超时/独立错误）——慢 /slots
+  绝不阻塞 /metrics，反之亦然。
+- 日志只在**状态变化**时输出（OK->ERROR / ERROR->OK / 连续失败 1/5/10/30），
+  不逐轮刷屏。

@@ -149,7 +149,12 @@ def _run_round(db_path: Path, text: str) -> Database:
     async def _fetch():
         return parsed
 
+    # 1.3.3：hot_round 并行抓 /slots——mock 掉（不碰真实网络）
+    async def _slots():
+        return None
+
     collector._fetch_parsed = _fetch
+    collector._fetch_slots = _slots
     asyncio.run(collector.collect_once())
     return db
 

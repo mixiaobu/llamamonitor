@@ -54,6 +54,7 @@ import httpx
 from clock import Clock, default_clock
 from config import AppConfig, trust_env_for
 from gap_tracker import OFFLINE_TOLERANCE
+from scheduling import DeadlineScheduler
 
 logger = logging.getLogger("llamamonitor.runtime")
 
@@ -70,6 +71,13 @@ LORA_INTERVAL = 300.0           # /lora-adapters（只读 LoRA 状态；5 分钟
 SSE_RECONNECT_BASE = 1.0        # 重连退避起步（秒）
 SSE_RECONNECT_MAX = 30.0        # 重连退避上限（秒）
 SSE_MAX_EVENTS = 100            # 最近事件环形缓冲长度（内存态）
+
+# ---- 1.3.3：分层调度 ----
+# /slots 提升到主采集器（collector.py）HOT PATH（1s，与 /metrics 并行）。
+# 本采集器每 1s 优先**镜像**主采集器的新鲜 /slots（不发后端请求，§20/§22
+# 避免重复请求同一端点）；主采集器数据过旧（>3s）时才自己抓（5s 节流兜底）。
+SLOTS_MIRROR_STALE_S = 3.0      # 主采集器 slots 超过该秒数视为过旧
+SLOTS_DIRECT_INTERVAL = 5.0     # 兜底自抓节流（主采集器不可用时）
 
 # /props 白名单：只有这些键进入 LlamaModelInfo（chat_template 等不进内存快照）
 _PROPS_ALLOWED_KEYS = {
@@ -340,6 +348,12 @@ class LlamaRuntimeCollector:
         self._reconnect_pending = True           # 启动即视为"重连"
         self._metrics_online: bool | None = None  # 供 metrics 失败 -> 立即 health 检查
         self._task: asyncio.Task | None = None
+        # ---- 1.3.3：分层调度（独立 deadline 子任务 + /slots 镜像主采集器）----
+        # server 层注入主采集器（MetricsCollector）：其 HOT PATH 1s 并行抓
+        # /metrics + /slots——本采集器优先镜像它的 slots，避免重复后端请求
+        self.metrics_collector = None
+        self._subtasks: list[asyncio.Task] = []   # 独立低频次任务（single-flight）
+        self._last_direct_slots_mono: float = 0.0 # 兜底自抓节流
         # AUDIT-1.1.1 REL-1111-005 + 1.3.1：/health 连续失败计数（去抖）。
         # 单次偶发网络抖动不应立即把 Server State 翻转成"不可用"（+ 记一条
         # warning 事件）——统一按 1.2.1 容忍语义：连续 5 次失败才判定，
@@ -449,9 +463,32 @@ class LlamaRuntimeCollector:
 
     async def fetch_slots(self) -> bool:
         """
-        一轮 /slots 检查。返回本轮是否有 active（is_processing）slot
-        （供调度选择下轮间隔 2s/10s）。
+        一轮 /slots 检查（1.3.3：镜像优先）。
+
+        1.3.3 起 /slots 由主采集器 HOT PATH 1s 并行抓取（与 /metrics 同批，
+        独立超时/故障隔离）。这里**优先镜像**主采集器的新鲜 slots（<3s，
+        不发后端请求——§20/§22 避免重复请求同一端点）；主采集器未启动或
+        数据过旧时兜底自抓（5s 节流，避免对故障端点每秒打两次）。
+
+        返回本轮是否有 active（is_processing）slot。
         """
+        mc = self.metrics_collector
+        if mc is not None:
+            mc_slots = getattr(mc, "slots", None)
+            mc_update = getattr(mc, "last_slots_update", None)
+            if mc_slots is not None and mc_update is not None \
+                    and (self.clock.now() - mc_update) < SLOTS_MIRROR_STALE_S:
+                self.slots = mc_slots
+                self.last_slots_update = mc_update
+                self.capabilities["slots"] = True
+                self._any_request_succeeded = True
+                return any(s.get("is_processing") for s in self.slots)
+        # 兜底自抓（主采集器不可用/数据过旧；5s 节流）
+        mono = self.clock.monotonic()
+        if mono - self._last_direct_slots_mono < SLOTS_DIRECT_INTERVAL:
+            return any(s.get("is_processing") for s in self.slots) \
+                if self.slots else False
+        self._last_direct_slots_mono = mono
         payload, ok = await self._get_json("slots")
         if not ok:
             # 501/404：该版本无 /slots -> 能力位保持 False；Runtime Slot 监控不可用
@@ -777,44 +814,95 @@ class LlamaRuntimeCollector:
 
     async def run(self) -> None:
         """
-        常驻分频调度循环：
-        - 启动/重连：立即 health + props + models + router 检测；
-        - 稳态：health 10s；slots 2s(active)/10s(idle)；props/models 节流；
-          router 列表 30s；LoRA 5min；Router 模式下维持 SSE 单连接。
-        任何异常只记日志，循环不退出；与 metrics 采集完全独立。
+        常驻调度（1.3.3：独立 deadline 子任务；§10 低频端点互不拖累）：
+        - 启动/重连：立即 health + router 检测 + props + LoRA（_reconnect_cycle）；
+        - 稳态：health 10s；slots 1s（镜像主采集器 HOT 数据，过旧才兜底自抓）；
+          props/models 600s；router 列表 30s；LoRA 5min；
+          Router 模式下由 router 任务维持 SSE 单连接。
+        每个子任务独立 monotonic deadline 调度（single-flight：单任务内不并发，
+        慢端点只拖累自己的任务）；任何单轮异常只记日志，循环不退出；
+        与主采集器（/metrics Token + 1s HOT）完全独立（独立任务/故障隔离）。
         """
         await self._reconnect_cycle()
-        while True:
+        loop = asyncio.get_running_loop()
+        self._subtasks = [
+            loop.create_task(self._health_loop(), name="llama-rt-health"),
+            loop.create_task(self._slots_loop(), name="llama-rt-slots"),
+            loop.create_task(self._props_loop(), name="llama-rt-props"),
+            loop.create_task(self._router_loop(), name="llama-rt-router"),
+            loop.create_task(self._lora_loop(), name="llama-rt-lora"),
+        ]
+        try:
+            await asyncio.gather(*self._subtasks)
+        except asyncio.CancelledError:
+            await self._stop_subtasks()
+            raise
+
+    # ---- 1.3.3：独立 deadline 子任务（single-flight；慢端点互不影响） ----
+
+    async def _health_loop(self) -> None:
+        """health 10s（§19 WARM 超时；失败不影响其它子任务）。"""
+        async def _work() -> None:
+            await self.fetch_health()
+        await DeadlineScheduler(HEALTH_INTERVAL, self.clock,
+                                name="rt-health").run(_work)
+
+    async def _slots_loop(self) -> None:
+        """slots 1s（1.3.3：优先镜像主采集器 HOT 数据；无后端请求的镜像轮）。"""
+        async def _work() -> None:
+            await self.fetch_slots()
+        await DeadlineScheduler(1.0, self.clock, name="rt-slots").run(_work)
+
+    async def _props_loop(self) -> None:
+        """props/models 600s（COLD；方法内部还有 PROPS_INTERVAL 节流）。"""
+        async def _work() -> None:
+            await self.fetch_props_and_models(force=False)
+        await DeadlineScheduler(PROPS_INTERVAL, self.clock,
+                                name="rt-props").run(_work)
+
+    async def _router_loop(self) -> None:
+        """router 列表 30s（WARM）+ SSE 连接维持（Router 模式）。"""
+        async def _work() -> None:
+            force = self._router_refresh_pending
+            self._router_refresh_pending = False
+            await self.fetch_router_models(force=force)
+            # 1.3.2：Router 模式 -> 维持 SSE；非 Router -> 关闭
+            if self.router and self.router.get("is_router"):
+                self._sse_stop = False
+                self._start_sse()
+            elif self._sse_task is not None:
+                self._stop_sse()
+        await DeadlineScheduler(ROUTER_MODELS_INTERVAL, self.clock,
+                                name="rt-router").run(_work)
+
+    async def _lora_loop(self) -> None:
+        """LoRA 只读快照 5min（COLD）。"""
+        async def _work() -> None:
+            await self.fetch_lora(force=False)
+        await DeadlineScheduler(LORA_INTERVAL, self.clock,
+                                name="rt-lora").run(_work)
+
+    async def _stop_subtasks(self) -> None:
+        """取消全部低频次子任务（shutdown；幂等；CancelledError 不外泄）。"""
+        tasks = self._subtasks
+        self._subtasks = []
+        for t in tasks:
+            if not t.done():
+                t.cancel()
+        for t in tasks:
             try:
-                # health（10s 周期；metrics 刚失败时不等周期立即检查）
-                await self.fetch_health()
-                active = await self.fetch_slots()
-                # 稳态周期性刷新模型元数据（节流：PROPS_INTERVAL）
-                if self._reconnect_pending is False:
-                    await self.fetch_props_and_models(force=False)
-                # 1.3.2：Router 列表（30s）+ SSE 报告变化时立即刷新
-                if self._reconnect_pending is False or self._router_refresh_pending:
-                    force = self._router_refresh_pending
-                    self._router_refresh_pending = False
-                    await self.fetch_router_models(force=force)
-                # 1.3.2：LoRA 只读快照（5min 节流）
-                if self._reconnect_pending is False:
-                    await self.fetch_lora(force=False)
-                # 1.3.2：Router 模式 -> 维持 SSE；非 Router -> 关闭
-                if self.router and self.router.get("is_router"):
-                    self._sse_stop = False
-                    self._start_sse()
-                elif self._sse_task is not None:
-                    self._stop_sse()
-            except Exception as exc:
-                logger.warning("llama runtime 采集轮错误: %r", exc)
-            await asyncio.sleep(SLOTS_INTERVAL_ACTIVE if active else SLOTS_INTERVAL_IDLE)
+                await t
+            except (asyncio.CancelledError, Exception):
+                pass
+
 
     async def _reconnect_cycle(self) -> None:
-        """启动/重连：立即 health + props + models + router 检测（首次执行）。"""
+        """启动/重连：立即 health + slots + props + models + router 检测（首次执行）。"""
         self._reconnect_pending = False
         await self.fetch_health()
         try:
+            # 1.3.3：立即取一次 /slots（镜像主采集器，无数据时兜底自抓）
+            await self.fetch_slots()
             # 先检测 Router（决定 /props、/v1/models 是否按模型查询）
             await self.fetch_router_models(force=True)
             await self.fetch_props_and_models(force=True)
@@ -823,7 +911,9 @@ class LlamaRuntimeCollector:
             logger.warning("llama runtime 启动采集错误: %r", exc)
 
     async def aclose(self) -> None:
-        # 1.3.2：先关 SSE（受管单连接），再关 HTTP 客户端
+        # 1.3.3：先停低频次子任务（shutdown），再关 SSE（受管单连接），再关 HTTP 客户端
+        if self._subtasks:
+            await self._stop_subtasks()
         self._stop_sse()
         if self._sse_task is not None:
             try:

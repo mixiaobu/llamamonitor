@@ -47,7 +47,12 @@ class ProviderSwitchTests(unittest.TestCase):
         async def _fetch():
             return parse_metrics(text)
 
+        # 1.3.3：hot_round 并行抓 /slots——mock 掉（不碰真实网络）
+        async def _slots():
+            return None
+
         c._fetch_parsed = _fetch
+        c._fetch_slots = _slots
         return c
 
     def _strata_collector(self) -> StrataCollector:
@@ -63,18 +68,32 @@ class ProviderSwitchTests(unittest.TestCase):
             "/v1/models": (lambda: (_strata_doc("models.json"), True)),
         }
 
-        async def ft(p, l):
-            f = eps.get(p)
-            return f() if f else (None, False)
+        # 1.3.3：_fetch_text/_fetch_json 新签名（timeout/endpoint），
+        # 返回 (value, ok, error) 三元组；同步更新 EndpointState（与真实行为一致）
+        def _rec(name, ok, err):
+            if name:
+                c._record_endpoint(
+                    name, c.clock.now(), c.clock.monotonic(),
+                    None if ok else err)
 
-        async def fj(p, l):
-            t, ok = await ft(p, l)
+        async def ft(p, l, headers=None, timeout=None, endpoint=None):
+            f = eps.get(p)
+            if f is None:
+                _rec(endpoint, False, "unreachable")
+                return None, False, "unreachable"
+            t, ok = f()
+            _rec(endpoint, ok, "temporarily_unavailable" if not ok else None)
+            return t, ok, None
+
+        async def fj(p, l, timeout=None, endpoint=None):
+            t, ok, err = await ft(p, l, timeout=timeout, endpoint=endpoint)
             if not ok or t is None:
-                return None, False
+                return None, False, err
             try:
-                return json.loads(t), True
+                return json.loads(t), True, None
             except Exception:
-                return None, False
+                _rec(endpoint, False, "invalid_response")
+                return None, False, "invalid_response"
 
         c._fetch_text = ft
         c._fetch_json = fj
@@ -168,9 +187,18 @@ class ProviderSwitchTests(unittest.TestCase):
         doc["totals"]["output_tokens"] += 50
         eps_metrics = (lambda: (json.dumps(doc), True))
 
-        async def ft(p, l):
+        # 1.3.3：新签名（timeout/endpoint）+ (value, ok, error) 三元组
+        def _rec2(name, ok, err):
+            if name:
+                strata._record_endpoint(
+                    name, strata.clock.now(), strata.clock.monotonic(),
+                    None if ok else err)
+
+        async def ft(p, l, headers=None, timeout=None, endpoint=None):
             if p == "/metrics":
-                return eps_metrics()
+                t, ok = eps_metrics()
+                _rec2(endpoint, ok, "temporarily_unavailable" if not ok else None)
+                return t, ok, None
             f = {
                 "/status": (lambda: (_strata_doc("status_idle.json"), True)),
                 "/slots": (lambda: (_strata_doc("slots.json"), True)),
@@ -178,7 +206,12 @@ class ProviderSwitchTests(unittest.TestCase):
                 "/props": (lambda: (_strata_doc("props.json"), True)),
                 "/v1/models": (lambda: (_strata_doc("models.json"), True)),
             }.get(p)
-            return f() if f else (None, False)
+            if f is None:
+                _rec2(endpoint, False, "unreachable")
+                return None, False, "unreachable"
+            t, ok = f()
+            _rec2(endpoint, ok, "temporarily_unavailable" if not ok else None)
+            return t, ok, None
 
         strata._fetch_text = ft
         self._advance()

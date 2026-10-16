@@ -1,0 +1,34 @@
+﻿BUSY SLOT keys: ['id', 'id_task', 'is_processing', 'n_ctx', 'n_prompt_tokens', 'n_prompt_tokens_cache', 'n_prompt_tokens_processed', 'next_token', 'params', 'speculative']
+
+=== 推理结果 ===
+{"ok": true, "elapsed": 6.5, "usage": {"completion_tokens": 1109, "prompt_tokens": 46, "total_tokens": 1155, "prompt_tokens_details": {"cached_tokens": 26}}}
+
+=== 观察行（t, state, decode_tps, prompt_tps, generated, slots_active）===
+  (1.4, 'idle', None, None, None, 0)
+  (1.6, 'decode', None, None, 154.0, 1)
+  (1.9, 'decode', None, None, 154.0, 1)
+  (2.1, 'decode', None, None, 154.0, 1)
+  (2.3, 'decode', None, None, 154.0, 1)
+  (2.5, 'decode', 186.26, 0.0, 327.0, 1)
+  (2.7, 'decode', 186.26, 0.0, 327.0, 1)
+  (2.9, 'decode', 186.26, 0.0, 327.0, 1)
+  (3.1, 'decode', 186.26, 0.0, 327.0, 1)
+  (3.3, 'decode', 186.26, 0.0, 327.0, 1)
+  (3.5, 'decode', 184.88, 0.0, 512.0, 1)
+  (3.7, 'decode', 184.88, 0.0, 512.0, 1)
+  (4.0, 'decode', 184.88, 0.0, 512.0, 1)
+  (4.2, 'decode', 184.88, 0.0, 512.0, 1)
+  (4.4, 'decode', 190.29, 0.0, 701.0, 1)
+  (4.6, 'decode', 190.29, 0.0, 701.0, 1)
+  (4.8, 'decode', 190.29, 0.0, 701.0, 1)
+  (5.0, 'decode', 190.29, 0.0, 701.0, 1)
+  (5.2, 'decode', 190.29, 0.0, 701.0, 1)
+  (5.5, 'decode', 188.71, 0.0, 892.0, 1)
+  (5.7, 'decode', 188.71, 0.0, 892.0, 1)
+  (5.9, 'decode', 188.71, 0.0, 892.0, 1)
+  (6.1, 'decode', 188.71, 0.0, 892.0, 1)
+  (6.3, 'decode', 188.71, 0.0, 892.0, 1)
+
+有效 decode_tps 行数: 19 (min=184.88 max=190.29)
+有效 prompt_tps 行数: 19
+有效 generated 行数: 23 (末=892.0)
