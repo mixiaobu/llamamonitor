@@ -132,11 +132,26 @@ def run_tests() -> None:
         cwd=str(ROOT),
         capture_output=True,
     )
-    tail = _decoded(proc.stderr).strip().splitlines()[-3:]
-    for line in tail:
-        print(f"  {line}")
+    err_lines = _decoded(proc.stderr).strip().splitlines()
     if proc.returncode != 0:
-        fail("测试未全部通过 —— 不生成正式 Release（详见上方输出）")
+        # 1.3.5：失败时打印完整诊断段（首个 ERROR:/FAIL: 段到结尾 + 汇总）——
+        # 此前只打印 stderr 最后 3 行，CI 上哪个测试挂了、Traceback 是什么
+        # 全部丢失（unittest 的逐例进度输出几百 KB，不能整段打印）。
+        detail_start = 0
+        for i, line in enumerate(err_lines):
+            if line.startswith("ERROR: ") or line.startswith("FAIL: "):
+                detail_start = max(0, i - 1)
+                break
+        detail = err_lines[detail_start:]
+        if len(detail) > 400:
+            detail = detail[:400] + [
+                f"...（共 {len(err_lines) - detail_start} 行，截断显示前 400 行）"]
+        for line in detail:
+            print(f"  {line}")
+        fail("测试未全部通过 —— 不生成正式 Release（完整测试诊断见上方输出）")
+    else:
+        for line in err_lines[-3:]:
+            print(f"  {line}")
     log("测试全部通过")
 
 
