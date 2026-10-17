@@ -331,6 +331,19 @@ class OverviewEndpointTests(StrataApiTestBase):
         finally:
             client.__exit__(None, None, None)
 
+    def test_status_strata_realtime_tps(self):
+        """1.3.5：/api/status Strata TPS = 实时 tok_s 阶段路由（性能页顶部摘要
+        数据源）。此前读 DB 窗口样本——thinking 阶段窗口 delta=0 恒显 --，
+        实测 Strata 活跃生成 35.6 tok/s 时仍返回 null。"""
+        client, _ = self._start(provider_payloads=dict(self._GEN_PAYLOADS))
+        try:
+            data = client.get("/api/status").json()
+            # metrics_generating.json: live.state=generating, live.tok_s=26.3
+            self.assertAlmostEqual(data.get("decode_tps"), 26.3, places=6)
+            self.assertIsNone(data.get("prompt_tps"))
+        finally:
+            client.__exit__(None, None, None)
+
     def test_overview_strata_current_context_usage(self):
         """1.3.4：Strata 当前上下文 = live prompt_tokens + generated / 上下文窗口
         （此前只认 llama runtime slots，Strata 恒显 --）。"""

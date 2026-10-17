@@ -215,6 +215,43 @@ class StrataActivityTests(StrataRealtimeBase):
         asyncio.run(self.collector._hot_round())
         self.assertGreater(self.collector.live_last_update, ts)
 
+    def test_19_strata_tps_phase_routing(self):
+        """1.3.5：/api/realtime Strata 实时 TPS 阶段路由（与总览页同口径）。
+
+        generating/thinking -> current_decode_tps = live.tok_s；
+        reading（Prefill 处理）-> current_prompt_tps（当前 Strata 0.1.43.1
+        reading 阶段 tok_s=null，此处验证未来版本报 tok_s 时路由到 prompt，
+        不再误标 decode）；idle -> 双 None（0-vs-null，绝不假 0）。
+        """
+        # generating/thinking
+        self.set_metrics({
+            "live": {"state": "generating", "running": 1, "tok_s": 40.0,
+                     "generated": 100, "max_tokens": 512, "phase": "thinking"},
+            "totals": {"output_tokens": 25936 + 100,
+                       "decode_ms": 712919.0 + 2500.0},
+        })
+        self.round()
+        p = self.collector.realtime_payload()
+        self.assertAlmostEqual(p["throughput"]["current_decode_tps"], 40.0)
+        self.assertIsNone(p["throughput"]["current_prompt_tps"])
+        # reading 且报 tok_s（未来 Strata 版本）-> 路由到 prompt
+        self.set_metrics({
+            "live": {"state": "reading", "running": 1, "tok_s": 80.0,
+                     "prompt_tokens": 120000, "phase": "reading the prompt"},
+            "totals": {"prompt_tokens": 25936 + 120000,
+                       "prompt_ms": 712919.0 + 1500.0},
+        })
+        self.round()
+        p = self.collector.realtime_payload()
+        self.assertAlmostEqual(p["throughput"]["current_prompt_tps"], 80.0)
+        self.assertIsNone(p["throughput"]["current_decode_tps"])
+        # idle -> 双 None
+        self.set_metrics({})
+        self.round()
+        p = self.collector.realtime_payload()
+        self.assertIsNone(p["throughput"]["current_decode_tps"])
+        self.assertIsNone(p["throughput"]["current_prompt_tps"])
+
 
 # ============================================================
 # llama.cpp

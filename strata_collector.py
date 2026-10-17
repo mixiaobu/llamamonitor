@@ -693,9 +693,14 @@ class StrataCollector:
         1.3.3 /api/realtime 数据源（spec §12/§31）：HOT PATH 最新态聚合。
 
         - activity：_compute_activity（§4 优先级；metrics.live 权威）；
-        - throughput：current=live.tok_s（服务端实时口径）；
-          average=tok_s_mean（会话平均）；current_prompt_tps 无实时口径 = None
-          （prefill_tok_s_mean 是平均 Prefill，归 average 侧）；
+        - throughput：current = live.tok_s 按阶段路由（1.3.5，与总览页同口径）：
+          reading（Prompt 处理）-> current_prompt_tps；
+          generating/unknown（生成/thinking）-> current_decode_tps；
+          无活动 -> 双 None（0-vs-null）。当前 Strata（0.1.43.1）reading 阶段
+          live.tok_s=null（无实时 Prefill 口径）；未来版本若在 reading 报 tok_s，
+          路由到 prompt，不再误标 decode。
+          average=tok_s_mean（会话平均）；prefill_tok_s_mean 是平均 Prefill，
+          归 average 侧；
         - requests：processing=running；waiting=waiting_total（官方 vLLM 口径
           queued+waiting）；queued=queued 原始值；
         - slots：active=outside_slots；total=/slots 快照长度（WARM 10s 节奏）；
@@ -719,6 +724,15 @@ class StrataCollector:
             _st = self.endpoints.get(_name)
             if not _st.available:
                 _errors[_name] = _st.to_dict(now)
+        # 1.3.5：实时 TPS 阶段路由（与总览页 /api/overview 同口径；见 docstring）
+        _tok_s = live.get("tok_s")
+        if act.get("active") and _tok_s is not None:
+            if act.get("state") == "reading":
+                _cur_prompt, _cur_decode = _tok_s, None
+            else:
+                _cur_prompt, _cur_decode = None, _tok_s
+        else:
+            _cur_prompt, _cur_decode = None, None
         return {
             "provider": "strata",
             "server_online": bool(snap.get("online")),
@@ -730,8 +744,8 @@ class StrataCollector:
                 "confidence": act.get("confidence"),
             },
             "throughput": {
-                "current_decode_tps": live.get("tok_s"),
-                "current_prompt_tps": None,
+                "current_decode_tps": _cur_decode,
+                "current_prompt_tps": _cur_prompt,
                 "average_decode_tps": live.get("tok_s_mean"),
                 "average_prompt_tps": live.get("prefill_tok_s_mean"),
             },

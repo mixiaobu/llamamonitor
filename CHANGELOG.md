@@ -7,6 +7,42 @@
 > 互相视为"不同系列"：安装器降级保护按数值比较（1.0.0 > 0.13.x），从 1.0.0 安装
 > 0.13.x 会被识别为降级并拒绝（实测行为，非缺陷）。
 
+## [1.3.5] - 2026-10-17
+
+**逐端点采集审计后的 Strata 实时口径补全**：性能页顶部摘要与 /api/realtime 的 TPS 阶段路由。
+
+### 修复
+- **性能页顶部摘要 TPS 恒 `--`（Strata 活跃生成中）**：审计发现
+  `/api/status` 的 `prompt_tps`/`decode_tps` 仍读 SQLite 2s 窗口样本
+  （thinking 阶段 delta=0 返回 null）——这是 1.3.4 修总览页后同根因的
+  残留消费点（性能页顶部「Prompt TPS / Decode TPS」摘要）。安装版实测：
+  Strata 活跃生成 35.6 tok/s 时该字段仍为 null。现在 Strata 走实时
+  `live.tok_s` 阶段路由（与总览页同口径），DB 窗口值仅作 /metrics
+  不可用时兜底；llama.cpp 不变。
+- **/api/realtime Strata 实时 TPS 阶段路由（契约一致性）**：此前
+  `current_decode_tps` 恒等于原始 `live.tok_s`（reading 阶段若报 tok_s
+  会被误标为 decode），`current_prompt_tps` 恒 null。现在按活动状态
+  路由：reading（Prompt 处理）-> prompt；generating/thinking -> decode；
+  无活动 -> 双 None（0-vs-null）。当前 Strata 0.1.43.1 在 reading 阶段
+  `tok_s=null`（无实时 Prefill 口径，为服务端限制），行为不变；未来版本
+  若在 reading 报 tok_s 会自动路由到 prompt。性能页「当前 tok/s」同步
+  改为按阶段取路由后的值。
+
+### 审计记录（逐项核对，均实测通过）
+- /api/realtime：activity 200ms 新鲜、0 错误、authoritative；
+  requests/slots/tokens 与 Strata 原始 /metrics 字段级一致
+- /api/overview（1.3.4 修复生效）：生成中 decode 实时值 + 当前上下文
+  实时占用 + MTP 接受率
+- /api/strata/live、/api/strata/latency（TTFT/ITL/E2E 分位数）、
+  /api/strata/hardware-trend、/api/throughput（加权窗口平均）、
+  /api/summary（今日用量）：数据完整
+- DB WARM 落库节奏：最近 359 个样本间隔 1–4s，无缺口
+- llama.cpp 路径：/slots 逐 Slot delta 口径不受影响（测试覆盖）
+
+### 验证
+- 新增 2 个自动化测试（realtime TPS 阶段路由三态 / /api/status 实时值）；
+  全量自动化测试通过。
+
 ## [1.3.4] - 2026-10-17
 
 **总览页推理状态实时口径修复（Strata）**：TPS 实时值 + 连续 5 次零值滞后 + Strata 当前上下文。

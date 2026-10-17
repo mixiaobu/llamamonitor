@@ -2291,7 +2291,10 @@
     if (provider === "strata") {
       // G 段当前值（1s 节奏；会话缓存/请求/硬件/运行时长仍由 strataLive 驱动）
       _stText("stPhase", act.phase || (act.active ? "处理中" : "空闲"));
-      _stText("stTokS", th.current_decode_tps != null ? F.formatTps(th.current_decode_tps) + " tok/s" : null);
+      // 1.3.5：当前 tok/s 按阶段取路由后的值（reading->prompt；generating->decode）
+      var curTps = (act.state === "reading" && th.current_prompt_tps != null)
+        ? th.current_prompt_tps : th.current_decode_tps;
+      _stText("stTokS", curTps != null ? F.formatTps(curTps) + " tok/s" : null);
       _stText("stTokSMean", th.average_decode_tps != null ? F.formatTps(th.average_decode_tps) + " tok/s" : null);
       _stText("stPrefill", th.average_prompt_tps != null ? F.formatTps(th.average_prompt_tps) + " tok/s" : null);
       _stText("stRunning", req.processing == null ? null

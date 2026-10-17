@@ -1060,6 +1060,7 @@ def build_app(
           远程只读客户端的 path 只返回文件名（不泄漏 Windows 用户名/目录）。
         """
         snapshot = collector.last_snapshot
+        provider = getattr(collector, "provider_id", "llamacpp")
         if snapshot is None:
             result = {
                 "server_online": None,
@@ -1086,14 +1087,29 @@ def build_app(
             }
         else:
             latest = db.get_latest_live_sample()
+            if provider == "strata":
+                # 1.3.5：Strata TPS = 实时 tok_s 阶段路由（/metrics 1s 实时更新；
+                # DB 窗口样本在 thinking 阶段 delta=0 会误判"无数据"——性能页
+                # 顶部摘要此前因此恒显 --）。DB 窗口值仅作 /metrics 不可用兜底。
+                _pt = _strata_realtime_tps(collector, "prompt")
+                _dt = _strata_realtime_tps(collector, "decode")
+                _prompt_tps = (
+                    _pt if _pt is not None
+                    else ((latest or {}).get("prompt_tps")))
+                _decode_tps = (
+                    _dt if _dt is not None
+                    else ((latest or {}).get("decode_tps")))
+            else:
+                _prompt_tps = latest["prompt_tps"] if latest else None
+                _decode_tps = latest["decode_tps"] if latest else None
             result = {
                 "server_online": True,
                 "llama_server_url": collector.metrics_url,
                 "requests_processing": snapshot["requests_processing"],
                 "requests_deferred": snapshot["requests_deferred"],
                 "context_max": snapshot["context_max"],
-                "prompt_tps": latest["prompt_tps"] if latest else None,
-                "decode_tps": latest["decode_tps"] if latest else None,
+                "prompt_tps": _prompt_tps,
+                "decode_tps": _decode_tps,
                 "mtp_accept_rate": latest["mtp_accept_rate"] if latest else None,
                 "last_update": collector.last_update,
             }
@@ -1107,7 +1123,6 @@ def build_app(
         # 1.1：llama.cpp Runtime（Health State / 模型摘要 / 当前 Slot）。
         # 全部内存态（llama_runtime_collector）；runtime collector 未注入时 -> None。
         # 1.3.0：provider 标识 + Strata 专属状态块（llama.cpp 时 strata=None）。
-        provider = getattr(collector, "provider_id", "llamacpp")
         result["provider"] = provider
         result["provider_display"] = {"llamacpp": "llama.cpp", "strata": "Strata"}.get(provider, provider)
         if runtime is not None:
