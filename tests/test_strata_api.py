@@ -266,6 +266,86 @@ class OverviewEndpointTests(StrataApiTestBase):
         finally:
             client.__exit__(None, None, None)
 
+    # ---- 1.3.4：总览推理状态实时口径 + 5 次零值滞后 + Strata 当前上下文 ----
+
+    _GEN_PAYLOADS = {
+        "/metrics": "metrics_generating.json",
+        "/status": "status_busy.json",
+        "/slots": "slots.json",
+        "/health": "health_ok.json",
+        "/props": "props.json",
+        "/v1/models": "models.json",
+    }
+
+    def test_overview_strata_realtime_decode_during_thinking(self):
+        """1.3.4：generating/thinking 阶段 DB 窗口 delta=0（counter 暂停增长），
+        decode TPS 必须取 live.tok_s 实时值，而不是「0 t/s 无活动」。"""
+        client, _ = self._start(provider_payloads=dict(self._GEN_PAYLOADS))
+        try:
+            data = client.get("/api/overview").json()
+            decode = data.get("inference", {}).get("decode_tps", {})
+            self.assertEqual(decode.get("display"), "active")
+            # metrics_generating.json: live.tok_s = 26.3
+            self.assertAlmostEqual(decode.get("value"), 26.3, places=6)
+        finally:
+            client.__exit__(None, None, None)
+
+    def test_overview_tps_zero_streak_hysteresis(self):
+        """1.3.4：TPS 掉 0 不立即翻 idle——连续 5 轮才切，期间保持最近活跃值；
+        正值出现立即恢复。"""
+        client, collector = self._start(provider_payloads=dict(self._GEN_PAYLOADS))
+        try:
+            def decode_disp():
+                return client.get("/api/overview").json()[
+                    "inference"]["decode_tps"]
+
+            # 首次观测：active 26.3
+            d = decode_disp()
+            self.assertEqual(d["display"], "active")
+            self.assertAlmostEqual(d["value"], 26.3, places=6)
+            # 切到无活动（live tok_s=None + activity idle）-> 零值
+            collector.live["tok_s"] = None
+            collector.activity_state = {
+                "active": False, "state": "idle", "phase": None,
+                "source": "strata.metrics.live", "confidence": "authoritative",
+            }
+            # 第 1-4 次零值：保持最近活跃值（绝不闪 0）
+            for _ in range(4):
+                d = decode_disp()
+                self.assertEqual(d["display"], "active")
+                self.assertAlmostEqual(d["value"], 26.3, places=6)
+            # 第 5 次零值：才切 idle 0
+            d = decode_disp()
+            self.assertEqual(d["display"], "idle")
+            self.assertEqual(d["value"], 0.0)
+            self.assertEqual(d.get("tip"), "当前无对应推理活动")
+            # 正值出现：立即恢复 active
+            collector.live["tok_s"] = 30.0
+            collector.activity_state = {
+                "active": True, "state": "generating", "phase": "thinking",
+                "source": "strata.metrics.live", "confidence": "authoritative",
+            }
+            d = decode_disp()
+            self.assertEqual(d["display"], "active")
+            self.assertAlmostEqual(d["value"], 30.0, places=6)
+        finally:
+            client.__exit__(None, None, None)
+
+    def test_overview_strata_current_context_usage(self):
+        """1.3.4：Strata 当前上下文 = live prompt_tokens + generated / 上下文窗口
+        （此前只认 llama runtime slots，Strata 恒显 --）。"""
+        client, _ = self._start(provider_payloads=dict(self._GEN_PAYLOADS))
+        try:
+            data = client.get("/api/overview").json()
+            cc = data.get("inference", {}).get("current_context")
+            self.assertIsNotNone(cc, "Strata 当前上下文不应为 null")
+            self.assertEqual(cc.get("display"), "usage")
+            # metrics_generating.json: prompt_tokens=57, generated=49, context=262144
+            self.assertEqual(cc.get("used"), 106)
+            self.assertEqual(cc.get("limit"), 262144)
+        finally:
+            client.__exit__(None, None, None)
+
 
 class HealthEndpointTests(StrataApiTestBase):
     def test_health_collector_online_with_strata(self):

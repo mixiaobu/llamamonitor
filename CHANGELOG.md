@@ -7,6 +7,30 @@
 > 互相视为"不同系列"：安装器降级保护按数值比较（1.0.0 > 0.13.x），从 1.0.0 安装
 > 0.13.x 会被识别为降级并拒绝（实测行为，非缺陷）。
 
+## [1.3.4] - 2026-10-17
+
+**总览页推理状态实时口径修复（Strata）**：TPS 实时值 + 连续 5 次零值滞后 + Strata 当前上下文。
+
+### 修复
+- **Strata TPS 显示 0/「当前无对应推理活动」（thinking 阶段误判）**：
+  总览页 TPS 此前只读 SQLite 最新 WARM 窗口样本（2s delta）。Strata 模型在
+  thinking（深度思考）阶段 output counter 暂停增长，窗口 delta=0 → UI 闪
+  「0 t/s 无活动」，而 Strata /metrics 是 1s 实时更新、服务端实测 tok_s 一直
+  有效。现在总览页 Strata TPS 优先取 `live.tok_s` 实时值（按活动状态路由：
+  `reading`→Prompt TPS；`generating/thinking`→Decode TPS），DB 窗口值仅兜底；
+  llama.cpp 保持 DB 窗口口径不变。
+- **TPS 连续 5 次零值滞后（与 5 次失败离线容忍同哲学）**：TPS 掉到
+  0/缺失时不再立即翻「0 t/s 当前无对应推理活动」——连续 5 轮观测才切换，
+  期间保持最近一次活跃值；正值出现立即恢复。单点抖动/短暂空窗不再闪 0。
+- **Strata 当前上下文恒显 `--`**：总览页「当前上下文」此前只认 llama.cpp
+  runtime slots（Strata 下 runtime=None）。现在 Strata 显示实时上下文占用
+  `prompt_tokens + generated / 上下文窗口`（如 148.0K / 256.0K + 使用率），
+  无进度值时退化为 busy/total Slot 显示。
+
+### 验证
+- 新增 3 个自动化测试（thinking 阶段实时 decode TPS / 5 次零值滞后序列 /
+  Strata 当前上下文占用）；全量自动化测试通过（见交付记录）。
+
 ## [1.3.3] - 2026-10-17
 
 **实时监控链路重构 + Strata/llama.cpp 采集准确性修复 + 单点接口异常故障隔离**。

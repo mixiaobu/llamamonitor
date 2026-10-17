@@ -539,6 +539,55 @@ def _overview_tps_display(value, online: bool, metric_supported: bool) -> dict:
     return {"value": 0.0, "display": "idle", "tip": "当前无对应推理活动"}
 
 
+_OV_TPS_ZERO_STREAK_LIMIT = 5
+
+
+def _ov_tps_display_with_streak(
+    streak_state: dict, field: str, value,
+    online: bool, metric_supported: bool,
+) -> dict:
+    """
+    TPS 显示 + 连续 5 次零值滞后（1.3.4，与 5 次失败离线容忍同哲学）：
+    value 掉到 None/0 时不立即翻成「0 t/s 当前无对应推理活动」——
+    连续观测不足 5 轮时保持最近一次活跃值；第 5 次连续零/缺失才切 idle 0。
+    正值出现立即恢复 active 并清零计数；启动无历史时直接 idle（无可保持值）。
+    单点抖动/短暂空窗（如 thinking 阶段输出 counter 暂停增长）不再闪 0。
+    """
+    st = streak_state.setdefault(field, {"streak": 0, "last": None})
+    if not online:
+        st["streak"] = 0
+        return _overview_tps_display(None, False, metric_supported)
+    if value is not None and value > 0:
+        st["streak"] = 0
+        st["last"] = value
+        return _overview_tps_display(value, True, True)
+    st["streak"] += 1
+    if st["streak"] < _OV_TPS_ZERO_STREAK_LIMIT and st["last"] is not None:
+        # 保持最近活跃值（显示上延续最后已知速率，绝不假 0）
+        return _overview_tps_display(st["last"], True, True)
+    return _overview_tps_display(None, True, metric_supported)
+
+
+def _strata_realtime_tps(collector, kind: str):
+    """
+    Strata 实时 TPS（1.3.4）：/metrics 是 1s 实时更新，live.tok_s 是服务端
+    实测的当前 token 吞吐（权威口径）。按 activity 状态路由：
+    - state=reading（Prompt 处理中）-> prompt TPS；
+    - state=generating/unknown（生成/thinking）-> decode TPS。
+    thinking 阶段 output counter 不增长（DB 窗口 delta=0），实时值是当时
+    唯一可靠的速率来源；无活动/无 tok_s 时返回 None（由调用方回退 DB 样本）。
+    """
+    live = getattr(collector, "live", None) or {}
+    act = getattr(collector, "activity_state", None) or {}
+    tok_s = live.get("tok_s")
+    if tok_s is None or not act.get("active"):
+        return None
+    state = act.get("state")
+    if kind == "prompt":
+        return tok_s if state == "reading" else None
+    return tok_s if state in ("generating", "unknown") else None
+
+
 def _require_loopback(request: Request) -> None:
     """
     Phase 10 安全加固：高权限本地操作（改配置/清数据/备份/注册表/退出/开文件夹）
@@ -2546,16 +2595,36 @@ def build_app(
         usage["available"] = True
         usage["sample_timestamp"] = now
 
-        # ---- inference（最新 live 样本 + runtime slots + 当日 MTP） ----
+        # ---- inference（实时 live 口径 + runtime slots + 当日 MTP） ----
         latest = db.get_latest_live_sample() if online else None
-        # TPS 三态（绝不混淆 0 与不可用）：counter 存在但本轮无 delta = 空闲 -> 0 t/s
-        prompt_disp = _overview_tps_display(
-            (latest or {}).get("prompt_tps"), bool(online),
-            (latest or {}).get("prompt_delta") is not None,
+        # TPS 三态（绝不混淆 0 与不可用）+ 实时口径 + 连续 5 次零值滞后（1.3.4）：
+        # - Strata /metrics 是 1s 实时更新，live.tok_s 是服务端实测权威口径
+        #   （thinking 阶段 output counter 不增长，DB 窗口 delta=0，不能只靠 DB 样本）；
+        # - llama.cpp 保持 DB 窗口口径（/metrics counter delta，/slots 不可用时仍稳健）；
+        # - 单次零/缺失保持最近活跃值，连续 5 轮才翻「当前无对应推理活动」。
+        _tps_streak = getattr(collector, "_ov_tps_streak", None)
+        if _tps_streak is None:
+            _tps_streak = {}
+            collector._ov_tps_streak = _tps_streak
+        if provider == "strata":
+            _rt_prompt = _strata_realtime_tps(collector, "prompt")
+            _rt_decode = _strata_realtime_tps(collector, "decode")
+            _prompt_value = (
+                _rt_prompt if _rt_prompt is not None
+                else (latest or {}).get("prompt_tps"))
+            _decode_value = (
+                _rt_decode if _rt_decode is not None
+                else (latest or {}).get("decode_tps"))
+        else:
+            _prompt_value = (latest or {}).get("prompt_tps")
+            _decode_value = (latest or {}).get("decode_tps")
+        prompt_disp = _ov_tps_display_with_streak(
+            _tps_streak, "prompt", _prompt_value,
+            bool(online), (latest or {}).get("prompt_delta") is not None,
         )
-        decode_disp = _overview_tps_display(
-            (latest or {}).get("decode_tps"), bool(online),
-            (latest or {}).get("output_delta") is not None,
+        decode_disp = _ov_tps_display_with_streak(
+            _tps_streak, "decode", _decode_value,
+            bool(online), (latest or {}).get("output_delta") is not None,
         )
         # MTP 三态：未启用 / 暂无数据 / 百分比
         mtp_cap = bool(collector.capabilities.get("mtp"))
@@ -2600,6 +2669,30 @@ def build_app(
             if current_context is None:
                 current_context = {
                     "display": "busy", "busy_slots": busy, "total_slots": total_slots,
+                }
+        elif provider == "strata" and online:
+            # Strata（1.3.4）：实时上下文占用 = live prompt_tokens + generated / 上下文窗口
+            # （/metrics 1s 实时更新；此前该块只认 llama runtime slots，Strata 恒显 --）
+            _slive = getattr(collector, "live", None) or {}
+            _used_pt = _slive.get("prompt_tokens")
+            _gen = _slive.get("generated")
+            _limit = (snap or {}).get("context_max")
+            if _limit is None:
+                _limit = (getattr(collector, "model_info", None) or {}).get("context_window")
+            _srunning = _slive.get("running")
+            _stotal = (getattr(collector, "_props", None) or {}).get("total_slots")
+            if _used_pt is not None and _limit:
+                current_context = {
+                    "display": "usage",
+                    "used": int(_used_pt) + int(_gen or 0),
+                    "limit": int(_limit),
+                    "busy_slots": _srunning,
+                    "total_slots": _stotal,
+                }
+            elif _srunning is not None or _stotal is not None:
+                current_context = {
+                    "display": "busy",
+                    "busy_slots": _srunning, "total_slots": _stotal,
                 }
         inference = {
             "online": online,
